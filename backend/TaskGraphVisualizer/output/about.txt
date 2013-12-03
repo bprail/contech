@@ -1,0 +1,1 @@
+This folder is for holding task graph image files that are created by various scripts.
