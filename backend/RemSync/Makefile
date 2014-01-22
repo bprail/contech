@@ -16,4 +16,4 @@ remSync: $(OBJECTS)
 
 clean:
 	rm -f *.o
-	rm -f sremSync
+	rm -f remSync
