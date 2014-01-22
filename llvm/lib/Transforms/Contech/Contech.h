@@ -1,8 +1,10 @@
 #ifndef CONTECH_H
 #define CONTECH_H
 
-#include "llvm/Pass.h"
-#include "llvm/Module.h"
+// These are included in contech.cpp, which creates the appropriate path
+//  given that llvm decided to put the headers in different directories
+//#include "llvm/Pass.h"
+//#include "llvm/Module.h"
 
 namespace llvm {
     class Contech;
@@ -37,6 +39,9 @@ namespace llvm {
         EXIT,
         COND_WAIT,
         COND_SIGNAL,
+        OMP_FORK,
+        OMP_FOR_ITER,
+        OMP_BARRIER,
         NUM_CONTECH_FUNCTION_TYPES
     } CONTECH_FUNCTION_TYPE;
     

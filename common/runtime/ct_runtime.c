@@ -33,6 +33,9 @@ static ct_serial_buffer_sized initBuffer = {0, SERIAL_BUFFER_SIZE, 0, NULL, {0}}
 __thread pct_serial_buffer __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
 __thread unsigned int __ctThreadLocalNumber = 0; // no static
 __thread pcontech_thread_info __ctThreadInfoList = NULL;
+__thread pcontech_id_stack __ctParentIdStack = NULL;
+__thread pcontech_id_stack __ctThreadIdStack = NULL;
+__thread pcontech_join_stack __ctJoinStack = NULL;
 
 static unsigned int __ctThreadGlobalNumber = 0;
 static unsigned int __ctThreadExitNumber = 0;
@@ -72,6 +75,7 @@ extern int ct_orig_main(int, char**);
 // pass can easily access ct_runtime's data without being tied to the internals.
 unsigned int __ctGetLocalNumber()
 {
+    //printf("Requested %d\n", __ctThreadLocalNumber);
     return __ctThreadLocalNumber;
 }
 
@@ -1126,4 +1130,185 @@ unsigned int __ctLookupThreadInfo(pthread_t pt)
     }
     
     return 0;
+}
+
+// Create event for thread and parent
+//   Puts event for parent ctid into a buffer
+//   Allocates a new ctid for thread and assigns it
+//   And thread ctid to thread ctid stack
+void __ctOMPThreadCreate(unsigned int parent)
+{
+    unsigned int threadId = __ctAllocateCTid();
+
+    // First close out any current buffer, if one exists
+    if (__ctThreadLocalBuffer != NULL &&
+        __ctThreadLocalBuffer != (pct_serial_buffer)&initBuffer)
+    {
+        __ctQueueBuffer(true);
+    }
+    else
+    {
+        __ctAllocateLocalBuffer();
+    }
+    
+    // Pretend we are the parent id and queue a create event
+    //   because there is the small copy path, this create
+    //   will be copied out with the current id
+    __ctThreadLocalNumber = parent;
+    __ctStoreThreadCreate(threadId, 0, rdtsc());
+    __ctQueueBuffer(true);
+    __ctThreadLocalNumber = threadId;
+    
+    __ctStoreThreadCreate(parent, 0, rdtsc());
+    __ctPushIdStack(&__ctThreadIdStack, threadId);
+}
+
+// create event for thread and task
+//   if int == 0, restore thread ctid from stack
+//   else create events with task and thread ids
+//   set local bool to return value (used with join)
+void __ctOMPTaskCreate(int ret)
+{
+    unsigned int taskId;
+    if (ret == 0)
+    {
+        __ctThreadLocalNumber = __ctPeekIdStack(&__ctThreadIdStack);
+        pcontech_join_stack elem = __ctJoinStack;
+        while (elem != NULL)
+        {
+            pcontech_join_stack t = elem;
+            __ctStoreThreadJoinInternal(false, elem->id, elem->start);
+            elem = elem->next;
+            free(elem);
+            __ctCheckBufferSize();
+        }
+        __ctJoinStack = NULL;
+        return;
+    }
+    taskId = __ctAllocateCTid();
+    
+    unsigned int threadId = __ctPeekIdStack(&__ctThreadIdStack);
+    __ctThreadLocalNumber = threadId;
+    __ctStoreThreadCreate(taskId, 0, rdtsc());
+    __ctQueueBuffer(true);
+    __ctThreadLocalNumber = taskId;
+    
+    __ctStoreThreadCreate(threadId, 0, rdtsc());
+    
+    return;
+}
+
+// join event for thread and task
+//   if bool == true, then we are in task context
+//   else ignore
+void __ctOMPTaskJoin()
+{
+    // If the top of the stack is the current ID, then no tasks have been created
+    if (__ctPeekIdStack(&__ctThreadIdStack) == __ctThreadLocalNumber) return;
+    
+    // We do this in reverse, so that threadId is local leaving this call
+    unsigned int threadId = __ctPeekIdStack(&__ctThreadIdStack);
+    __ctStoreThreadJoinInternal(true, threadId, rdtsc());
+    __ctQueueBuffer(true);
+    unsigned int taskId = __ctThreadLocalNumber;
+    
+    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    
+    __ctThreadLocalNumber = threadId;
+    
+    // Joins are pushed onto a stack, so that
+    //   All of the creates occur for the tasks before any joins of the tasks
+    pcontech_join_stack elem = malloc(sizeof(contech_join_stack));
+    if (elem == NULL)
+    {
+        fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
+        pthread_exit(NULL);
+    }
+    
+    elem->id = taskId;
+    elem->start = rdtsc();
+    elem->next = __ctJoinStack;
+    __ctJoinStack = elem;
+    //__ctStoreThreadJoinInternal(false, taskId, rdtsc());
+    //__ctQueueBuffer(true);
+}
+
+// join event for parent and thread
+//   queue and do not allocate new buffer for thread
+void __ctOMPThreadJoin(unsigned int parent)
+{
+    // We do this in reverse, so that threadId is local leaving this call
+    unsigned int threadId = __ctPopIdStack(&__ctThreadIdStack);
+    
+    if (threadId != __ctThreadLocalNumber)
+    {
+        __ctOMPTaskJoin();
+    }
+    
+    pcontech_join_stack elem = __ctJoinStack;
+    while (elem != NULL)
+    {
+        pcontech_join_stack t = elem;
+        __ctStoreThreadJoinInternal(false, elem->id, elem->start);
+        elem = elem->next;
+        free(elem);
+        __ctCheckBufferSize();
+    }
+    __ctJoinStack = NULL;
+    
+    __ctStoreThreadJoinInternal(true, parent, rdtsc());
+    __ctQueueBuffer(true);
+    
+    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    
+    __ctThreadLocalNumber = parent;
+    __ctStoreThreadJoinInternal(false, threadId, rdtsc());
+    __ctQueueBuffer(true);  // Yes, this time we will be wasting space
+}
+
+// Push current ctid onto parent stack
+void __ctOMPPushParent()
+{
+    __ctPushIdStack(&__ctParentIdStack, __ctThreadLocalNumber);
+}
+
+// Pop current ctid off of parent stack
+//   N.B. This assumes that the returning context is the same as the caller
+void __ctOMPPopParent()
+{
+    __ctThreadLocalNumber = __ctPopIdStack(&__ctParentIdStack);
+}
+
+void __ctPushIdStack(pcontech_id_stack *head, unsigned int id)
+{
+    pcontech_id_stack elem = malloc(sizeof(contech_id_stack));
+    if (elem == NULL)
+    {
+        fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
+        pthread_exit(NULL);
+    }
+    
+    if (head == NULL) return;
+    
+    elem->id = id;
+    elem->next = *head;
+    *head = elem;
+}
+
+unsigned int __ctPopIdStack(pcontech_id_stack *head)
+{
+    if (head == NULL || *head == NULL) return 0;
+    pcontech_id_stack elem = *head;
+    unsigned int id = elem->id;
+    *head = elem->next;
+    free(elem);
+    return id;
+}
+
+unsigned int __ctPeekIdStack(pcontech_id_stack *head)
+{
+    if (head == NULL || *head == NULL) return 0;
+    pcontech_id_stack elem = *head;
+    unsigned int id = elem->id;
+    return id;
 }

@@ -38,11 +38,46 @@ typedef struct _contech_thread_info {
     struct _contech_thread_info* next;
 } contech_thread_info, *pcontech_thread_info;
 
+typedef struct _contech_id_stack {
+    unsigned int id;
+    struct _contech_id_stack* next;
+} contech_id_stack, *pcontech_id_stack;
+
+typedef struct _contech_join_stack {
+    ct_tsc_t start;
+    unsigned int id;
+    struct _contech_join_stack* next;
+} contech_join_stack, *pcontech_join_stack;
+
 void __ctCleanupThread(void* v);
 void __ctAllocateLocalBuffer();
 unsigned int __ctAllocateCTid();
 
 int __ctThreadCreateActual(pthread_t*, const pthread_attr_t*, void * (*start_routine)(void *), void*);
+
+// Create event for thread and parent
+//   Puts event for parent ctid into a buffer
+//   Allocates a new ctid for thread and assigns it
+//   And thread ctid to thread ctid stack
+void __ctOMPThreadCreate(unsigned int parent);
+// create event for thread and task
+//   if int == 0, pop thread ctid from stack
+//   else create events with task and thread ids
+void __ctOMPTaskCreate(int);
+// join event for thread and task
+//   if thread and local ids differ, then we are in task context
+//   else ignore
+void __ctOMPTaskJoin();
+void __ctOMPThreadJoin(unsigned int parent);
+
+// Push current ctid onto parent stack
+void __ctOMPPushParent();
+// Pop current ctid off of parent stack
+//   N.B. This assumes that the returning context is the same as the caller
+void __ctOMPPopParent();
+void __ctPushIdStack(pcontech_id_stack*, unsigned int);
+unsigned int __ctPopIdStack(pcontech_id_stack*);
+unsigned int __ctPeekIdStack(pcontech_id_stack*);
 
 void __ctQueueBuffer(bool);
 // (contech_id, basic block id, num of ops)

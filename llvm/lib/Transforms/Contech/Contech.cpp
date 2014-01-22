@@ -42,6 +42,7 @@
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/Dominators.h"
 #include <map>
+#include <set>
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -63,9 +64,7 @@ using namespace std;
 #else
     #define debugLog(s)
 #endif
-
-// TODO:
-// Transforms/IPO/zzProfile.cpp: insertBBMap -> id -> string
+//#define SPLIT_DEBUG
 
 map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 cl::opt<string> ContechCFGFilename("ContechCFG", cl::desc("File to write Contech's CFG"), cl::value_desc("filename"));
@@ -75,7 +74,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 20
+#define FUNCTIONS_INSTRUMENT_SIZE 23
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -99,7 +98,10 @@ namespace llvm {
                                            {STORE_AND_LEN("_mutex_unlock_"), SYNC_RELEASE},
                                            {STORE_AND_LEN("pthread_cond_wait"), COND_WAIT},
                                            {STORE_AND_LEN("pthread_cond_signal"), COND_SIGNAL},
-                                           {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL}};
+                                           {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL},
+                                           {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
+                                           {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
+                                           {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER}};
 
     //
     // Contech - First record every load or store in a program
@@ -129,6 +131,15 @@ namespace llvm {
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
         Constant* storeMemWriteMarkFunction;
+
+        Constant* ompThreadCreateFunction;
+        Constant* ompThreadJoinFunction;
+        Constant* ompTaskCreateFunction;
+        Constant* ompTaskJoinFunction;
+        Constant* ompPushParentFunction;
+        Constant* ompPopParentFunction;
+        
+        Constant* ompGetParentFunction;
         
         Constant* pthreadExitFunction;
         GlobalVariable* threadLocalNumber;
@@ -141,20 +152,22 @@ namespace llvm {
         Type* threadArgsTy;  // needed when wrapping pthread_create
         ofstream*     contechCFGFile;
         //fstream*      contechStateFile;
+        std::set<Function*> contechAddedFunctions;
+        std::set<Function*> ompMicroTaskFunctions;
 
         Contech() : ModulePass(ID) {
         }
         
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
-        virtual bool internalRunOnBasicBlock(BasicBlock &B,  int bbid, bool markOnly);
+        virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
         void internalAddAllocate(BasicBlock& B);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
-        void insertBBMap(Module*, const std::vector<BasicBlock*> &bbs);
+        Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
             AU.addRequired<DominatorTree>();
@@ -177,9 +190,11 @@ namespace llvm {
         FunctionType* funVoidVoidTy;
         FunctionType* funVoidI8I64VoidPtrTy;
         FunctionType* funVoidI8Ty;
+        FunctionType* funVoidI32Ty;
         FunctionType* funVoidI8VoidPtrI64Ty;
         FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
+        FunctionType* funI8I32Ty;
 
         LLVMContext &ctx = M.getContext();
         int8Ty = Type::getInt8Ty(ctx);
@@ -210,10 +225,13 @@ namespace llvm {
         checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidVoidTy);
         storeMemReadMarkFunction = M.getOrInsertFunction("__ctStoreMemReadMark", funVoidVoidTy);
         storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
+        ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
+        ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
         
         allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(int32Ty, false));
         getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(int32Ty, false));
         getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(int64Ty, false));
+        ompGetParentFunction = M.getOrInsertFunction("__kmpc_get_parent_taskid", FunctionType::get(int64Ty, false));
         
         Type* argsSSync[] = {voidPtrTy, int32Ty/*type*/, int32Ty/*retVal*/, int64Ty /*ct_tsc_t*/};
         funVoidVoidPtrI32I32I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSSync, 4), false);
@@ -222,10 +240,13 @@ namespace llvm {
         Type* argsTC[] = {int32Ty};
         
         // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
-        FunctionType* funVoidI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsTC, 1), false);
+        funVoidI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsTC, 1), false);
         storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funVoidI32Ty);
         storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
         pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
+        ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
+        ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
+        ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
         
         Type* argsME[] = {int8Ty, int64Ty, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
@@ -235,6 +256,7 @@ namespace llvm {
         Type* argsQB[] = {int8Ty};
         funVoidI8Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsQB, 1), false);
         queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
+        ompTaskJoinFunction = M.getOrInsertFunction("__ctOMPTaskJoin", funVoidVoidTy);
         
         Type* argsSB[] = {int8Ty, voidPtrTy, int64Ty};
         funVoidI8VoidPtrI64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSB, 3), false);
@@ -423,6 +445,17 @@ namespace llvm {
                 }
                 continue;
             }
+            // If this function is one Contech adds for OpenMP
+            // then it can be skipped
+            else if (contechAddedFunctions.find(&*F) != contechAddedFunctions.end())
+            {
+                errs() << "SKIP: " << fmn << "\n";
+                if (fmn == fn)
+                {
+                    free(fn);
+                }
+                continue;
+            }
             
             if (F->size() == 0)
             {
@@ -457,7 +490,7 @@ namespace llvm {
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
                 
-                internalRunOnBasicBlock(pB, bb_count, ContechMarkFrontend);
+                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend);
                 bb_count++;
             }
             
@@ -655,7 +688,7 @@ cleanup:
     //
     // For each basic block
     //
-    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  int bbid, const bool markOnly)
+    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly)
     {
         Instruction* iPt = B.getTerminator();
         std::vector<pllvm_mem_op> opsInBlock;
@@ -1075,6 +1108,107 @@ cleanup:
                     //ci->setCalledFunction(createThreadActualFunction);
                 }
                 break;
+                case (OMP_FORK):
+                {
+                    // Simple case, push and pop the parent id
+                    // And Transform the arguments to the function call
+                    CallInst::Create(ompPushParentFunction, "", ci);
+                    ++I;
+                    CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
+                    I = nPopParent;
+                    
+                    // Add one to the number of arguments
+                    //   TODO: Make this a ConstantExpr
+                    ci->setArgOperand(1, BinaryOperator::Create(Instruction::Add,
+                                                ci->getArgOperand(1),
+                                                ConstantInt::get(int32Ty, 1),
+                                                "", ci));
+                    
+                    
+                    
+                    // Change the function called to a wrapper routine
+                    Value* arg2 = ci->getArgOperand(2);
+                    Function* ompMicroTask = NULL;
+                    ConstantExpr* bci = NULL;
+                    if ((bci = dyn_cast<ConstantExpr>(arg2)) != NULL)
+                    {
+                        if (bci->isCast())
+                        {
+                            ompMicroTask = dyn_cast<Function>(bci->getOperand(0));
+                        }
+                    }
+                    else
+                    {
+                        errs() << "Need new casting route for omp fork call\n";
+                    }
+                    ompMicroTaskFunctions.insert(ompMicroTask);
+                    Function* wrapMicroTask = createMicroTaskWrap(ompMicroTask, M);
+                    contechAddedFunctions.insert(wrapMicroTask);
+                    ci->setArgOperand(2, ConstantExpr::getBitCast(wrapMicroTask, bci->getType()));
+                                                              
+                    //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
+                    
+                    // One cannot simply add an argument to an instruction
+                    // Instead we have to copy the arguments over and create a new instruction
+                    Value** cArg = new Value*[ci->getNumArgOperands() + 1];
+                    for (unsigned int i = 0; i < ci->getNumArgOperands(); i++)
+                    {
+                        cArg[i] = ci->getArgOperand(i);
+                    }
+                    
+                    // Now add a new argument
+                    debugLog("getThreadNumFunction @" << __LINE__);
+                    cArg[ci->getNumArgOperands()] = CallInst::Create(getThreadNumFunction, "", ci);
+                    Value* cArgQB[] = {ConstantInt::get(int8Ty, 1)};
+                    debugLog("queueBufferFunction @" << __LINE__);
+                    CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
+                                                            "", ci);
+                    debugLog("kmpc_fork_call @" << __LINE__);
+                    CallInst* nForkCall = CallInst::Create(ci->getCalledFunction(),
+                                                           ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
+                                                           ci->getName(), ci);
+                    ci->replaceAllUsesWith(nForkCall);
+                    ci->eraseFromParent();
+                    delete [] cArg;
+                }
+                break;
+                case (OMP_FOR_ITER):
+                {
+                    CallInst::Create(ompTaskJoinFunction, "", ci);
+                    ++I;
+                    Value* cArg[] = {ci};
+                    CallInst* nCreate = CallInst::Create(ompTaskCreateFunction, ArrayRef<Value*>(cArg, 1), "", I);
+                    I = nCreate;
+                }
+                break;
+                case (OMP_BARRIER):
+                {
+                    // OpenMP barriers use argument 1 for barrier ID
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    //IntToPtrInst* bci = new IntToPtrInst(ci->getArgOperand(1), voidPtrTy, "locktovoid", I);
+                    IntToPtrInst* bci = new IntToPtrInst(CallInst::Create(ompGetParentFunction, "", I), voidPtrTy, "locktovoid", I);
+                    Value* c1 = ConstantInt::get(int8Ty, 1);
+                    Value* cArgs[] = {c1, bci, nGetTick};
+                    // Record the barrier entry
+                    debugLog("storeBarrierFunction @" << __LINE__);
+                    CallInst* nStoreBarEn = CallInst::Create(storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
+                                                        "", I);
+                    Value* cArg[] = {c1};
+                    debugLog("queueBufferFunction @" << __LINE__);
+                    /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
+                                                        "", I);                   
+                    ++I;
+                    cArgs[0] = ConstantInt::get(int8Ty, 0);
+                    // Record the barrier exit
+                    debugLog("storeBarrierFunction @" << __LINE__);
+                    CallInst* nStoreBarEx = CallInst::Create(storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
+                                                        "", I);
+                    I = nStoreBarEx;
+                    containingEvent = ct_event_barrier;
+                    containQueueBuf = true;
+                    iPt = nStoreBarEn;
+                }
+                break;
                 default:
                     // TODO: Function->isIntrinsic()
                     if (0 == __ctStrCmp(fn, "memcpy"))
@@ -1165,6 +1299,55 @@ cleanup:
         
         return true;
     }
+    
+Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
+{
+    if (ompMicroTask == NULL) {errs() << "Cannot create wrapper from NULL function\n"; return NULL;}
+    FunctionType* baseFunType = ompMicroTask->getFunctionType();
+    if (ompMicroTask->isVarArg()) { errs() << "Cannot create wrapper for varg function\n"; return NULL;}
+    
+    Type** argTy = new Type*[1 + baseFunType->getNumParams()];
+    for (unsigned int i = 0; i < baseFunType->getNumParams(); i++)
+    {
+        argTy[i] = baseFunType->getParamType(i);
+    }
+    argTy[baseFunType->getNumParams()] = int32Ty;
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+                                                 ArrayRef<Type*>(argTy, 1 + baseFunType->getNumParams()),
+                                                 false);
+    
+    Function* extFun = Function::Create(extFunType, 
+                                        ompMicroTask->getLinkage(),
+                                        Twine("__ct", ompMicroTask->getName()),
+                                        &M);
+    
+    BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
+    
+    Function::ArgumentListType& argList = extFun->getArgumentList();
+    unsigned argListSize = argList.size();
+    
+    Value** cArgExt = new Value*[argListSize - 1];
+    auto it = argList.begin();
+    for (unsigned i = 0; i < argListSize - 1; i ++)
+    {
+        cArgExt[i] = it;
+        ++it;
+    }
+    
+    Value* cArg[] = {--(argList.end())};
+    CallInst::Create(ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize - 1), "", soloBlock);
+    CallInst::Create(ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    if (ompMicroTask->getReturnType() != voidTy)
+        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+    else
+        ReturnInst::Create(M.getContext(), soloBlock);
+    
+    delete [] argTy;
+    delete [] cArgExt;
+    
+    return extFun;
+}
     
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
