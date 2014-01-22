@@ -279,6 +279,8 @@ Task* Task::readContechTask(ct_file* in)
     task->bbCount = 0;
     ct_read(&asize, sizeof(uint), in);
     task->a.clear();
+    task->a.reserve(asize);
+    assert(task->a.capacity() >= asize);
     for (uint i = 0; i < asize; i++)
     {
         Action action;
@@ -290,6 +292,7 @@ Task* Task::readContechTask(ct_file* in)
     // Read size and data for s vector
     uint ssize;
     ct_read(&ssize, sizeof(uint), in);
+    task->s.reserve(ssize);
     for (uint i = 0; i < ssize; i++)
     {
         TaskId succ;
@@ -301,6 +304,7 @@ Task* Task::readContechTask(ct_file* in)
     uint psize;
     ct_read(&psize, sizeof(uint), in);
     task->p.clear();
+    task->p.reserve(psize);
     for (uint i = 0; i < psize; i++)
     {
         TaskId pred;
