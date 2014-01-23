@@ -17,7 +17,11 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         #CLANGPP = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/bin/clang++"
         #OPT = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/bin/opt"
         CT_FILE = CONTECH_HOME + "/common/taskLib/ct_file_C.o"
-        LLVMCONTECH = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMContech.so"
+        if os.environ.has_key("CONTECH_LLVM_HOME"):
+            CONTECH_LLVM_HOME = os.environ["CONTECH_LLVM_HOME"]
+            LLVMCONTECH = CONTECH_LLVM_HOME + "/lib/LLVMContech.so"
+        else:
+            LLVMCONTECH = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMContech.so"
         LLVMHAMMER = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMHammer.so"
         #RUNTIME = CONTECH_HOME + "/common/runtime/libct_runtime.a"
         if markOnly:
