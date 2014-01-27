@@ -25,6 +25,8 @@ int main(int argc, char* argv[]);
 void checkContextId(ContextId id);
 void eventDebugPrint(TaskId first, string verb, TaskId second, ct_tsc_t start, ct_tsc_t end);
 
+pct_event getNextContechEvent(ct_file*);
+
 class first_compare
 {
 public:

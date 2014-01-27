@@ -3,6 +3,9 @@
 using namespace std;
 using namespace contech;
 
+unsigned int currentQueuedCount = 0;
+unsigned int maxQueuedCount = 0;
+
 int main(int argc, char* argv[])
 {
     // Open input file
@@ -78,7 +81,7 @@ int main(int argc, char* argv[])
     assert(seenFirstEvent);
 
     // Main loop: Process the events from the file in order
-    while (ct_event* event = createContechEvent(in))
+    while (ct_event* event = getNextContechEvent(in))
     {
         ++eventCount;
 
@@ -387,6 +390,8 @@ int main(int argc, char* argv[])
 
     if (DEBUG) printf("Wrote %llu tasks to file.\n", taskCount);
 
+    printf("Max Queued Event Count: %u\n", maxQueuedCount);
+    
     close_ct_file(out);
     
     return 0;
@@ -397,3 +402,120 @@ void eventDebugPrint(TaskId first, string verb, TaskId second, ct_tsc_t start, c
     cerr << start << " - " << end << ": ";
     cerr << first << " " << verb << " " << second << endl;
 }
+
+unsigned long long ticketNum = 0;
+unsigned long long minQueuedTicket = 0;
+bool resetMinTicket = false;
+map <unsigned int, deque <pct_event> > queuedEvents;
+map <unsigned int, deque <pct_event> >::iterator eventQueueCurrent;
+pct_event getNextContechEvent(ct_file* inFile)
+{
+    bool nextEvent = false;
+    pct_event event = NULL;
+    
+    unsigned long long currMinTicket = ~0;
+    while (!queuedEvents.empty())
+    {
+        if (ticketNum < minQueuedTicket) break;
+        if (eventQueueCurrent->second.empty())
+        {
+            auto t = eventQueueCurrent;
+            ++eventQueueCurrent;
+            queuedEvents.erase(t);
+            if (eventQueueCurrent == queuedEvents.end())
+            {
+                eventQueueCurrent = queuedEvents.begin();
+            }
+            
+            continue;
+        }
+        event = eventQueueCurrent->second.front();
+        //
+        // Currently, only syncs are blocking in the event queues, so any other type of
+        //   event is clear to be returned.  If the event is a sync, then it is only
+        //   clear when it is the next ticket number.
+        //
+        if (event->event_type != ct_event_sync)
+        {
+            eventQueueCurrent->second.pop_front();
+            currentQueuedCount--;
+            return event;
+        }
+        else if (event->sy.ticketNum == ticketNum)
+        {
+            ticketNum++;
+            eventQueueCurrent->second.pop_front();
+            eventQueueCurrent = queuedEvents.begin();
+            currentQueuedCount--;
+            return event;
+        }
+        else
+        {
+            ++eventQueueCurrent;
+            if (event->sy.ticketNum < currMinTicket) currMinTicket = event->sy.ticketNum;
+            if (eventQueueCurrent == queuedEvents.end())
+            {
+                if (resetMinTicket == true)
+                {
+                    resetMinTicket = false;
+                    minQueuedTicket = currMinTicket;
+                }
+                else
+                {
+                    resetMinTicket = true;
+                    minQueuedTicket = 0;
+                }
+                eventQueueCurrent = queuedEvents.begin();
+                break;
+            }
+        }
+    }
+    
+    while (!nextEvent)
+    {
+        event = createContechEvent(inFile);
+        if (event == NULL) return NULL;
+        if (queuedEvents.find(event->contech_id) != queuedEvents.end())
+        {
+            queuedEvents[event->contech_id].push_back(event);
+            currentQueuedCount++;
+            if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
+            continue;
+        }
+        nextEvent = true;
+    }
+    
+    // Leave the switch in case other types need to be checked in the future
+    //   We assume that the compiler can convert this into an if / else
+    switch (event->event_type)
+    {
+        case ct_event_sync:
+        {
+            if (event->sy.ticketNum > ticketNum)
+            {
+                //printf("Delay :%llu %d %d\n", event->sy.ticketNum, event->contech_id, queuedEvents.size());
+                
+                queuedEvents[event->contech_id].push_back(event);
+                eventQueueCurrent = queuedEvents.begin();
+                resetMinTicket = true;
+                minQueuedTicket = 0;
+                currentQueuedCount++;
+                if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
+                // Yes, recursion
+                //   This should only happen a limited number of times
+                //   At most N-1, where N is the number of contexts and the next N-2 events
+                //   are all ticketed events that must be queued.
+                event = getNextContechEvent(inFile);
+            }
+            else {
+                //printf("Ticket:%llu %d\n", event->sy.ticketNum, queuedEvents.size());
+                ticketNum ++;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+            
+    return event;
+}            

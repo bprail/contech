@@ -1,7 +1,7 @@
 #ifndef CT_RUNTIME_H
 #define CT_RUNTIME_H
 
-#include <ct_event_st.h>
+#include "../eventLib/ct_event_st.h"
 //#include "../taskLib/ct_file.h"
 #include <pthread.h>
 #include <zlib.h>
