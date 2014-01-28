@@ -15,6 +15,7 @@ public:
     Task* activeTask();
     Task* createBasicBlockContinuation();
     Task* createContinuation(task_type eventType, ct_tsc_t startTime, ct_tsc_t endTime);
+    bool removeTask(Task*);
 
     // Queue of tasks that are running in this contech but have not been written to file yet. These tasks may have incomplete data.
     // The front of the queue represents more recent tasks.

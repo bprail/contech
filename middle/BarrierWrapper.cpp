@@ -10,6 +10,11 @@ BarrierWrapper::BarrierWrapper()
     exitBarrierTask = NULL;
 }
 
+bool BarrierWrapper::isFinished()
+{
+    return entryCount == exitCount;
+}
+
 Task* BarrierWrapper::onEnter(Task& arrivingTask, ct_tsc_t arrivalTime)
 {
     // If this is the first entry to the barrier, create a new barrier task

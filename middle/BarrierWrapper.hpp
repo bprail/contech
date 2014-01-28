@@ -14,6 +14,7 @@ public:
     BarrierWrapper();
     Task* onEnter(Task& arrivingTask, ct_tsc_t arrivalTime);
     Task* onExit(ct_tsc_t exitTime);
+    bool isFinished();
 private:
     unsigned int entryCount;
     unsigned int exitCount;

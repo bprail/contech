@@ -1,4 +1,6 @@
 #include "middle.hpp"
+#include <sys/timeb.h>
+#include <pthread.h>
 
 using namespace std;
 using namespace contech;
@@ -6,11 +8,36 @@ using namespace contech;
 unsigned int currentQueuedCount = 0;
 unsigned int maxQueuedCount = 0;
 
+bool noMoreTasks = false;
+pthread_mutex_t taskQueueLock;
+pthread_cond_t taskQueueCond;
+deque<Task*>* taskQueue;
+
+void* backgroundTaskWriter(void*);
+
+#define QUEUE_SIGNAL_THRESHOLD 16
+void backgroundQueueTask(Task* t)
+{
+    unsigned int qSize;
+    pthread_mutex_lock(&taskQueueLock);
+    qSize = taskQueue->size();
+    taskQueue->push_back(t);
+    if (qSize == QUEUE_SIGNAL_THRESHOLD) {pthread_cond_signal(&taskQueueCond);}
+    pthread_mutex_unlock(&taskQueueLock);
+}
+
 int main(int argc, char* argv[])
 {
     // Open input file
     // Use command line argument or stdin
     ct_file* in;
+    bool parallelMiddle = true;
+    pthread_t backgroundT;
+    
+    // First attempt middle layer in parallel, if there is an error,
+    //   then restart in serial mode.
+    //   TODO: Implement restart / reset
+reset_middle:
     if (argc > 1)
     {
         //in = fopen(argv[1], "rb");
@@ -38,6 +65,12 @@ int main(int argc, char* argv[])
         out = create_ct_file_from_handle(stdout);
     }
     
+    pthread_mutex_init(&taskQueueLock, NULL);
+    pthread_cond_init(&taskQueueCond, NULL);
+    taskQueue = new deque<Task*>;
+    int r = pthread_create(&backgroundT, NULL, backgroundTaskWriter, &out);
+    if (r != 0) parallelMiddle = false;
+    
     // Print debug statements?
     bool DEBUG = false;
     if (argc > 3)
@@ -62,6 +95,12 @@ int main(int argc, char* argv[])
     // Count the number of events processed
     uint64 eventCount = 0;
 
+    {
+        struct timeb tp;
+        ftime(&tp);
+        printf("MIDDLE_START: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+    }
+    
     // Scan through the file for the first real event
     bool seenFirstEvent = false;
     while (ct_event* event = createContechEvent(in))
@@ -150,6 +189,21 @@ int main(int argc, char* argv[])
         // Basic blocks: Record basic block ID and memOp's
         if (event->event_type == ct_event_basic_block)
         {
+            if (activeContech.activeTask()->getType() != task_type_basic_blocks)
+            {
+                activeContech.createBasicBlockContinuation();
+                
+                Task* t = activeContech.tasks.back();
+                while (t != activeContech.activeTask() &&
+                       t->getType() != task_type_sync &&
+                       t->getType() != task_type_barrier)
+                {
+                    activeContech.tasks.pop_back();
+                    //printf("q - %llx\n", t->getTaskId());
+                    backgroundQueueTask(t);
+                    t = activeContech.tasks.back();
+                }
+            }
             // Record that this task executed this basic block
             activeContech.activeTask()->recordBasicBlockAction(event->bb.basic_block_id);
 
@@ -171,14 +225,24 @@ int main(int argc, char* argv[])
                 TaskId childTaskId(event->tc.other_id, 0);
 
                 // Make a "task create" task
-                Task* taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
+                Task* taskCreate;
+                if (activeContech.activeTask()->getType() != task_type_create)
+                {
+                    //Task* t = activeContech.activeTask();
+                    taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
+                    //backgroundTaskQueue(t);
+                    
+                }
+                else
+                {
+                    taskCreate = activeContech.activeTask();
+                    if (taskCreate->getStartTime() > startTime) taskCreate->setStartTime(startTime);
+                    if (taskCreate->getEndTime() < endTime) taskCreate->setEndTime(endTime);
+                }
 
                 // Assign the new task as a child
                 taskCreate->addSuccessor(childTaskId);
-
-                // Create a continuation
-                activeContech.createBasicBlockContinuation();
-
+                
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "created", childTaskId, startTime, endTime);
             
             // If this context was not already running, then it was just created
@@ -216,13 +280,32 @@ int main(int argc, char* argv[])
             if (ownerList.count(event->sy.sync_addr) > 0)
             {
                 Task* owner = ownerList[event->sy.sync_addr];
+                ContextId cid = owner->getContextId();
                 owner->addSuccessor(sync->getTaskId());
                 sync->addPredecessor(owner->getTaskId());
+                
+                // Owner can now be background queued
+                bool wasRem = context[cid].removeTask(owner);
+                assert(wasRem == true);
+                backgroundQueueTask(owner);
+                
+                Task* t = context[cid].tasks.back();
+                while (t != context[cid].activeTask() &&
+                       t->getType() != task_type_sync &&
+                       t->getType() != task_type_barrier)
+                {
+                    context[cid].tasks.pop_back();
+                    //printf("q - %llx\n", t->getTaskId());
+                    backgroundQueueTask(t);
+                    t = context[cid].tasks.back();
+                }
             }
 
             // Make the sync task the new owner of the sync primitive
-            if (event->sy.sync_type != ct_cond_wait)
+            if (event->sy.sync_type != ct_cond_wait) 
+            {
                 ownerList[event->sy.sync_addr] = sync;
+            }
                 
             if (event->sy.sync_type == ct_sync_release ||
                 event->sy.sync_type == ct_sync_acquire)
@@ -243,26 +326,35 @@ int main(int argc, char* argv[])
             Task& otherTask = *context[event->tj.other_id].activeTask();
 
             // I exited
-            if (event->tj.isExit){
+            if (event->tj.isExit)
+            {
                 activeContech.activeTask()->setEndTime(startTime);
                 activeContech.endTime = startTime;
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "exited", otherTask.getTaskId(), startTime, endTime);
 
             // I joined with another task
-            } else {
+            } 
+            else 
+            {
                 // Create a join task
-                Task* join = activeContech.createContinuation(task_type_join, startTime, endTime);
+                Task* taskJoin;
+                if (activeContech.activeTask()->getType() != task_type_join)
+                {
+                    taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                }
+                else
+                {
+                    taskJoin = activeContech.activeTask();
+                    if (taskJoin->getStartTime() > startTime) taskJoin->setStartTime(startTime);
+                    if (taskJoin->getEndTime() < endTime) taskJoin->setEndTime(endTime);
+                }
                 // Set the other task's continuation to the join
-                otherTask.addSuccessor(join->getTaskId());
-                join->addPredecessor(otherTask.getTaskId());
+                otherTask.addSuccessor(taskJoin->getTaskId());
+                taskJoin->addPredecessor(otherTask.getTaskId());
                 // Front end guarantees that we will see the other task exit before we see the join
                 assert(context[event->tj.other_id].endTime != 0);
                 // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
-                join->setStartTime(max(context[event->tj.other_id].endTime, startTime));
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask.getTaskId(), startTime, endTime);
-
-                //Create a continuation
-                activeContech.createBasicBlockContinuation();
             }
         }
 
@@ -309,6 +401,25 @@ int main(int argc, char* argv[])
                 continuation->setStartTime(endTime);
                 barrierTask->addSuccessor(continuation->getTaskId());
                 continuation->addPredecessor(barrierTask->getTaskId());
+                
+                if (barrierList[event->bar.sync_addr].isFinished())
+                {
+                    ContextId cid = barrierTask->getContextId();
+                    assert(context[cid].removeTask(barrierTask));
+                    barrierList.erase(event->bar.sync_addr);
+                    backgroundQueueTask(barrierTask);
+                    
+                    Task* t = context[cid].tasks.back();
+                    while (t != context[cid].activeTask() &&
+                           t->getType() != task_type_sync &&
+                           t->getType() != task_type_barrier)
+                    {
+                        context[cid].tasks.pop_back();
+                        //printf("q - %llx\n", t->getTaskId());
+                        backgroundQueueTask(t);
+                        t = context[cid].tasks.back();
+                    }
+                }
             }
         }
 
@@ -334,63 +445,99 @@ int main(int argc, char* argv[])
     // Write out all tasks that are ready to be written
     // TODO Write out tasks as soon as they are ready and remove from the list
     
-    // Put all the tasks in a map so we can look them up by ID
-    map<TaskId, pair<Task*, int> > tasks;
-    uint64 taskCount = 0;
-    for (auto& p : context)
+    if (parallelMiddle == false)
     {
-        Context& c = p.second;
-        for (Task* t : c.tasks)
+        
+        // Put all the tasks in a map so we can look them up by ID
+        map<TaskId, pair<Task*, int> > tasks;
+        uint64 taskCount = 0;
+        for (auto& p : context)
         {
-            tasks[t->getTaskId()] = make_pair(t, t->getPredecessorTasks().size());
-            taskCount += 1;
-        }
-    }
-
-    // Write out all tasks in breadth-first order, starting with task 0
-    priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
-    workList.push(make_pair(tasks[0].first->getStartTime(), 0));
-    uint64 bytesWritten = 0;
-    while (!workList.empty())
-    {
-        TaskId id = workList.top().second;
-        Task* t = tasks[id].first;
-        workList.pop();
-        // Task will be null if it has already been handled
-        if (t != NULL)
-        {
-            // Have all my predecessors have been written out?
-            bool ready = true;
-
-            if (!ready)
+            Context& c = p.second;
+            for (Task* t : c.tasks)
             {
-                // Push to the back of the list
-                assert(0);
+                tasks[t->getTaskId()] = make_pair(t, t->getPredecessorTasks().size());
+                taskCount += 1;
             }
-            else
+        }
+
+        {
+            struct timeb tp;
+            ftime(&tp);
+            printf("MIDDLE_WRITE: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+        }
+        
+        // Write out all tasks in breadth-first order, starting with task 0
+        priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
+        workList.push(make_pair(tasks[0].first->getStartTime(), 0));
+        uint64 bytesWritten = 0;
+        while (!workList.empty())
+        {
+            TaskId id = workList.top().second;
+            Task* t = tasks[id].first;
+            workList.pop();
+            // Task will be null if it has already been handled
+            if (t != NULL)
             {
-                // Write out the task
-                t->setFileOffset(bytesWritten);
-                bytesWritten += Task::writeContechTask(*t, out);
-                
-                // Add successors to the work list
-                for (TaskId succ : t->getSuccessorTasks())
+                // Have all my predecessors have been written out?
+                bool ready = true;
+
+                if (!ready)
                 {
-                    tasks[succ].second --;
-                    if (tasks[succ].second == 0)
-                        workList.push(make_pair(tasks[succ].first->getStartTime(), succ));
+                    // Push to the back of the list
+                    assert(0);
                 }
-                
-                // Delete the task
-                delete t;
-                tasks[id].first = NULL;
+                else
+                {
+                    // Write out the task
+                    t->setFileOffset(bytesWritten);
+                    bytesWritten += Task::writeContechTask(*t, out);
+                    
+                    // Add successors to the work list
+                    for (TaskId succ : t->getSuccessorTasks())
+                    {
+                        tasks[succ].second --;
+                        if (tasks[succ].second == 0)
+                            workList.push(make_pair(tasks[succ].first->getStartTime(), succ));
+                    }
+                    
+                    // Delete the task
+                    delete t;
+                    tasks[id].first = NULL;
+                }
             }
         }
-    }
 
-    if (DEBUG) printf("Wrote %llu tasks to file.\n", taskCount);
+        if (DEBUG) printf("Wrote %llu tasks to file.\n", taskCount);
+    }
+    else
+    {
+        char* d = NULL;
+        
+        for (auto& p : context)
+        {
+            Context& c = p.second;
+            for (Task* t : c.tasks)
+            {
+                backgroundQueueTask(t);
+            }
+        }
+        
+        pthread_mutex_lock(&taskQueueLock);
+        noMoreTasks = true;
+        pthread_cond_signal(&taskQueueCond);
+        pthread_mutex_unlock(&taskQueueLock);
+        
+        pthread_join(backgroundT, (void**) &d);
+    }
 
     printf("Max Queued Event Count: %u\n", maxQueuedCount);
+    
+    {
+        struct timeb tp;
+        ftime(&tp);
+        printf("MIDDLE_END: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+    }
     
     close_ct_file(out);
     
@@ -516,6 +663,172 @@ pct_event getNextContechEvent(ct_file* inFile)
         default:
             break;
     }
-            
+
     return event;
-}            
+}
+
+void* backgroundTaskWriter(void* v)
+{
+    ct_file* out = *(ct_file**)v;
+
+    // Put all the tasks in a map so we can look them up by ID
+    map<TaskId, pair<Task*, int> > tasks;
+    map<TaskId, int> predDelayCount;
+    uint64 taskCount = 0, taskWriteCount = 0;
+    // Write out all tasks in breadth-first order, starting with task 0
+    priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
+    uint64 bytesWritten = 0;
+    bool firstTime = true;
+    
+    while (!noMoreTasks ||
+           (!workList.empty() || (taskQueue != NULL && !taskQueue->empty())))
+    {
+        deque<Task*>* taskChunk = NULL;
+        
+        pthread_mutex_lock(&taskQueueLock);
+        while (!noMoreTasks && taskQueue->empty())
+        {
+            pthread_cond_wait(&taskQueueCond, &taskQueueLock);
+        }
+        if (!noMoreTasks)
+        {
+            //printf("consume\n");
+            taskChunk = taskQueue;
+            taskQueue = new deque<Task*>;
+        }
+        else
+        {
+            taskChunk = taskQueue;
+            taskQueue = NULL;
+        }
+        pthread_mutex_unlock(&taskQueueLock);
+    
+        if (taskChunk != NULL)
+        {
+            for (Task* t : *taskChunk)
+            {
+                TaskId tid = t->getTaskId();
+                int adjust = 0;
+                //printf("d - %llx\n", tid);
+                
+                auto it = predDelayCount.find(tid);
+                if (it != predDelayCount.end())
+                {
+                    adjust = it->second;
+                    predDelayCount.erase(it);
+                }
+                adjust = t->getPredecessorTasks().size() - adjust;
+                
+                if (adjust == 0)
+                {
+                    //printf("ADJ - %llx\n", tid);
+                    workList.push(make_pair(t->getStartTime(), tid));
+                    tasks[tid] = make_pair(t, 0);
+                    firstTime = false;
+                }
+                else
+                {
+                    //printf("TK%d - %llx (%d)\n", t->getType(), tid, adjust);
+                    tasks[tid] = make_pair(t, adjust);
+                }
+                taskCount += 1;
+                //assert(taskCount < 200);
+            }
+            delete taskChunk;
+        }
+        
+        if (firstTime)
+        {
+            for (auto t : tasks)
+            {
+                printf("%llx\t", t.second.first->getTaskId());
+            }
+            printf("\n");
+            //if (tasks.find(0) == tasks.end()) continue;
+            workList.push(make_pair(tasks[0].first->getStartTime(), 0));
+            firstTime = false;
+        }
+        
+        while ((noMoreTasks && !workList.empty()) ||
+               (!noMoreTasks && workList.size() > 100))
+        {
+            TaskId id = workList.top().second;
+            Task* t = tasks[id].first;
+            workList.pop();
+            // Task will be null if it has already been handled
+            if (t != NULL)
+            {
+                // Have all my predecessors have been written out?
+                bool ready = true;
+
+                if (!ready)
+                {
+                    break;
+                }
+                else
+                {
+                    #if 0
+                    bool succWait = false;
+                    for (TaskId succ : t->getSuccessorTasks())
+                    {
+                        if (tasks.find(succ) == tasks.end()) 
+                        {
+                            succWait = true; 
+                            workList.push(make_pair(tasks[id].first->getStartTime(), id));
+                            break;
+                        }
+                    }
+                    
+                    
+                    // Not all successors have been relased from the task creation thread
+                    //   Wait for them
+                    if (succWait) break;
+                    #endif
+                
+                    // Write out the task
+                    t->setFileOffset(bytesWritten);
+                    bytesWritten += Task::writeContechTask(*t, out);
+                    taskWriteCount += 1;
+                    
+                    // Add successors to the work list
+                    //printf(" -- %llx\n", id);
+                    for (TaskId succ : t->getSuccessorTasks())
+                    {
+                        auto it = tasks.find(succ);
+                        if (it == tasks.end())
+                        {
+                            predDelayCount[succ] ++;
+                            //printf("pdc - %llx\n", succ);
+                            continue;
+                        }
+                        
+                        it->second.second --;
+                        //printf("succ(%llx) - %d (%d)\n", succ, it->second.second, it->second.first->getPredecessorTasks().size());
+                        if (it->second.second == 0)
+                            workList.push(make_pair(it->second.first->getStartTime(), succ));
+                    }
+                    
+                    // Delete the task
+                    delete t;
+                    tasks[id].first = NULL;
+                    tasks.erase(id);
+                }
+            }
+        }
+    }
+    
+    printf("Tasks Received: %ld\n", taskCount);
+    printf("Tasks Written: %ld\n", taskWriteCount);
+    if (taskQueue != NULL)
+        printf("Tasks Left: %ld\n", taskQueue->size());
+    printf("Tasks Remaining: %u\n", workList.size());
+    
+    auto it = tasks.begin();
+    if (it != tasks.end())
+    {
+        cout << it->second.first->toString();
+        printf("%d - %d\n", it->first, it->second.second);
+    }
+        
+    return NULL;
+}

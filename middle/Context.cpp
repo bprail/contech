@@ -5,6 +5,17 @@ using namespace contech;
 // Returns the currently active task
 Task* Context::activeTask() { return this->tasks.front(); }
 
+bool Context::removeTask(Task* t)
+{
+    // Probably better to use rbegin, but erase only takes iterators and not reverse iterators
+    for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
+    {
+        if (*it == t) {tasks.erase(it); return true;}
+    }
+    
+    return false;
+}
+
 Task* Context::createBasicBlockContinuation()
 {
     Task* continuation = new Task(activeTask()->getTaskId().getNext(), task_type_basic_blocks);
