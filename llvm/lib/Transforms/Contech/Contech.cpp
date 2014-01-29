@@ -953,7 +953,7 @@ cleanup:
                     CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", ++I);
                     I = nStoreSync;
-                    if (ContechMinimal == false)
+                    if (false /*ContechMinimal == false*/)
                     {
                         cArg[0] = ConstantInt::get(int8Ty, 1);
                         debugLog("queueBufferFunction @" << __LINE__);
