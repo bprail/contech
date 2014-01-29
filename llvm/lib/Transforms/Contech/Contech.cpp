@@ -1080,6 +1080,11 @@ cleanup:
                     //Value* vPtr = new BitCastInst(ci->getOperand(0), voidPtrTy, "hideInPtr", ci);
                     //errs() << *ci->getOperand(0) << "\t" << *ci->getOperand(0)->getType() << "\n";
                     //errs() << *storeThreadJoinFunction->getType() << "\n";
+                    Value* c1 = ConstantInt::get(int8Ty, 1);
+                    Value* cArgQB[] = {c1};
+                    debugLog("queueBufferFunction @" << __LINE__);
+                    /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
+                                                        "", ci);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     Value* cArg[] = {ci->getOperand(0), nGetTick};
                     debugLog("storeThreadJoinFunction @" << __LINE__);
@@ -1089,6 +1094,7 @@ cleanup:
                     containingEvent = ct_event_task_join;
                     I = nStoreJ;
                     iPt = nGetTick;
+                    containQueueBuf = true;
                 }
                 break;
                 //int pthread_create(pthread_t * thread, const pthread_attr_t * attr,
