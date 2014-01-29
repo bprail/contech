@@ -5,6 +5,23 @@ using namespace contech;
 // Returns the currently active task
 Task* Context::activeTask() { return this->tasks.front(); }
 
+//
+// Which of this context's tasks created cid
+//
+TaskId Context::getCreator(ContextId cid)
+{
+    TaskId tid;
+    auto it = creatorMap.find(cid);
+    assert(it != creatorMap.end());
+    tid = it->second;
+    creatorMap.erase(it);
+    
+    return tid;
+}
+
+//
+// Remove the specified task from the list.
+//
 bool Context::removeTask(Task* t)
 {
     // Probably better to use rbegin, but erase only takes iterators and not reverse iterators
