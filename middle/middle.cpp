@@ -15,6 +15,13 @@ deque<Task*>* taskQueue;
 
 void* backgroundTaskWriter(void*);
 
+//
+// Queue a task for the background thread to write out
+//
+//   This releases ownership of the task.  It is expected that there should
+//   be no further changes to a task so queued.  It may be deleted at any time
+//   by the background thread.
+//
 #define QUEUE_SIGNAL_THRESHOLD 16
 void backgroundQueueTask(Task* t)
 {
@@ -24,6 +31,29 @@ void backgroundQueueTask(Task* t)
     taskQueue->push_back(t);
     if (qSize == QUEUE_SIGNAL_THRESHOLD) {pthread_cond_signal(&taskQueueCond);}
     pthread_mutex_unlock(&taskQueueLock);
+}
+
+//
+// Debug routine
+//
+//   This routine has no call, instead it is invoked in the debugger to display
+//   the tasks currently queued at a context.  And to display the details of the
+//   oldest task.
+//
+void displayContextTasks(map<ContextId, Context> &context, int id)
+{
+    Context tgt = context[id];
+    Task* last;
+    
+    for (Task* t : tgt.tasks)
+    {
+        last = t;
+        printf("%llx  ", t->getTaskId());
+    }
+    if (last != NULL)
+    {
+        cout << last->toString() << endl;
+    }
 }
 
 int main(int argc, char* argv[])
@@ -36,7 +66,7 @@ int main(int argc, char* argv[])
     
     // First attempt middle layer in parallel, if there is an error,
     //   then restart in serial mode.
-    //   TODO: Implement restart / reset
+    //   TODO: Implement restart / reset, or a flag for running serially.
 reset_middle:
     if (argc > 1)
     {
@@ -178,6 +208,7 @@ reset_middle:
                 hasTime = false;
                 break;
         }
+        
         // Apply timestamp offsets
         if (hasTime)
         {
@@ -189,6 +220,10 @@ reset_middle:
         // Basic blocks: Record basic block ID and memOp's
         if (event->event_type == ct_event_basic_block)
         {
+            //
+            // If transitioning into a basic block task, perhaps the older tasks
+            //   are complete and can be queued to the background thread.
+            //
             if (activeContech.activeTask()->getType() != task_type_basic_blocks)
             {
                 activeContech.createBasicBlockContinuation();
@@ -199,11 +234,11 @@ reset_middle:
                        t->getType() != task_type_barrier)
                 {
                     activeContech.tasks.pop_back();
-                    //printf("q - %llx\n", t->getTaskId());
                     backgroundQueueTask(t);
                     t = activeContech.tasks.back();
                 }
             }
+            
             // Record that this task executed this basic block
             activeContech.activeTask()->recordBasicBlockAction(event->bb.basic_block_id);
 
@@ -225,13 +260,11 @@ reset_middle:
                 TaskId childTaskId(event->tc.other_id, 0);
 
                 // Make a "task create" task
+                //   N.B. This create task may be a combination of several create events.
                 Task* taskCreate;
                 if (activeContech.activeTask()->getType() != task_type_create)
                 {
-                    //Task* t = activeContech.activeTask();
                     taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
-                    //backgroundTaskQueue(t);
-                    
                 }
                 else
                 {
@@ -242,6 +275,9 @@ reset_middle:
 
                 // Assign the new task as a child
                 taskCreate->addSuccessor(childTaskId);
+                
+                // Add the information so that the created task knows its creator.
+                activeContech.creatorMap[event->tc.other_id] = taskCreate->getTaskId();
                 
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "created", childTaskId, startTime, endTime);
             
@@ -260,8 +296,8 @@ reset_middle:
                 activeContech.activeTask()->setStartTime(endTime);
 
                 // Record parent of this task
-                activeContech.activeTask()->addPredecessor(event->tc.other_id);
-
+                activeContech.activeTask()->addPredecessor(context[event->tc.other_id].getCreator(event->contech_id));
+                
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "started by", TaskId(event->tc.other_id,0), startTime, endTime);
                 if (DEBUG) cerr << activeContech.activeTask()->getContextId() << ": skew = " << event->tc.approx_skew << endl;
             }
@@ -276,15 +312,21 @@ reset_middle:
             // Record the address in this sync task as an action
             activeContech.activeTask()->recordMemOpAction(true, 8, event->sy.sync_addr);
 
-            // Make the sync dependent on whoever accessed the sync primitive last
-            if (ownerList.count(event->sy.sync_addr) > 0)
+            // Create a continuation
+            activeContech.createBasicBlockContinuation();
+            
+            // Make the sync dependent on whoever accessed the sync primitive last         
+            auto it = ownerList.find(event->sy.sync_addr);
+            if (it != ownerList.end() &&
+                event->sy.sync_type != ct_cond_wait)
             {
-                Task* owner = ownerList[event->sy.sync_addr];
+                Task* owner = it->second;
                 ContextId cid = owner->getContextId();
                 owner->addSuccessor(sync->getTaskId());
                 sync->addPredecessor(owner->getTaskId());
                 
                 // Owner can now be background queued
+                //  N.B. owner cannot be the active context
                 bool wasRem = context[cid].removeTask(owner);
                 assert(wasRem == true);
                 backgroundQueueTask(owner);
@@ -295,7 +337,6 @@ reset_middle:
                        t->getType() != task_type_barrier)
                 {
                     context[cid].tasks.pop_back();
-                    //printf("q - %llx\n", t->getTaskId());
                     backgroundQueueTask(t);
                     t = context[cid].tasks.back();
                 }
@@ -315,9 +356,6 @@ reset_middle:
                 sync->setSyncType(sync_type_condition_variable);
             else
                 sync->setSyncType(sync_type_user_defined);
-
-            // Create a continuation
-            activeContech.createBasicBlockContinuation();
         }
 
         // Task joins
@@ -373,7 +411,8 @@ reset_middle:
             else
             {
                 // Record my exit from the barrier, and get the associated barrier task
-                Task* barrierTask = barrierList[event->bar.sync_addr].onExit(endTime);
+                bool isFinished = false;
+                Task* barrierTask = barrierList[event->bar.sync_addr].onExit(endTime, &isFinished);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
 
                 // If I own the barrier, my continuation's ID has to come after it. Otherwise just use the next ID.
@@ -402,11 +441,24 @@ reset_middle:
                 barrierTask->addSuccessor(continuation->getTaskId());
                 continuation->addPredecessor(barrierTask->getTaskId());
                 
-                if (barrierList[event->bar.sync_addr].isFinished())
+                // The last of the contexts has exited the barrier, so the barrier is complete
+                if (isFinished)
                 {
                     ContextId cid = barrierTask->getContextId();
-                    assert(context[cid].removeTask(barrierTask));
-                    barrierList.erase(event->bar.sync_addr);
+                    bool remove = context[cid].removeTask(barrierTask);
+                    assert(remove);
+                    /*if (!remove){
+                        for (auto it = context.begin(), et = context.end(); it != et; ++it)
+                        {
+                            auto c = it->second;
+                            if (c.removeTask(barrierTask))
+                            {
+                                printf("%d != %d\n", cid, c.activeTask()->getContextId());
+                                exit(0);
+                            }
+                        }
+                        assert(0);
+                    }*/
                     backgroundQueueTask(barrierTask);
                     
                     Task* t = context[cid].tasks.back();
@@ -415,10 +467,10 @@ reset_middle:
                            t->getType() != task_type_barrier)
                     {
                         context[cid].tasks.pop_back();
-                        //printf("q - %llx\n", t->getTaskId());
                         backgroundQueueTask(t);
                         t = context[cid].tasks.back();
                     }
+                    
                 }
             }
         }
@@ -443,7 +495,6 @@ reset_middle:
 
     if (DEBUG) printf("Processed %llu events.\n", eventCount);
     // Write out all tasks that are ready to be written
-    // TODO Write out tasks as soon as they are ready and remove from the list
     
     if (parallelMiddle == false)
     {
@@ -560,15 +611,22 @@ pct_event getNextContechEvent(ct_file* inFile)
     bool nextEvent = false;
     pct_event event = NULL;
     
+    //
+    // This loop checks if any of the queues of events can provide the next event.
+    //   Each queue is either blocked on a ticketed event, or is unblocked.
+    //
     unsigned long long currMinTicket = ~0;
     while (!queuedEvents.empty())
     {
+        // Fast check whether a queued event may be removed.
         if (ticketNum < minQueuedTicket) break;
         if (eventQueueCurrent->second.empty())
         {
             auto t = eventQueueCurrent;
             ++eventQueueCurrent;
             queuedEvents.erase(t);
+            // While this loops, the main loop guarentees that there will be at least one
+            //   queue with events.
             if (eventQueueCurrent == queuedEvents.end())
             {
                 eventQueueCurrent = queuedEvents.begin();
@@ -590,6 +648,7 @@ pct_event getNextContechEvent(ct_file* inFile)
         }
         else if (event->sy.ticketNum == ticketNum)
         {
+            // This is the next ticket
             ticketNum++;
             eventQueueCurrent->second.pop_front();
             eventQueueCurrent = queuedEvents.begin();
@@ -598,10 +657,17 @@ pct_event getNextContechEvent(ct_file* inFile)
         }
         else
         {
+            // No valid events at this queue position
             ++eventQueueCurrent;
+            
+            // Is this the lowest ticket we've seen so far
             if (event->sy.ticketNum < currMinTicket) currMinTicket = event->sy.ticketNum;
+            
+            // End of the queue, next request should start over
             if (eventQueueCurrent == queuedEvents.end())
             {
+                // If true, then this was likely a single loop through each queue
+                //   to find the new minimum ticket number.
                 if (resetMinTicket == true)
                 {
                     resetMinTicket = false;
@@ -618,6 +684,11 @@ pct_event getNextContechEvent(ct_file* inFile)
         }
     }
     
+    //
+    // Get events from the file
+    //
+    //   Look for one that is not blocked.
+    //
     while (!nextEvent)
     {
         event = createContechEvent(inFile);
@@ -667,6 +738,49 @@ pct_event getNextContechEvent(ct_file* inFile)
     return event;
 }
 
+//
+// Support routine to determine what is the blocking task
+// 
+//   Provided for being invoked by the debugger.  It scans the
+//   blocked tasks in the background writing thread and finds
+//   the oldest task.  And then reports what tasks have not been
+//   sent to the background, such that this task cannot yet be written.
+//
+void debugBackground(map<TaskId, pair<Task*, int> > &tasks)
+{
+    Task* minT = NULL;
+    ct_tsc_t minTsc = ~0;
+    int predWait = 0;
+    
+    for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
+    {
+        if (it->second.first->getStartTime() < minTsc)
+        {
+            minTsc = it->second.first->getStartTime();
+            minT = it->second.first;
+            predWait = it->second.second;
+        }
+    }
+    
+    if (minT != NULL)
+    {
+        cout << "Minimum Task is: " << endl;
+        cout << minT->toString() << endl;
+        printf("Waiting on: %d tasks\n", predWait);
+        for (TaskId p : minT->getPredecessorTasks())
+        {
+            if (tasks.find(p) == tasks.end())
+            {
+                printf("Predecessor: %llx - Not Present\n", p);
+            }
+            else
+            {
+                printf("Predecessor: %llx - Present\n", p);
+            }
+        }
+    }
+}
+
 void* backgroundTaskWriter(void* v)
 {
     ct_file* out = *(ct_file**)v;
@@ -675,16 +789,28 @@ void* backgroundTaskWriter(void* v)
     map<TaskId, pair<Task*, int> > tasks;
     map<TaskId, int> predDelayCount;
     uint64 taskCount = 0, taskWriteCount = 0;
+    
     // Write out all tasks in breadth-first order, starting with task 0
     priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
     uint64 bytesWritten = 0;
     bool firstTime = true;
+    struct timeb timest;
+    unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
     
+    //
+    // noMoreTasks is a flag from the foreground thread
+    //   And if there are no more, then there is the worklist of ready tasks
+    //   And finally, there could still be tasks queued from the foreground
+    // When all of those are clear, everything has been written.
+    //
     while (!noMoreTasks ||
            (!workList.empty() || (taskQueue != NULL && !taskQueue->empty())))
     {
         deque<Task*>* taskChunk = NULL;
         
+        //
+        // Get tasks from the foreground
+        //
         pthread_mutex_lock(&taskQueueLock);
         while (!noMoreTasks && taskQueue->empty())
         {
@@ -692,7 +818,6 @@ void* backgroundTaskWriter(void* v)
         }
         if (!noMoreTasks)
         {
-            //printf("consume\n");
             taskChunk = taskQueue;
             taskQueue = new deque<Task*>;
         }
@@ -703,58 +828,75 @@ void* backgroundTaskWriter(void* v)
         }
         pthread_mutex_unlock(&taskQueueLock);
     
+        // Have a chunk of tasks from the foreground
         if (taskChunk != NULL)
         {
             for (Task* t : *taskChunk)
             {
                 TaskId tid = t->getTaskId();
                 int adjust = 0;
-                //printf("d - %llx\n", tid);
                 
+                // The predecessor of this task may have already been written out.
+                //   If so, then this task does not have to wait on it.
                 auto it = predDelayCount.find(tid);
                 if (it != predDelayCount.end())
                 {
                     adjust = it->second;
                     predDelayCount.erase(it);
                 }
+                
+                // Adjust the count of tasks preceding this one by already written tasks
                 adjust = t->getPredecessorTasks().size() - adjust;
                 
+                // If none, then this task is ready to be written out.
                 if (adjust == 0)
                 {
-                    //printf("ADJ - %llx\n", tid);
                     workList.push(make_pair(t->getStartTime(), tid));
                     tasks[tid] = make_pair(t, 0);
                     firstTime = false;
+                    ftime(&timest);
+                    sec = timest.time;
+                    msec = timest.millitm;
                 }
                 else
                 {
-                    //printf("TK%d - %llx (%d)\n", t->getType(), tid, adjust);
                     tasks[tid] = make_pair(t, adjust);
                 }
                 taskCount += 1;
-                //assert(taskCount < 200);
             }
             delete taskChunk;
         }
         
+        //
+        // If this is the first time, make sure that we received task 0:0 
+        //
         if (firstTime)
         {
-            for (auto t : tasks)
-            {
-                printf("%llx\t", t.second.first->getTaskId());
-            }
-            printf("\n");
-            //if (tasks.find(0) == tasks.end()) continue;
+            if (tasks.find(0) == tasks.end()) continue;
             workList.push(make_pair(tasks[0].first->getStartTime(), 0));
             firstTime = false;
         }
         
-        while ((noMoreTasks && !workList.empty()) ||
-               (!noMoreTasks && workList.size() > 100))
+        // This is for debugging
+        bool printHead = false;
+        ftime(&timest);
+        if ((unsigned int)timest.time > (sec + 1)) printHead = true;
+        if (taskWriteCount > taskLastWriteCount)
+        {
+            sec = timest.time;
+            msec = timest.millitm;
+        }
+        
+        //
+        // It would be better if we could ensure the broadest set of tasks in the worklist,
+        //   so that the oldest BFS task is written.
+        //
+        while (!workList.empty())
         {
             TaskId id = workList.top().second;
             Task* t = tasks[id].first;
             workList.pop();
+            
             // Task will be null if it has already been handled
             if (t != NULL)
             {
@@ -767,43 +909,25 @@ void* backgroundTaskWriter(void* v)
                 }
                 else
                 {
-                    #if 0
-                    bool succWait = false;
-                    for (TaskId succ : t->getSuccessorTasks())
-                    {
-                        if (tasks.find(succ) == tasks.end()) 
-                        {
-                            succWait = true; 
-                            workList.push(make_pair(tasks[id].first->getStartTime(), id));
-                            break;
-                        }
-                    }
-                    
-                    
-                    // Not all successors have been relased from the task creation thread
-                    //   Wait for them
-                    if (succWait) break;
-                    #endif
-                
                     // Write out the task
                     t->setFileOffset(bytesWritten);
                     bytesWritten += Task::writeContechTask(*t, out);
                     taskWriteCount += 1;
                     
                     // Add successors to the work list
-                    //printf(" -- %llx\n", id);
                     for (TaskId succ : t->getSuccessorTasks())
                     {
                         auto it = tasks.find(succ);
+                        
+                        // If the successor has not been received, then store that one its
+                        //   predecessors has already been written
                         if (it == tasks.end())
                         {
                             predDelayCount[succ] ++;
-                            //printf("pdc - %llx\n", succ);
                             continue;
                         }
                         
                         it->second.second --;
-                        //printf("succ(%llx) - %d (%d)\n", succ, it->second.second, it->second.first->getPredecessorTasks().size());
                         if (it->second.second == 0)
                             workList.push(make_pair(it->second.first->getStartTime(), succ));
                     }
@@ -815,8 +939,14 @@ void* backgroundTaskWriter(void* v)
                 }
             }
         }
+        taskLastWriteCount = taskWriteCount;
     }
     
+    //
+    // Stats for the background thread.
+    //  TaskCount should equal taskWriteCount
+    //  And there should be no tasks remaining.
+    //
     printf("Tasks Received: %ld\n", taskCount);
     printf("Tasks Written: %ld\n", taskWriteCount);
     if (taskQueue != NULL)
