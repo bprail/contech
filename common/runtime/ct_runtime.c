@@ -37,6 +37,7 @@ __thread pcontech_id_stack __ctParentIdStack = NULL;
 __thread pcontech_id_stack __ctThreadIdStack = NULL;
 __thread pcontech_join_stack __ctJoinStack = NULL;
 
+static unsigned long long __ctGlobalOrderNumber = 0;
 static unsigned int __ctThreadGlobalNumber = 0;
 static unsigned int __ctThreadExitNumber = 0;
 static unsigned int __ctMaxBuffers = -1;
@@ -839,6 +840,7 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     
     unsigned int p = __ctThreadLocalBuffer->pos;
     ct_tsc_t t = rdtsc();
+    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
     
     // Unix 0 is successful
     if (success != 0) return;
@@ -849,8 +851,9 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     *((int*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(int)]) = (ct_addr_t) addr;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int);
+    __ctThreadLocalBuffer->pos = p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int) + sizeof(unsigned long long);
     #endif
 }
 
@@ -862,6 +865,7 @@ unsigned int __ctStoreSyncPos(void* addr, int syncType, int success, ct_tsc_t st
     
     unsigned int p = pos;
     ct_tsc_t t = rdtsc();
+    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
     
     // Unix 0 is successful
     if (success != 0) return p;
@@ -872,8 +876,9 @@ unsigned int __ctStoreSyncPos(void* addr, int syncType, int success, ct_tsc_t st
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     *((int*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(int)]) = (ct_addr_t) addr;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
     #ifdef POS_USED
-    return p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int);
+    return p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int) + sizeof(unsigned long long);
     #else
     return 0;
     #endif

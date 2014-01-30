@@ -12,7 +12,7 @@
 //#endif
 //#endif
 
-#define CONTECH_EVENT_VERSION 2
+#define CONTECH_EVENT_VERSION 3
 
 typedef unsigned long long ct_tsc_t;
 typedef unsigned long long ct_addr_t;
@@ -82,6 +82,7 @@ typedef struct _ct_sync
     ct_tsc_t start_time;
     ct_tsc_t end_time;
     ct_addr_t sync_addr;
+    unsigned long long ticketNum;
 } ct_sync, *pct_sync;
 
 typedef struct _ct_barrier

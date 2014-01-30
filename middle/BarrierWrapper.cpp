@@ -32,7 +32,7 @@ Task* BarrierWrapper::onEnter(Task& arrivingTask, ct_tsc_t arrivalTime)
     return entryBarrierTask;
 }
 
-Task* BarrierWrapper::onExit(ct_tsc_t exitTime)
+Task* BarrierWrapper::onExit(ct_tsc_t exitTime, bool* finished)
 {
     // If this is the first exit from the barrier, move it to the exit slot to allow threads to arrive at the start again
     if (exitBarrierTask == NULL)
@@ -51,12 +51,16 @@ Task* BarrierWrapper::onExit(ct_tsc_t exitTime)
     Task* temp = exitBarrierTask;
     // Record that this thread arrived
     exitCount--;
+    *finished = false;
 
     // If this was the last thread to arrive, clear out
     if (exitCount == 0)
     {
         assert(exitBarrierTask != NULL);
         exitBarrierTask = NULL;
+        
+        // This barrier has finished, let the caller know
+        *finished = true;
     }
 
     return temp;

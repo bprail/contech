@@ -269,6 +269,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             fread_check(&npe->sy.end_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->sy.sync_type, sizeof(int), 1, fptr);
             fread_check(&npe->sy.sync_addr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->sy.ticketNum, sizeof(unsigned long long), 1, fptr);
         }
         break;
         

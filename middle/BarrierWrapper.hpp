@@ -13,7 +13,7 @@ class BarrierWrapper
 public:
     BarrierWrapper();
     Task* onEnter(Task& arrivingTask, ct_tsc_t arrivalTime);
-    Task* onExit(ct_tsc_t exitTime);
+    Task* onExit(ct_tsc_t exitTime, bool*);
 private:
     unsigned int entryCount;
     unsigned int exitCount;
