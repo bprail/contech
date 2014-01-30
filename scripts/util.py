@@ -103,13 +103,16 @@ def quicksub(name, code, resources = [], queue = "batch"):
         for resource in resources:
             scriptFile.write("#PBS -l {0}\n".format(resource))
         # Write the script to file
+        if os.environ.has_key("SHELL"):
+            shell = os.environ["SHELL"]
+            scriptFile.write(""" setenv TIME '{"real":%e, "user":%U, "sys":%S, "mem":%M }'\n""")
+        else:
+            shell = "/bin/bash"
+            scriptFile.write("""TIME='{"real":%e, "user":%U, "sys":%S, "mem":%M }'\n""")
         scriptFile.write(code)
     
     # Prepare and print the command
-    if os.environ.has_key("SHELL"):
-        shell = os.environ["SHELL"]
-    else:
-        shell = "/bin/bash"
+    
     command = "qsub -j oe -S {} -q {} {}".format(shell, queue, scriptFileName)
     print command
     # Open a process to run the command
