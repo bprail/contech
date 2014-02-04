@@ -12,6 +12,7 @@ Task::Task(TaskId taskId, task_type type)
 {
     this->taskId = taskId;
     this->type = type;
+    bbCount = 0;
 }
 
 bool Task::operator==(const Task& rhs) const

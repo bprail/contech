@@ -67,6 +67,10 @@ void updateContextTaskList(Context &c)
     //   known at creation time, so no update is required of this task.
     Task* t = c.tasks.back();
     bool exited = (c.endTime != 0);
+    
+    // TODO: Should we 'cache' getType() or can the compiler do this?
+    //   task_type tType ...
+    
     if (exited == false)
     {
         while (t != c.activeTask() &&
@@ -83,6 +87,7 @@ void updateContextTaskList(Context &c)
     else
     {
         // If the context has exited, then even the active task can go
+        if (c.tasks.empty()) return;
         while (( t->getType() == task_type_basic_blocks &&
                (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
                (t->getSuccessorTasks().size() > 0)) ||
@@ -92,6 +97,7 @@ void updateContextTaskList(Context &c)
             c.tasks.pop_back();
             backgroundQueueTask(t);
             t = c.tasks.back();
+            if (c.tasks.empty()) return;
         }
     }
 }
