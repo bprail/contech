@@ -33,6 +33,77 @@ bool Context::removeTask(Task* t)
     return false;
 }
 
+Task* Context::getTask(TaskId tid)
+{
+    Task* r = NULL;
+    
+    // Probably better to use rbegin, but erase only takes iterators and not reverse iterators
+    for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
+    {
+        r = *it;
+        if (r->getTaskId() == tid) {return r;}
+    }
+    
+    return r;
+}
+
+Task* Context::childExits(TaskId childId)
+{
+    ContextId ctid = childId.getContextId();
+    auto it = joinMap.find(ctid);
+    
+    // Parent hasn't created the join task yet, record a 'cookie' for parent
+    if (it == joinMap.end())
+    {
+        //joinMap[ctid] = childId;
+        // Parent finds child via context[ctid].activeTask
+        return NULL;
+    }
+    else
+    {
+        Task* r = it->second;
+        joinMap.erase(it);
+        joinCountMap[r->getTaskId()] --;
+        return r;
+    }
+}
+
+void Context::getChildJoin(ContextId ctid, Task* tj)
+{
+    joinMap[ctid] = tj;
+    joinCountMap[tj->getTaskId()] ++;
+    //return TaskId(0);
+    //auto it = joinMap.find(ctid);
+    
+    // child hasn't exited, record a 'cookie' for the child
+    /*if (it == joinMap.end())
+    {
+        joinMap[ctid] = tid;
+        
+        joinCountMap[tid] ++;
+    
+        return TaskId(0);
+    }
+    else
+    {
+        TaskId r = it->second;
+        joinMap.erase(it);
+        return r;
+    }*/
+}
+
+bool Context::isCompleteJoin(TaskId tid)
+{
+    auto it = joinCountMap.find(tid);
+    
+    if (it == joinCountMap.end() ||
+        it->second > 0) return false;
+        
+    joinCountMap.erase(it);
+        
+    return true;
+}
+
 Task* Context::createBasicBlockContinuation()
 {
     Task* continuation = new Task(activeTask()->getTaskId().getNext(), task_type_basic_blocks);

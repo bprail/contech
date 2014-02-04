@@ -16,7 +16,11 @@ public:
     Task* createBasicBlockContinuation();
     Task* createContinuation(task_type eventType, ct_tsc_t startTime, ct_tsc_t endTime);
     bool removeTask(Task*);
+    Task* getTask(TaskId);
     TaskId getCreator(ContextId);
+    void getChildJoin(ContextId, Task*);
+    Task* childExits(TaskId);
+    bool isCompleteJoin(TaskId);
 
     // Queue of tasks that are running in this contech but have not been written to file yet. These tasks may have incomplete data.
     // The front of the queue represents more recent tasks.
@@ -24,9 +28,14 @@ public:
 
     // Map of ContextId -> TaskId, which task created which context
     map<ContextId, TaskId> creatorMap;
+    // Map of child Context -> (childId -or- joinId)
+    map<ContextId, Task*> joinMap;
+    // How many joins are pending for this task, if 0 and not active then clear
+    map<TaskId, int> joinCountMap;
     
     // Has this contech started running?
     bool hasStarted = false;
+    bool hasExited = false;
 
     // The absolute time when this contech was created.
     // -For contech 0, this must be 0 (the start of the first contech marks the beginning of absolute time)

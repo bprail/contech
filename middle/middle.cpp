@@ -56,6 +56,52 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
     }
 }
 
+void updateContextTaskList(Context &c)
+{
+    // Non basic block tasks are handled by their creation logic
+    //   basic block tasks can be queued, if they are not the newest task
+    //   and they have a predecessor (i.e., have been created by another context).
+    //   Task(0:0) has no predecessor and is a special case here.
+    //
+    // Creates must be complete when they are not the active task.  The child is
+    //   known at creation time, so no update is required of this task.
+    Task* t = c.tasks.back();
+    bool exited = (c.endTime != 0);
+    
+    // TODO: Should we 'cache' getType() or can the compiler do this?
+    //   task_type tType ...
+    
+    if (exited == false)
+    {
+        while (t != c.activeTask() &&
+               (( t->getType() == task_type_basic_blocks &&
+               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
+               (t->getType() == task_type_create)))
+              
+        {
+            c.tasks.pop_back();
+            backgroundQueueTask(t);
+            t = c.tasks.back();
+        }
+    }
+    else
+    {
+        // If the context has exited, then even the active task can go
+        if (c.tasks.empty()) return;
+        while (( t->getType() == task_type_basic_blocks &&
+               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
+               (t->getSuccessorTasks().size() > 0)) ||
+               t->getType() == task_type_create)
+              
+        {
+            c.tasks.pop_back();
+            backgroundQueueTask(t);
+            t = c.tasks.back();
+            if (c.tasks.empty()) return;
+        }
+    }
+}
+
 int main(int argc, char* argv[])
 {
     // Open input file
@@ -220,41 +266,44 @@ reset_middle:
         // Basic blocks: Record basic block ID and memOp's
         if (event->event_type == ct_event_basic_block)
         {
+            Task* activeT = activeContech.activeTask();
             //
             // If transitioning into a basic block task, perhaps the older tasks
             //   are complete and can be queued to the background thread.
             //
-            if (activeContech.activeTask()->getType() != task_type_basic_blocks)
+            if (activeT->getType() != task_type_basic_blocks)
             {
                 activeContech.createBasicBlockContinuation();
                 
-                Task* t = activeContech.tasks.back();
-                while (t != activeContech.activeTask() &&
-                       t->getType() != task_type_sync &&
-                       t->getType() != task_type_barrier)
+                // Is the current active task a complete join?
+                if (activeT->getType() == task_type_join &&
+                    activeContech.isCompleteJoin(activeT->getTaskId()))
                 {
-                    activeContech.tasks.pop_back();
-                    backgroundQueueTask(t);
-                    t = activeContech.tasks.back();
+                    activeContech.removeTask(activeT);
+                    backgroundQueueTask(activeT);
                 }
+                
+                updateContextTaskList(activeContech);
+                
+                activeT = activeContech.activeTask();
             }
             
             // Record that this task executed this basic block
-            activeContech.activeTask()->recordBasicBlockAction(event->bb.basic_block_id);
+            activeT->recordBasicBlockAction(event->bb.basic_block_id);
 
             // Examine memory operations
             for (uint i = 0; i < event->bb.len; i++)
             {
                 ct_memory_op memOp = event->bb.mem_op_array[i];
-                activeContech.activeTask()->recordMemOpAction(memOp.is_write, memOp.pow_size, memOp.addr);
+                activeT->recordMemOpAction(memOp.is_write, memOp.pow_size, memOp.addr);
             }
         }
 
         // Task create: Create and initialize child task/context
         else if (event->event_type == ct_event_task_create)
         {
-            // If this context is already running, then it created a new thread
-            if (activeContech.hasStarted == true)
+            // Approx skew is defined as 0 for the creator context
+            if (event->tc.approx_skew == 0)
             {
                 // Assign an ID for the new context
                 TaskId childTaskId(event->tc.other_id, 0);
@@ -277,7 +326,16 @@ reset_middle:
                 taskCreate->addSuccessor(childTaskId);
                 
                 // Add the information so that the created task knows its creator.
-                activeContech.creatorMap[event->tc.other_id] = taskCreate->getTaskId();
+                if (context[event->tc.other_id].hasStarted == true)
+                {
+                    Task* childTask = context[event->tc.other_id].getTask(childTaskId);
+                    assert (childTask != NULL);
+                    childTask->addPredecessor(taskCreate->getTaskId());
+                }
+                else
+                {
+                    activeContech.creatorMap[event->tc.other_id] = taskCreate->getTaskId();
+                }
                 
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "created", childTaskId, startTime, endTime);
             
@@ -296,7 +354,14 @@ reset_middle:
                 activeContech.activeTask()->setStartTime(endTime);
 
                 // Record parent of this task
-                activeContech.activeTask()->addPredecessor(context[event->tc.other_id].getCreator(event->contech_id));
+                if (context[event->tc.other_id].hasStarted == true)
+                {
+                    TaskId creatorId = context[event->tc.other_id].getCreator(event->contech_id);
+                    if (creatorId != TaskId(0))
+                    {
+                        activeContech.activeTask()->addPredecessor(creatorId);
+                    }
+                }
                 
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "started by", TaskId(event->tc.other_id,0), startTime, endTime);
                 if (DEBUG) cerr << activeContech.activeTask()->getContextId() << ": skew = " << event->tc.approx_skew << endl;
@@ -331,15 +396,7 @@ reset_middle:
                 assert(wasRem == true);
                 backgroundQueueTask(owner);
                 
-                Task* t = context[cid].tasks.back();
-                while (t != context[cid].activeTask() &&
-                       t->getType() != task_type_sync &&
-                       t->getType() != task_type_barrier)
-                {
-                    context[cid].tasks.pop_back();
-                    backgroundQueueTask(t);
-                    t = context[cid].tasks.back();
-                }
+                updateContextTaskList(context[cid]);
             }
 
             // Make the sync task the new owner of the sync primitive
@@ -361,38 +418,88 @@ reset_middle:
         // Task joins
         else if (event->event_type == ct_event_task_join)
         {
-            Task& otherTask = *context[event->tj.other_id].activeTask();
+            //Task& otherTask = *context[event->tj.other_id].activeTask();
 
             // I exited
             if (event->tj.isExit)
             {
+                Task* otherTask = NULL;
+                TaskId myId = activeContech.activeTask()->getTaskId();
+                Context otherContext = context[event->tj.other_id];
+                
                 activeContech.activeTask()->setEndTime(startTime);
                 activeContech.endTime = startTime;
-                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "exited", otherTask.getTaskId(), startTime, endTime);
+                
+                otherTask = otherContext.childExits(myId);
+                if (otherTask != NULL)
+                {
+                    TaskId otherTaskId = otherTask->getTaskId();
+                    activeContech.activeTask()->addSuccessor(otherTaskId);
+                    otherTask->addPredecessor(myId);
+                    
+                    // Is otherTaskId complete?
+                    //   If it is active, then it may still have further joins to merge
+                    //      and recording its successor(s)
+                    //   If it is not active, then only joins remain to update this task
+                    if (otherContext.activeTask() != otherTask &&
+                        otherContext.isCompleteJoin(otherTaskId))
+                    {
+                        bool rem = otherContext.removeTask(otherTask);
+                        
+                        assert(rem == true);
+                        
+                        backgroundQueueTask(otherTask);
+                    }
+                }
+                
+                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "exited", otherContext.activeTask()->getTaskId(), startTime, endTime);
 
             // I joined with another task
             } 
             else 
             {
-                // Create a join task
-                Task* taskJoin;
-                if (activeContech.activeTask()->getType() != task_type_join)
+                Context otherContext = context[event->tj.other_id];
+                if (otherContext.endTime != 0)
                 {
-                    taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                    // Create a join task
+                    Task* taskJoin;
+                    Task* otherTask = otherContext.activeTask();
+                    
+                    if (activeContech.activeTask()->getType() != task_type_join)
+                    {
+                        taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                    }
+                    else
+                    {
+                        taskJoin = activeContech.activeTask();
+                        if (taskJoin->getStartTime() > startTime) taskJoin->setStartTime(startTime);
+                        if (taskJoin->getEndTime() < endTime) taskJoin->setEndTime(endTime);
+                    }
+                    // Set the other task's continuation to the join
+                    otherTask->addSuccessor(taskJoin->getTaskId());
+                    taskJoin->addPredecessor(otherTask->getTaskId());
+                    
+                    // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
+                    if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask->getTaskId(), startTime, endTime);
                 }
                 else
                 {
-                    taskJoin = activeContech.activeTask();
-                    if (taskJoin->getStartTime() > startTime) taskJoin->setStartTime(startTime);
-                    if (taskJoin->getEndTime() < endTime) taskJoin->setEndTime(endTime);
+                    // Child has not exited yet
+                    
+                    // Create a join task
+                    Task* taskJoin;
+                    if (activeContech.activeTask()->getType() != task_type_join)
+                    {
+                        taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                    }
+                    else
+                    {
+                        taskJoin = activeContech.activeTask();
+                        if (taskJoin->getStartTime() > startTime) taskJoin->setStartTime(startTime);
+                        if (taskJoin->getEndTime() < endTime) taskJoin->setEndTime(endTime);
+                    }
+                    activeContech.getChildJoin(ContextId(event->tj.other_id), taskJoin);
                 }
-                // Set the other task's continuation to the join
-                otherTask.addSuccessor(taskJoin->getTaskId());
-                taskJoin->addPredecessor(otherTask.getTaskId());
-                // Front end guarantees that we will see the other task exit before we see the join
-                assert(context[event->tj.other_id].endTime != 0);
-                // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
-                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask.getTaskId(), startTime, endTime);
             }
         }
 
@@ -447,30 +554,17 @@ reset_middle:
                     ContextId cid = barrierTask->getContextId();
                     bool remove = context[cid].removeTask(barrierTask);
                     assert(remove);
-                    /*if (!remove){
-                        for (auto it = context.begin(), et = context.end(); it != et; ++it)
-                        {
-                            auto c = it->second;
-                            if (c.removeTask(barrierTask))
-                            {
-                                printf("%d != %d\n", cid, c.activeTask()->getContextId());
-                                exit(0);
-                            }
-                        }
-                        assert(0);
-                    }*/
+                    
                     backgroundQueueTask(barrierTask);
                     
                     Task* t = context[cid].tasks.back();
                     while (t != context[cid].activeTask() &&
-                           t->getType() != task_type_sync &&
-                           t->getType() != task_type_barrier)
+                       t->getType() == task_type_basic_blocks)
                     {
                         context[cid].tasks.pop_back();
                         backgroundQueueTask(t);
                         t = context[cid].tasks.back();
                     }
-                    
                 }
             }
         }

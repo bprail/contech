@@ -98,7 +98,7 @@ typedef struct _ct_task_create
     unsigned int other_id; // child if id is creator, parent if id is created
     ct_tsc_t start_time;
     ct_tsc_t end_time;
-    long long approx_skew; // 0 if parent, value if child
+    long long approx_skew; // 0 if parent, value if child, middle layer uses this as a flag
 } ct_task_create, *pct_task_create;
 
 typedef struct _ct_task_join
