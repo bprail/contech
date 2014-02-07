@@ -127,7 +127,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         npe->contech_id = currentID;
         
         // Currently, runtime treats event_type as int, except for basic blocks
-        // Also storing thread_id....
+        // Also storing thread_id then gives TYPE + [3], ID[4], so read [7]
         if (npe->event_type != ct_event_basic_block &&
             npe->event_type != ct_event_basic_block_info && 
             npe->event_type != ct_event_buffer)
@@ -384,6 +384,11 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         ced[cedPos].data1 = 0;
     }
 
+    if (sum > bufSum && bufSum > 0) 
+    {
+        fprintf(stderr, "ERROR: Missing buffer event at %llx.  Should be after %d bytes.\n", sum, lastBufPos);
+        dumpAndTerminate(fptr);
+    }
     
     return npe;
 }

@@ -265,6 +265,7 @@ void __ctAllocateLocalBuffer()
         }
     }
     __ctThreadLocalBuffer->next = NULL;
+    __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
     #ifdef DEBUG
     pthread_mutex_lock(&__ctPrintLock);
     fprintf(stderr, "a,%p,%d\n", __ctThreadLocalBuffer, __ctThreadLocalNumber);
@@ -408,11 +409,16 @@ void __ctQueueBuffer(bool alloc)
         __ctThreadLocalBuffer->pos = localBuffer->pos;
         __ctThreadLocalBuffer->length = allocSize;
         __ctThreadLocalBuffer->next = NULL;
+        __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
         
         memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
     }
     
-    __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+    if (__ctThreadLocalBuffer->id != __ctThreadLocalNumber)
+    {
+        fprintf(stderr, "WARNING: Local Buffer has migrated from %d to %d since allocation\n",
+                __ctThreadLocalBuffer->id, __ctThreadLocalNumber);
+    }
     
     pthread_mutex_lock(&__ctQueueBufferLock);
     __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
@@ -513,15 +519,19 @@ void* __ctBackgroundThreadWriter(void* d)
             // id,len, memop_0, ... memop_len-1
             unsigned int bb_len = *(unsigned int*) (bb_info + 4);
             char evTy = ct_event_basic_block_info;
-            size_t byteToWrite = sizeof(unsigned int) * 2 + sizeof(char) * (2 * bb_len);
+            size_t byteToWrite = sizeof(unsigned int) * 2 + sizeof(char) * (2 * bb_len), tl = 0;
             //fprintf(stderr, "Write bb_info %p - %d %d\n", bb_info, *(unsigned int*)bb_info, bb_len);
             //fflush(stderr);
 #if EVENT_COMPRESS
             gzwrite(serialFileComp, &evTy, sizeof(char));
             gzwrite(serialFileComp, bb_info, byteToWrite);
 #else
-            fwrite(&evTy, sizeof(char), 1, serialFile);
-            fwrite(bb_info, sizeof(char), byteToWrite, serialFile);
+            while (1 != fwrite(&evTy, sizeof(char), 1, serialFile));
+            do {
+                size_t wl = fwrite(bb_info + tl, sizeof(char), byteToWrite - tl, serialFile);
+                if (wl > 0)
+                    tl += wl;
+            } while (tl < byteToWrite);
 #endif
             bb_info += byteToWrite;
             totalWritten += byteToWrite + sizeof(char);
@@ -541,23 +551,32 @@ void* __ctBackgroundThreadWriter(void* d)
         {
             // Write buffer to file
             size_t tl = 0;
-            int wl = 0;
+            size_t wl = 0;
             pct_serial_buffer qb = __ctQueuedBuffers;
             
             // First craft the marker event that indicates a new buffer in the event list
             //   This event tells eventLib which contech created the next set of bytes
             {
-                unsigned int buf = ct_event_buffer;
+                unsigned int buf[3];
+                buf[0] = ct_event_buffer;
+                buf[1] = __ctQueuedBuffers->id;
+                buf[2] = __ctQueuedBuffers->pos;
+                //fprintf(stderr, "%d, %llx, %d\n", __ctQueuedBuffers->id, totalWritten, __ctQueuedBuffers->pos);
 #if EVENT_COMPRESS
                 gzwrite (serialFileComp, &buf, sizeof(unsigned int));
                 gzwrite (serialFileComp, &__ctQueuedBuffers->id, sizeof(unsigned int));
                 gzwrite (serialFileComp, &__ctQueuedBuffers->pos, sizeof(unsigned int));
 #else
-                fwrite(&buf, sizeof(unsigned int), 1, serialFile);
-                fwrite(&__ctQueuedBuffers->id, sizeof(unsigned int), 1, serialFile);
-                fwrite(&__ctQueuedBuffers->pos, sizeof(unsigned int), 1, serialFile);
+                do
+                {
+                    wl = fwrite(&buf + tl, sizeof(unsigned int), 3 - tl, serialFile);
+                    //if (wl > 0)
+                    // wl is 0 on error, so it is safe to still add
+                    tl += wl;
+                } while  (tl < 3);
 #endif
                 totalWritten += 3 * sizeof(unsigned int);
+                
             }
             
             // TODO: fully integrate into debug framework
@@ -573,6 +592,8 @@ void* __ctBackgroundThreadWriter(void* d)
             #endif
             
             // Now write the bytes out of the buffer, until all have been written
+            tl = 0;
+            wl = 0;
             while (tl < __ctQueuedBuffers->pos)
             {
                 if (qb->pos > SERIAL_BUFFER_SIZE)
@@ -587,15 +608,19 @@ void* __ctBackgroundThreadWriter(void* d)
                             (__ctQueuedBuffers->pos) - tl, 
                             serialFile);
 #endif
-                if (wl < 0)
-                {
-                    continue;
-                }
+                // if (wl < 0)
+                // {
+                    // continue;
+                // }
                 tl += wl;
                 if (qb != __ctQueuedBuffers)
                 {
                     fprintf(stderr, "Tampering with __ctQueuedBuffers!\n");
                 }
+            }
+            if (tl != __ctQueuedBuffers->pos)
+            {
+                fprintf(stderr, "Write quantity(%d) is not bytes in buffer(%d)\n", tl, __ctQueuedBuffers->pos);
             }
             totalWritten += tl;
             
@@ -631,6 +656,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 
                 // If this is the only free buffer, signal any waiting threads
                 // TODO: Can we avoid the cond_signal if buffer limits are not in place?
+                // TODO: OR not signal until queuedBuffers is NULL ?
                 if (t->next == NULL) {pthread_cond_signal(&__ctFreeSignal);}
             }
             pthread_mutex_unlock(&__ctFreeBufferLock);
@@ -683,7 +709,7 @@ void __ctCheckBufferSize()
 {
     #ifdef POS_USED
     // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
-    //   32 for basic block, 32 for other event, then 8 for each memop
+    //   4 for basic block, 32 for other event, then 6 for each memop
     if ((__ctThreadLocalBuffer->length - __ctThreadLocalBuffer->pos) < 1024)
         __ctQueueBuffer(true);
     #endif
@@ -728,7 +754,7 @@ void __ctSetBufferPos(unsigned int pos)
 }
 
 // (contech_id, basic block id, num of ops)
-void __ctStoreBasicBlock(unsigned int bbid, unsigned int num_ops)
+__attribute__((always_inline)) void __ctStoreBasicBlock(unsigned int bbid, unsigned int num_ops)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -816,7 +842,7 @@ void __ctStoreMemOpPos(bool iw, char size, void* addr, unsigned int c, unsigned 
     __ctStoreMemOpInternalPos(t, c, pos);*/
 }
 
-void __ctStoreMemOp(bool iw, char size, void* addr, unsigned int c)
+__attribute__((always_inline)) void __ctStoreMemOp(bool iw, char size, void* addr, unsigned int c)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
