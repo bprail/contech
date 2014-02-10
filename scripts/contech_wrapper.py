@@ -20,8 +20,14 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         if os.environ.has_key("CONTECH_LLVM_HOME"):
             CONTECH_LLVM_HOME = os.environ["CONTECH_LLVM_HOME"]
             LLVMCONTECH = CONTECH_LLVM_HOME + "/lib/LLVMContech.so"
+            CLANG = CONTECH_LLVM_HOME + "/bin/clang"
+            CLANGPP = CLANG + "++"
+            OPT = CONTECH_LLVM_HOME + "/bin/opt"
         else:
             LLVMCONTECH = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMContech.so"
+            CLANG = "clang"
+            CLANGPP = "clang++"
+            OPT = "opt"
         LLVMHAMMER = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMHammer.so"
         #RUNTIME = CONTECH_HOME + "/common/runtime/libct_runtime.a"
         if markOnly:
@@ -41,9 +47,6 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     #LLVMCONTECH = LOCAL + "/lib/LLVMContech.so"
     #RUNTIME = LOCAL + "/lib/libct_runtime.a"
     
-    CLANG = "clang"
-    CLANGPP = "clang++"
-    OPT = "opt"
     
     # Name of the .c file to be processed
     cfile="" 
