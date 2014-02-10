@@ -22,6 +22,8 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Attributes.h"
+#define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #include "llvm/Constants.h"
 #include "llvm/Instructions.h"
@@ -31,6 +33,8 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Metadata.h"
 #include "llvm/Function.h"
+#include "llvm/Attributes.h"
+#define ALWAYS_INLINE (Attributes::AttrVal::AlwaysInline)
 #endif
 #endif
 #include "llvm/Support/InstIterator.h"
@@ -183,7 +187,7 @@ namespace llvm {
     {
         // Function types are named fun(Return type)(arg1 ... argN)Ty
         FunctionType* funVoidI32I32Ty;
-        FunctionType* funVoidI8I8VoidPtrI32Ty;
+        FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidVoidPtrI32I32I64Ty;
         FunctionType* funVoidPtrVoidPtrTy;
         FunctionType* funVoidPtrVoidTy;
@@ -192,7 +196,7 @@ namespace llvm {
         FunctionType* funVoidI8Ty;
         FunctionType* funVoidI32Ty;
         FunctionType* funVoidI8VoidPtrI64Ty;
-        FunctionType* funVoidVoidPtrI32Ty;
+        //FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
         FunctionType* funI8I32Ty;
 
@@ -212,9 +216,9 @@ namespace llvm {
         Type* argsBB[] = {int32Ty, int32Ty};
         funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsBB, 2), false);
         storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidI32I32Ty);
-        Type* argsMO[] = {int8Ty, int8Ty, voidPtrTy, int32Ty};
-        funVoidI8I8VoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsMO, 4), false);
-        storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidI8I8VoidPtrI32Ty);
+        Type* argsMO[] = {voidPtrTy, int32Ty};
+        funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsMO, 2), false);
+        storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32Ty);
         Type* argsInit[] = {voidPtrTy};//threadArgsTy->getPointerTo()};
         funVoidPtrVoidPtrTy = FunctionType::get(voidPtrTy, ArrayRef<Type*>(argsInit, 1), false);
         threadInitFunction = M.getOrInsertFunction("__ctInitThread", funVoidPtrVoidPtrTy);
@@ -262,8 +266,8 @@ namespace llvm {
         funVoidI8VoidPtrI64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSB, 3), false);
         storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
         
-        Type* argsATI[] = {voidPtrTy, int32Ty};
-        funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsATI, 2), false);
+        //Type* argsATI[] = {voidPtrTy, int32Ty};
+        //funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsATI, 2), false);
         storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
         
         // This needs to be machine type here
@@ -351,13 +355,15 @@ namespace llvm {
         tMemOp->isWrite = isWrite;
         tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
         
-        Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
-        Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
+        //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
+        //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
         Constant* cPos = ConstantInt::get(int32Ty, memOpPos);
         Value* addrI = new BitCastInst(addr, voidPtrTy, Twine("Cast as void"), li);
-        Value* argsMO[] = {cIsWrite, cSize, addrI, cPos};
+        Value* argsMO[] = {addrI, cPos};
         debugLog("storeMemOpFunction @" << __LINE__);
-        CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+        CallInst* smo = CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 2), "", li);
+        assert(smo != NULL);
+        smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
         
         tMemOp->addr = NULL;
         tMemOp->next = NULL;
@@ -798,6 +804,7 @@ cleanup:
             Value* argsBB[] = {llvm_bbid, llvm_nops};
             debugLog("storeBasicBlockFunction @" << __LINE__);
             sbb = CallInst::Create(storeBasicBlockFunction, ArrayRef<Value*>(argsBB, 2), "", aPhi);
+            sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
         }
 
         unsigned int memOpPos = 0;
@@ -819,6 +826,7 @@ cleanup:
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
                 }
+                sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
                 bi->len = memOpCount;
                 hasInstAllMemOps = true;
             }

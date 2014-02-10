@@ -84,7 +84,7 @@ void __ctQueueBuffer(bool);
 void __ctStoreBasicBlock( unsigned int, unsigned int);
 // (basic block id, size of string, string)
 void __ctStoreBasicBlockInfo (unsigned int, unsigned int, char*);
-void __ctStoreMemOp(bool, char, void*, unsigned int);
+void __ctStoreMemOp(void*, unsigned int);
 void __ctStoreBasicBlockComplete(unsigned int);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);

@@ -620,7 +620,7 @@ void* __ctBackgroundThreadWriter(void* d)
             }
             if (tl != __ctQueuedBuffers->pos)
             {
-                fprintf(stderr, "Write quantity(%d) is not bytes in buffer(%d)\n", tl, __ctQueuedBuffers->pos);
+                fprintf(stderr, "Write quantity(%lu) is not bytes in buffer(%d)\n", tl, __ctQueuedBuffers->pos);
             }
             totalWritten += tl;
             
@@ -768,7 +768,7 @@ __attribute__((always_inline)) void __ctStoreBasicBlock(unsigned int bbid, unsig
     *((unsigned int*)&__ctThreadLocalBuffer->data[p]) = bbid << 8;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = num_ops;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + 1 * sizeof(unsigned int);
+    //__ctThreadLocalBuffer->pos = p + 1 * sizeof(unsigned int);
     #endif
 }
 
@@ -795,7 +795,7 @@ unsigned int __ctStoreBasicBlockPos(unsigned int bbid, unsigned int num_ops, uns
 void __ctStoreBasicBlockComplete(unsigned int c)
 {
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += c * 6 * sizeof(char);// sizeof(ct_memory_op);
+    __ctThreadLocalBuffer->pos += c * 6 * sizeof(char) + sizeof(unsigned int);// sizeof(ct_memory_op);
     #endif
 }
 
@@ -842,14 +842,15 @@ void __ctStoreMemOpPos(bool iw, char size, void* addr, unsigned int c, unsigned 
     __ctStoreMemOpInternalPos(t, c, pos);*/
 }
 
-__attribute__((always_inline)) void __ctStoreMemOp(bool iw, char size, void* addr, unsigned int c)
+__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
-    *((unsigned int*)&__ctThreadLocalBuffer->data[__ctThreadLocalBuffer->pos + c * 6* sizeof(char)]) = (uint32_t) (uint64_t)addr;
-    *((uint16_t*)&__ctThreadLocalBuffer->data[__ctThreadLocalBuffer->pos + c * 6* sizeof(char) + sizeof(unsigned int)]) = (uint16_t) (((uint64_t)addr) >> 32);
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    *((unsigned int*)&__ctThreadLocalBuffer->data[p + c * 6* sizeof(char)+sizeof(unsigned int)]) = (uint32_t) (uint64_t)addr;
+    *((uint16_t*)&__ctThreadLocalBuffer->data[p + c * 6* sizeof(char) + 2*sizeof(unsigned int)]) = (uint16_t) (((uint64_t)addr) >> 32);
     
     /*ct_memory_op t;
     t.is_write = iw;
