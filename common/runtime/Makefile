@@ -13,7 +13,7 @@ $(PROJECT): $(OBJECTS)
 	ar scru $(PROJECT) $(OBJECTS)
 
 $(BITCODE): $(OBJECTS)
-	clang -emit-llvm -c $(CFLAGS) ct_runtime.c -o ct_runtime.bc -I/net/tinker/local/include -std=c89 -DCT_MAIN
+	$(CONTECH_LLVM_HOME)/bin/clang -emit-llvm -c $(CFLAGS) ct_runtime.c -o ct_runtime.bc -I/net/tinker/local/include -std=c89 -DCT_MAIN
 
 install: all
 	cp $(PROJECT) /net/tinker/local/lib
