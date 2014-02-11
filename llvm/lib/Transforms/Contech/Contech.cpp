@@ -168,7 +168,7 @@ namespace llvm {
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
         void internalAddAllocate(BasicBlock& B);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos);
+        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
@@ -186,8 +186,8 @@ namespace llvm {
     bool Contech::doInitialization(Module &M)
     {
         // Function types are named fun(Return type)(arg1 ... argN)Ty
-        FunctionType* funVoidI32I32Ty;
-        FunctionType* funVoidVoidPtrI32Ty;
+        FunctionType* funVoidPtrI32Ty;
+        FunctionType* funVoidVoidPtrI32VoidPtrTy;
         FunctionType* funVoidVoidPtrI32I32I64Ty;
         FunctionType* funVoidPtrVoidPtrTy;
         FunctionType* funVoidPtrVoidTy;
@@ -196,7 +196,7 @@ namespace llvm {
         FunctionType* funVoidI8Ty;
         FunctionType* funVoidI32Ty;
         FunctionType* funVoidI8VoidPtrI64Ty;
-        //FunctionType* funVoidVoidPtrI32Ty;
+        FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
         FunctionType* funI8I32Ty;
 
@@ -213,12 +213,12 @@ namespace llvm {
         Type* threadStructTypes[] = {static_cast<Type *>(funVoidPtrVoidTy)->getPointerTo(), voidPtrTy, int32Ty, int32Ty};
         threadArgsTy = StructType::create(ArrayRef<Type*>(threadStructTypes, 4), "contech_thread_create", false);
         
-        Type* argsBB[] = {int32Ty, int32Ty};
-        funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsBB, 2), false);
-        storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidI32I32Ty);
-        Type* argsMO[] = {voidPtrTy, int32Ty};
-        funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsMO, 2), false);
-        storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32Ty);
+        Type* argsBB[] = {int32Ty};
+        funVoidPtrI32Ty = FunctionType::get(voidPtrTy, ArrayRef<Type*>(argsBB, 1), false);
+        storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32Ty);
+        Type* argsMO[] = {voidPtrTy, int32Ty, voidPtrTy};
+        funVoidVoidPtrI32VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsMO, 3), false);
+        storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrTy);
         Type* argsInit[] = {voidPtrTy};//threadArgsTy->getPointerTo()};
         funVoidPtrVoidPtrTy = FunctionType::get(voidPtrTy, ArrayRef<Type*>(argsInit, 1), false);
         threadInitFunction = M.getOrInsertFunction("__ctInitThread", funVoidPtrVoidPtrTy);
@@ -266,8 +266,8 @@ namespace llvm {
         funVoidI8VoidPtrI64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSB, 3), false);
         storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
         
-        //Type* argsATI[] = {voidPtrTy, int32Ty};
-        //funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsATI, 2), false);
+        Type* argsATI[] = {voidPtrTy, int32Ty};
+        funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsATI, 2), false);
         storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
         
         // This needs to be machine type here
@@ -348,7 +348,7 @@ namespace llvm {
     //
     //  Wrapper call that appropriately adds the operations to record the memory operation
     //
-    pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos)
+    pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos)
     {
         pllvm_mem_op tMemOp = new llvm_mem_op;
         
@@ -359,9 +359,9 @@ namespace llvm {
         //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
         Constant* cPos = ConstantInt::get(int32Ty, memOpPos);
         Value* addrI = new BitCastInst(addr, voidPtrTy, Twine("Cast as void"), li);
-        Value* argsMO[] = {addrI, cPos};
+        Value* argsMO[] = {addrI, cPos, pos};
         debugLog("storeMemOpFunction @" << __LINE__);
-        CallInst* smo = CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 2), "", li);
+        CallInst* smo = CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
         assert(smo != NULL);
         smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
         
@@ -704,6 +704,7 @@ cleanup:
         bool getNextI = false;
         bool containCall = false, containQueueBuf = false;
         bool containKeyCall = false;
+        Value* posValue = NULL;
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
@@ -800,11 +801,14 @@ cleanup:
         }
         else {
             llvm_bbid = ConstantInt::get(int32Ty, bbid);
-            llvm_nops = ConstantInt::get(int32Ty, (unsigned long) memOpCount);
-            Value* argsBB[] = {llvm_bbid, llvm_nops};
+            Value* argsBB[] = {llvm_bbid};
             debugLog("storeBasicBlockFunction @" << __LINE__);
-            sbb = CallInst::Create(storeBasicBlockFunction, ArrayRef<Value*>(argsBB, 2), "", aPhi);
+            sbb = CallInst::Create(storeBasicBlockFunction, ArrayRef<Value*>(argsBB, 1), "storeBlock" + bbid, aPhi);
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
+            posValue = sbb;
+            
+            // In LLVM 3.3+, switch to Monotonic and not Acquire
+            new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
         }
 
         unsigned int memOpPos = 0;
@@ -815,16 +819,21 @@ cleanup:
             //   block event based on the number of memOps
             if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
             {
+                llvm_nops = ConstantInt::get(int32Ty, memOpCount);
                 Value* argsBBc[] = {llvm_nops};
                 if (memOpCount == 0)
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", aPhi);
+                    
+                    new FenceInst(M.getContext(), Release, SingleThread, aPhi);
                 }
                 else
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
+                    
+                    new FenceInst(M.getContext(), Release, SingleThread, I);
                 }
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
                 bi->len = memOpCount;
@@ -859,7 +868,7 @@ cleanup:
             // Load and store are identical except the cIsWrite is set accordingly.
             // 
             if (LoadInst *li = dyn_cast<LoadInst>(&*I)){
-                pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos);
+                pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
                 memOpPos ++;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
@@ -874,7 +883,7 @@ cleanup:
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) {
-                pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos);
+                pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
                 memOpPos ++;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
@@ -1004,6 +1013,7 @@ cleanup:
                 break;
                 case (COND_WAIT):
                 {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     BitCastInst* bciCV = new BitCastInst(ci->getArgOperand(0), voidPtrTy, "locktovoid", ++I);
                     BitCastInst* bciMut = new BitCastInst(ci->getArgOperand(1), voidPtrTy, "locktovoid", ci);
@@ -1019,6 +1029,7 @@ cleanup:
                         containQueueBuf = true;
                     }
                     
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick2 = CallInst::Create(getCurrentTickFunction, "tick2", I); 
                     Value* retV;
                     if (ci->getType() == int32Ty)
@@ -1041,6 +1052,7 @@ cleanup:
                 break;
                 case (COND_SIGNAL):
                 {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     BitCastInst* bciCV = new BitCastInst(ci->getArgOperand(0), voidPtrTy, "locktovoid", ++I);
                     Value* retV;
@@ -1059,6 +1071,7 @@ cleanup:
                 break;
                 case (BARRIER_WAIT):
                 {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     BitCastInst* bci = new BitCastInst(ci->getArgOperand(0), voidPtrTy, "locktovoid", I);
                     Value* c1 = ConstantInt::get(int8Ty, 1);
@@ -1114,6 +1127,7 @@ cleanup:
                                        new BitCastInst(ci->getArgOperand(1), voidPtrTy, "", ci), 
                                        ci->getArgOperand(2), 
                                        ci->getArgOperand(3)};
+                    debugLog("createThreadActualFunction @" << __LINE__);
                     CallInst* nThreadCreate = CallInst::Create(createThreadActualFunction,
                                                                ArrayRef<Value*>(cTcArg, 4), "", ci);
                     ci->replaceAllUsesWith(nThreadCreate);

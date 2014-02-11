@@ -81,10 +81,10 @@ unsigned int __ctPeekIdStack(pcontech_id_stack*);
 
 void __ctQueueBuffer(bool);
 // (contech_id, basic block id, num of ops)
-void __ctStoreBasicBlock( unsigned int, unsigned int);
+char* __ctStoreBasicBlock(unsigned int bbid);
 // (basic block id, size of string, string)
 void __ctStoreBasicBlockInfo (unsigned int, unsigned int, char*);
-void __ctStoreMemOp(void*, unsigned int);
+void __ctStoreMemOp(void*, unsigned int, char*);
 void __ctStoreBasicBlockComplete(unsigned int);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);
