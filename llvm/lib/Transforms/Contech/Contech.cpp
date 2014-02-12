@@ -541,7 +541,7 @@ namespace llvm {
                 }
                 else if (t->second->hasCheckBuffer == 1 && dTree->dominates(bi->second->tgts[0], bi->first))
                 {
-                    addCheckAfterPhi(bi->second->tgts[0]);
+                    //addCheckAfterPhi(bi->second->tgts[0]);
                     t->second->hasCheckBuffer = 2;
                 }
             }
@@ -567,7 +567,7 @@ namespace llvm {
                 }
                 else if (t->second->hasCheckBuffer == 1 && dTree->dominates(bi->second->tgts[1], bi->first))
                 {
-                    addCheckAfterPhi(bi->second->tgts[1]);
+                    //addCheckAfterPhi(bi->second->tgts[1]);
                     t->second->hasCheckBuffer = 2;
                 }
             }
@@ -803,7 +803,10 @@ cleanup:
             llvm_bbid = ConstantInt::get(int32Ty, bbid);
             Value* argsBB[] = {llvm_bbid};
             debugLog("storeBasicBlockFunction @" << __LINE__);
-            sbb = CallInst::Create(storeBasicBlockFunction, ArrayRef<Value*>(argsBB, 1), "storeBlock" + bbid, aPhi);
+            sbb = CallInst::Create(storeBasicBlockFunction, 
+                                   ArrayRef<Value*>(argsBB, 1), 
+                                   string("storeBlock") + to_string(bbid), 
+                                   aPhi);
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
             
@@ -1286,6 +1289,9 @@ cleanup:
         //
         // Being conservative, if another function was called, then
         // the insturmentation needs to check that the buffer isn't full
+        //
+        // Being really conservative every block has a check, this also
+        //   requires disabling the dominator tree traversal in the runOnModule routine
         //
         if (/*containCall == true && */containQueueBuf == false && markOnly == false)
         {
