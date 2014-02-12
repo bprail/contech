@@ -84,7 +84,8 @@ def aggregate(root):
     # Sort results (dict to list conversion)
     table = sorted(rows.values(), key=operator.itemgetter("name"))
     # Remove failed rows
-    util.print_error("Ignoring failed experiments: " + reduce(lambda x,y: x+", "+y, failed)) 
+    if len(failed) > 0:
+        util.print_error("Ignoring failed experiments: " + reduce(lambda x,y: x+", "+y, failed)) 
     table = [a for a in table if a["name"] not in failed]
     
     return table
