@@ -44,10 +44,14 @@ def main(parsec=False):
     
     # Find output directory
     if os.environ.has_key("CONTECH_OUTDIR"): 
-        if os.environ["HOSTNAME"] == "ristorante":
-            CONTECH_OUTDIR = os.environ["CONTECH_OUTDIR"]
-        else:
-            CONTECH_OUTDIR = "/tmp"
+        CONTECH_OUTDIR = os.environ["CONTECH_OUTDIR"]
+        try:
+            os.mkdir(CONTECH_OUTDIR)
+        except OSError as e:
+            #ignore per the directory already exists
+            print_warning("Warning: CONTECH_OUTDIR already exists")
+        #else:
+            # CONTECH_OUTDIR exists
     else:
         CONTECH_OUTDIR = "/tmp"
         print_warning("Warning: CONTECH_OUTDIR is not set. Defaulting to " + CONTECH_OUTDIR + ".")

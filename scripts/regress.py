@@ -69,7 +69,8 @@ def nativeRun(benchmark, n, input):
       
     PARSEC_HOME = util.findParsecInstall()
     script = """
-    $PARSEC_HOME/bin/parsecmgmt -a run -p {0} -c llvm -n {1} -i {2} -s "/usr/bin/time"
+    mkdir /tmp/$USER
+    $PARSEC_HOME/bin/parsecmgmt -a run -p {0} -c llvm -d /tmp/$USER -n {1} -i {2} -s "/usr/bin/time"
 """
     script = script.format(benchmark, n, input)
     jobName = "llvm_{}_{}_{}".format(input,  n, benchmark)
@@ -79,7 +80,16 @@ def nativeRun(benchmark, n, input):
 def statsRun(benchmark, n, input, option):
        
     CONTECH_HOME = util.findContechInstall()
-    script = """
+    if os.environ.has_key("CONTECH_OUTDIR"): 
+        script = """
+    cd $CONTECH_HOME/scripts
+    
+    ./run_parsec.py {0} -n {1} -i {2} {3} --backends stats
+    rm -f --verbose $CONTECH_OUTDIR/{0}.contech.trace
+    rm -f --verbose $CONTECH_OUTDIR/{0}.taskgraph;
+"""
+    else:
+        script = """
     cd $CONTECH_HOME/scripts
     
     ./run_parsec.py {0} -n {1} -i {2} {3} --backends stats
