@@ -1184,7 +1184,7 @@ void __ctOMPThreadCreate(unsigned int parent)
     __ctQueueBuffer(true);
     __ctThreadLocalNumber = threadId;
     
-    __ctStoreThreadCreate(parent, 0, rdtsc());
+    __ctStoreThreadCreate(parent, 1, rdtsc());
     __ctPushIdStack(&__ctThreadIdStack, threadId);
 }
 
@@ -1218,7 +1218,7 @@ void __ctOMPTaskCreate(int ret)
     __ctQueueBuffer(true);
     __ctThreadLocalNumber = taskId;
     
-    __ctStoreThreadCreate(threadId, 0, rdtsc());
+    __ctStoreThreadCreate(threadId, 1, rdtsc());
     
     return;
 }
