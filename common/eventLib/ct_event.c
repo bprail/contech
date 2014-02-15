@@ -333,6 +333,13 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         }
         break;
         
+        case (ct_event_delay):
+        {
+            fread_check(&npe->dly.start_time, sizeof(ct_tsc_t), 1, fptr);
+            fread_check(&npe->dly.end_time, sizeof(ct_tsc_t), 1, fptr);
+        }
+        break;
+        
         case (ct_event_version):
         {
             // There should be only one version event in the list

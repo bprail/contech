@@ -42,6 +42,7 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_buffer,  // INTERNAL USE
     ct_event_bulk_memory_op,
     ct_event_version, // INTERNAL USE
+    ct_event_delay,
     ct_event_memory_op = 128,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
@@ -121,6 +122,12 @@ typedef struct _ct_bulk_memory
     ct_addr_t alloc_addr;
 } ct_bulk_memory, *pct_bulk_memory;
 
+typedef struct _ct_delay
+{
+    ct_tsc_t start_time;
+    ct_tsc_t end_time;
+} ct_delay, *pct_delay;
+
 //
 // There are two ways to combine objects with common fields.
 //   1) Common fields in a single type that is the first field
@@ -143,6 +150,7 @@ typedef struct _ct_event {
         ct_memory           mem;
         ct_buffer_info      buf;
         ct_bulk_memory      bm;
+        ct_delay            dly;
     };
 } ct_event, *pct_event;
 

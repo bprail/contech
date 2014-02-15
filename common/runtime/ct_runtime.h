@@ -93,6 +93,7 @@ void __ctStoreBarrier(bool, void*, ct_tsc_t);
 void __ctStoreMemoryEvent(bool, unsigned long long, void*);
 void* __ctInitThread(void*);//pcontech_thread_create ptc
 void __ctCheckBufferSize();
+void __ctStoreDelay(ct_tsc_t start_t);
 
 void __ctAddThreadInfo(pthread_t *pt, unsigned int);
 unsigned int __ctLookupThreadInfo(pthread_t pt);

@@ -209,14 +209,11 @@ void __ctAllocateLocalBuffer()
     }
     else
     {
-        // This block should be rolled into the parent's else block
-        // Or perhaps the test-and-test-and-set should be discarded.
         if (__ctCurrentBuffers == __ctMaxBuffers)
         {
-            while (__ctFreeBuffers == NULL)
-            {
-                pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
-            }
+            ct_tsc_t start = rdtsc();
+            pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
+            __ctStoreDelay(start);
             __ctThreadLocalBuffer = __ctFreeBuffers;
             __ctFreeBuffers = __ctFreeBuffers->next;
             __ctCurrentBuffers++;
@@ -695,7 +692,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 struct timeb tp;
                 ftime(&tp);
                 printf("CT_COMP: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
-                printf("CT_LIMIT: %llu.%03d\n", totalLimitTime / 1000, totalLimitTime % 1000);
+                printf("CT_LIMIT: %llu.%03llu\n", totalLimitTime / 1000, totalLimitTime % 1000);
             }
             printf("Total Uncomp Written: %ld\n", totalWritten);
             fflush(stdout);
@@ -1130,6 +1127,23 @@ unsigned int __ctStoreThreadJoinInternalPos(bool ie, unsigned int id, unsigned i
     #else
     return 0;
     #endif
+}
+
+void __ctStoreDelay(ct_tsc_t start_t)
+{
+    #ifdef __NULL_CHECK
+    if (__ctThreadLocalBuffer == NULL) return;
+    #endif
+    
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    ct_tsc_t t = rdtsc();
+
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_delay;
+    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
+    
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) * 2 + sizeof(ct_tsc_t) * 2;
 }
 
 // Each thread maintains a map of pthread_t to ctid
