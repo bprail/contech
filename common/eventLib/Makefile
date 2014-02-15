@@ -12,8 +12,8 @@ $(PROJECT): $(OBJECTS)
 	ar rc $(PROJECT) $(OBJECTS)
 
 install: all
-	cp $(PROJECT) $CONTECH_LLVM_HOME/lib
-	cp $(HEADERS) $CONTECH_LLVM_HOME/include
+	cp $(PROJECT) $(CONTECH_LLVM_HOME)/lib
+	cp $(HEADERS) $(CONTECH_LLVM_HOME)/include
 
 clean:
 	rm $(PROJECT) $(OBJECTS)
