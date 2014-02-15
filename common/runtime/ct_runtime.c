@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/timeb.h>
+#include <sys/sysinfo.h>
 
 // Check for NULL on every instrumentation routine
 //#define __NULL_CHECK
@@ -133,6 +134,18 @@ int main(int argc, char** argv)
         
             __ctMaxBuffers = ((unsigned long long)ilimit  * 1024 * 1024) / ((unsigned long long) SERIAL_BUFFER_SIZE);
         }
+        else
+        {
+            struct sysinfo t_info;
+            
+            if (0 == sysinfo(&t_info))
+            {
+                unsigned long long mem_size = (unsigned long long)t_info.freeram * (unsigned long long)t_info.mem_unit;
+                mem_size = (mem_size * 9) / 10;
+                printf("CT_MEM: %llu\n", mem_size);
+                __ctMaxBuffers = (mem_size) / ((unsigned long long) SERIAL_BUFFER_SIZE);
+            }
+        }
         
         pthread_mutex_init(&__ctQueueBufferLock, NULL);
         pthread_cond_init(&__ctQueueSignal, NULL);
@@ -183,75 +196,36 @@ int main(int argc, char** argv)
 
 void __ctAllocateLocalBuffer()
 {
-    // test and test-and-set
+    pthread_mutex_lock(&__ctFreeBufferLock);
     if (__ctFreeBuffers != NULL)
     {
-        pthread_mutex_lock(&__ctFreeBufferLock);
-        if (__ctFreeBuffers != NULL)
-        {
-            __ctThreadLocalBuffer = __ctFreeBuffers;
-            __ctFreeBuffers = __ctFreeBuffers->next;
-            pthread_mutex_unlock(&__ctFreeBufferLock);
-            __ctThreadLocalBuffer->next = NULL;
-            // Buffer from list, just set position
-            __ctThreadLocalBuffer->pos = 0;
-        }
-        else
-        {
-            // This block should be rolled into the parent's else block
-            // Or perhaps the test-and-test-and-set should be discarded.
-            if (__ctCurrentBuffers == __ctMaxBuffers)
-            {
-                while (__ctFreeBuffers == NULL)
-                {
-                    pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
-                }
-                __ctThreadLocalBuffer = __ctFreeBuffers;
-                __ctFreeBuffers = __ctFreeBuffers->next;
-                pthread_mutex_unlock(&__ctFreeBufferLock);
-                __ctThreadLocalBuffer->next = NULL;
-                // Buffer from list, just set position
-                __ctThreadLocalBuffer->pos = 0;
-            }
-            else {
-                __ctCurrentBuffers++;
-                pthread_mutex_unlock(&__ctFreeBufferLock);
-                __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + serialBufferSize);
-                if (__ctThreadLocalBuffer == NULL)
-                {
-                    // This may be a bad thing, but we're already failing memory allocations
-                    pthread_exit(NULL);
-                }
-                
-                // Buffer was malloc, so set the length
-                __ctThreadLocalBuffer->pos = 0;
-                __ctThreadLocalBuffer->length = serialBufferSize;
-            }
-        }
+        __ctThreadLocalBuffer = __ctFreeBuffers;
+        __ctFreeBuffers = __ctFreeBuffers->next;
+        __ctCurrentBuffers++;
+        pthread_mutex_unlock(&__ctFreeBufferLock);
+        __ctThreadLocalBuffer->next = NULL;
+        // Buffer from list, just set position
+        __ctThreadLocalBuffer->pos = 0;
     }
     else
     {
-        pthread_mutex_lock(&__ctFreeBufferLock);
-        
-        // Has the runtime memory usage exceeded specified limits?
+        // This block should be rolled into the parent's else block
+        // Or perhaps the test-and-test-and-set should be discarded.
         if (__ctCurrentBuffers == __ctMaxBuffers)
         {
-            // Wait for a buffer to become available.
             while (__ctFreeBuffers == NULL)
             {
                 pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
             }
-            
-            // Thread has lock and __ctFreeBuffers is not NULL
             __ctThreadLocalBuffer = __ctFreeBuffers;
             __ctFreeBuffers = __ctFreeBuffers->next;
+            __ctCurrentBuffers++;
             pthread_mutex_unlock(&__ctFreeBufferLock);
             __ctThreadLocalBuffer->next = NULL;
             // Buffer from list, just set position
             __ctThreadLocalBuffer->pos = 0;
         }
         else {
-            // In lock, not atomic
             __ctCurrentBuffers++;
             pthread_mutex_unlock(&__ctFreeBufferLock);
             __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + serialBufferSize);
@@ -260,10 +234,13 @@ void __ctAllocateLocalBuffer()
                 // This may be a bad thing, but we're already failing memory allocations
                 pthread_exit(NULL);
             }
+            
+            // Buffer was malloc, so set the length
             __ctThreadLocalBuffer->pos = 0;
             __ctThreadLocalBuffer->length = serialBufferSize;
         }
     }
+
     __ctThreadLocalBuffer->next = NULL;
     __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
     #ifdef DEBUG
@@ -462,6 +439,9 @@ void* __ctBackgroundThreadWriter(void* d)
     char* fname = getenv("CONTECH_FE_FILE");
     unsigned int wpos = 0;
     size_t totalWritten = 0;
+    pct_serial_buffer memLimitQueue = NULL;
+    pct_serial_buffer memLimitQueueTail = NULL;
+    unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
     
     if (fname == NULL)
     {
@@ -651,13 +631,54 @@ void* __ctBackgroundThreadWriter(void* d)
                 fflush(stderr);
                 pthread_mutex_unlock(&__ctPrintLock);
 #endif
-                t->next = __ctFreeBuffers;
-                __ctFreeBuffers = t;
+                
                 
                 // If this is the only free buffer, signal any waiting threads
                 // TODO: Can we avoid the cond_signal if buffer limits are not in place?
                 // TODO: OR not signal until queuedBuffers is NULL ?
-                if (t->next == NULL) {pthread_cond_signal(&__ctFreeSignal);}
+                //if (t->next == NULL) {pthread_cond_signal(&__ctFreeSignal);}
+                if (__ctCurrentBuffers == __ctMaxBuffers)
+                {
+                    if (__ctQueuedBuffers == NULL)
+                    {
+                        // memlimit end
+                        struct timeb tp;
+                        ftime(&tp);
+                        endLimitTime = tp.time*1000 + tp.millitm;
+                        totalLimitTime += (endLimitTime - startLimitTime);
+                        memLimitQueueTail->next = __ctFreeBuffers;
+                        __ctFreeBuffers = memLimitQueue;
+                        __ctCurrentBuffers = 0;
+                        memLimitQueue = NULL;
+                        memLimitQueueTail = NULL;
+                        pthread_cond_broadcast(&__ctFreeSignal);
+                    }
+                    else
+                    {
+                        if (memLimitQueueTail == NULL)
+                        {
+                            memLimitQueue = t;
+                            memLimitQueueTail = t;
+                            t->next = NULL;
+                            // memlimit start
+                            struct timeb tp;
+                            ftime(&tp);
+                            startLimitTime = tp.time*1000 + tp.millitm;
+                        }
+                        else
+                        {
+                            memLimitQueueTail->next = t;
+                            t->next = NULL;
+                            memLimitQueueTail = t;
+                        }
+                    }
+                }
+                else
+                {
+                    t->next = __ctFreeBuffers;
+                    __ctFreeBuffers = t;
+                    __ctCurrentBuffers --;
+                }
             }
             pthread_mutex_unlock(&__ctFreeBufferLock);
         }
@@ -674,6 +695,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 struct timeb tp;
                 ftime(&tp);
                 printf("CT_COMP: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+                printf("CT_LIMIT: %llu.%03d\n", totalLimitTime / 1000, totalLimitTime % 1000);
             }
             printf("Total Uncomp Written: %ld\n", totalWritten);
             fflush(stdout);
