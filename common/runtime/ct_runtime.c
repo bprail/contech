@@ -212,6 +212,9 @@ void __ctAllocateLocalBuffer()
         if (__ctCurrentBuffers == __ctMaxBuffers)
         {
             ct_tsc_t start = rdtsc();
+            // Does this condition variable need an additional check?
+            //   Or are we asserting that the delay is finished and
+            //   __ctFreeBuffers is not NULL
             pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
             __ctStoreDelay(start);
             __ctThreadLocalBuffer = __ctFreeBuffers;
@@ -1216,9 +1219,11 @@ void __ctOMPThreadCreate(unsigned int parent)
     //   because there is the small copy path, this create
     //   will be copied out with the current id
     __ctThreadLocalNumber = parent;
+    __ctThreadLocalBuffer->id = parent;
     __ctStoreThreadCreate(threadId, 0, rdtsc());
     __ctQueueBuffer(true);
     __ctThreadLocalNumber = threadId;
+    __ctThreadLocalBuffer->id = threadId;
     
     __ctStoreThreadCreate(parent, 1, rdtsc());
     __ctPushIdStack(&__ctThreadIdStack, threadId);
@@ -1252,6 +1257,7 @@ void __ctOMPTaskCreate(int ret)
     __ctThreadLocalNumber = threadId;
     __ctStoreThreadCreate(taskId, 0, rdtsc());
     __ctQueueBuffer(true);
+    __ctThreadLocalBuffer->id = taskId;
     __ctThreadLocalNumber = taskId;
     
     __ctStoreThreadCreate(threadId, 1, rdtsc());
@@ -1276,6 +1282,7 @@ void __ctOMPTaskJoin()
     __sync_fetch_and_add(&__ctThreadExitNumber, 1);
     
     __ctThreadLocalNumber = threadId;
+    __ctThreadLocalBuffer->id = threadId;
     
     // Joins are pushed onto a stack, so that
     //   All of the creates occur for the tasks before any joins of the tasks
@@ -1323,6 +1330,7 @@ void __ctOMPThreadJoin(unsigned int parent)
     __sync_fetch_and_add(&__ctThreadExitNumber, 1);
     
     __ctThreadLocalNumber = parent;
+    __ctThreadLocalBuffer->id = parent;
     __ctStoreThreadJoinInternal(false, threadId, rdtsc());
     __ctQueueBuffer(true);  // Yes, this time we will be wasting space
 }
