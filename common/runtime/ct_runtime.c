@@ -383,12 +383,20 @@ void __ctQueueBuffer(bool alloc)
         
         __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + allocSize);
         
-        __ctThreadLocalBuffer->pos = localBuffer->pos;
-        __ctThreadLocalBuffer->length = allocSize;
-        __ctThreadLocalBuffer->next = NULL;
-        __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
-        
-        memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
+        if(__ctThreadLocalBuffer != NULL)
+        {
+            __ctThreadLocalBuffer->pos = localBuffer->pos;
+            __ctThreadLocalBuffer->length = allocSize;
+            __ctThreadLocalBuffer->next = NULL;
+            __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+            
+            memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
+        }
+        else
+        {
+            __ctThreadLocalBuffer = localBuffer;
+            localBuffer = NULL;
+        }
     }
     
     if (__ctThreadLocalBuffer->id != __ctThreadLocalNumber)

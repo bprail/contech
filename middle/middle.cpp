@@ -557,14 +557,7 @@ reset_middle:
                     
                     backgroundQueueTask(barrierTask);
                     
-                    Task* t = context[cid].tasks.back();
-                    while (t != context[cid].activeTask() &&
-                       t->getType() == task_type_basic_blocks)
-                    {
-                        context[cid].tasks.pop_back();
-                        backgroundQueueTask(t);
-                        t = context[cid].tasks.back();
-                    }
+                    updateContextTaskList(context[cid]);
                 }
             }
         }
