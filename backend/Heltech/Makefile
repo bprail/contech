@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS= -std=c++11 -O3 -g
 OBJECTS= heltech.o
 INCLUDES= -I.
-LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -lz -L../../common/taskLib/ -lTask
+LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -L../../common/taskLib/ -lTask -lz
 EXTERNALS=
 
 all: taskLib heltech

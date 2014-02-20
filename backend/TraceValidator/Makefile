@@ -2,7 +2,7 @@ CXX = g++
 PROJECT = traceValidator
 OBJECTS = TraceValidator.o main.o
 CPPFLAGS  = -O3 -g --std=c++11
-LIBS = -lz -lct_event -L../../common/eventLib/ -lTask -L../../common/taskLib/
+LIBS = -lct_event -L../../common/eventLib/ -lTask -L../../common/taskLib/ -lz
 
 all: $(PROJECT)
 

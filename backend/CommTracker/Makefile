@@ -3,7 +3,7 @@ CXX=g++
 CXXFLAGS= -g -std=c++11 -O3
 OBJECTS= CommTracker.o CommRecord.o
 INCLUDES=
-LIBS= -lz -L../../common/taskLib/ -lTask
+LIBS= -L../../common/taskLib/ -lTask -lz
 EXTERNALS=
 
 all: taskLib $(PROJECT)

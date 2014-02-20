@@ -2,7 +2,7 @@ CXX = g++
 PROJECT = middle
 OBJECTS = middle.o Context.o BarrierWrapper.o
 CPPFLAGS  = -O3 -g --std=c++11 -pthread
-LIBS = -lz -lTask -lct_event
+LIBS = -lTask -lct_event -lz
 
 all: $(PROJECT)
 
