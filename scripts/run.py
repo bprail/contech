@@ -15,9 +15,9 @@ def main(parsec=False):
         TRACEVALIDATOR = os.path.join(CONTECH_HOME, "backend/TraceValidator/traceValidator")
         
         #PIN frontend
-        PINPATH = os.path.join(CONTECH_HOME,"pin_fe/pin-2.12-58423-gcc.4.4.7-linux/")
+        PINPATH = os.path.join(CONTECH_HOME,"../pin/pin-2.13-62732-gcc.4.4.7-linux/")
         PINBIN = os.path.join(PINPATH,"pin")
-        PINTOOL = os.path.join(PINPATH,"source/tools/Frontend/obj-intel64/Frontend.so")
+        PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/contech_fe.so")
         
         # List of backend tools.
         # TODO: generalize this list so that the script can recognize these by name
