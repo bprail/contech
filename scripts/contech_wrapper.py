@@ -113,7 +113,9 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         elif ".c" == arg[-2:]:
             cfile = arg
             isCpp = False
-        
+        elif ".f" == arg[-2:]:
+            # Fortran only supported through dragonEgg and not clang
+            compileOnly = True
         # Object file
         elif ".o" == arg[-2:]:
             ofiles = ofiles + " " + arg
