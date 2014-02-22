@@ -216,11 +216,11 @@ void __ctAllocateLocalBuffer()
             //   Or are we asserting that the delay is finished and
             //   __ctFreeBuffers is not NULL
             pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
-            __ctStoreDelay(start);
             __ctThreadLocalBuffer = __ctFreeBuffers;
             __ctFreeBuffers = __ctFreeBuffers->next;
             __ctCurrentBuffers++;
             pthread_mutex_unlock(&__ctFreeBufferLock);
+            __ctStoreDelay(start);
             __ctThreadLocalBuffer->next = NULL;
             // Buffer from list, just set position
             __ctThreadLocalBuffer->pos = 0;
