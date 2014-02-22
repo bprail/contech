@@ -123,8 +123,12 @@ Task* Context::createBasicBlockContinuation()
 Task* Context::createContinuation(task_type type, ct_tsc_t startTime, ct_tsc_t endTime)
 {
     assert(type != task_type_basic_blocks);
-    assert(activeTask()->getType() == task_type_basic_blocks);
-
+    //assert(activeTask()->getType() == task_type_basic_blocks);
+    if (activeTask()->getType() != task_type_basic_blocks)
+    {
+        createBasicBlockContinuation();
+    }
+    
     // Set the end time of the previous basic block task
     activeTask()->setEndTime(startTime);
 
