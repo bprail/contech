@@ -29,6 +29,7 @@ def main(parsec=False):
         CACHESIM = os.path.join(CONTECH_HOME, "backend/MultiCacheSim/CacheTestDriver")
         HELTECH = os.path.join(CONTECH_HOME, "backend/Heltech/heltech")
         HAMMER = os.path.join(CONTECH_HOME, "backend/Hammer/hammer")
+        BARRIMBL = os.path.join(CONTECH_HOME, "backend/BarrImbal/barrImbl")
     else:
         print_error("Error: Could not find contech installation. Set CONTECH_HOME to the root of your contech directory.")
         exit(1)
@@ -142,7 +143,7 @@ def main(parsec=False):
             
     else:
         # Use existing task graph
-        taskgraph = os.path.join("/net/tinker/ehein6/contech", "middle/output", taskgraphBasename)
+        taskgraph = os.path.join(CONTECH_HOME, "middle/output", taskgraphBasename)
     
     # Run backends
     if args.backends != None:
@@ -189,6 +190,9 @@ def main(parsec=False):
                 elif "hammer" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/Hammer/output/", name + ".csv")
                     pcall([HAMMER, taskgraph, ">", output])
+                elif "barrimbl" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/BarrImbal/output/", name + ".csv")
+                    pcall([BARRIMBL, taskgraph, ">", output])
                 else:
                     print_warning("Unrecognized backend: " + backend)
                     
