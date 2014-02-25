@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
     // Open input file
     // Use command line argument or stdin
     ct_file* in;
-    bool parallelMiddle = true;
+    bool parallelMiddle = false;
     pthread_t backgroundT;
     
     // First attempt middle layer in parallel, if there is an error,
@@ -271,7 +271,8 @@ reset_middle:
             // If transitioning into a basic block task, perhaps the older tasks
             //   are complete and can be queued to the background thread.
             //
-            if (activeT->getType() != task_type_basic_blocks)
+            if (activeT->getType() != task_type_basic_blocks &&
+                parallelMiddle)
             {
                 activeContech.createBasicBlockContinuation();
                 
@@ -383,7 +384,8 @@ reset_middle:
             // Make the sync dependent on whoever accessed the sync primitive last         
             auto it = ownerList.find(event->sy.sync_addr);
             if (it != ownerList.end() &&
-                event->sy.sync_type != ct_cond_wait)
+                event->sy.sync_type != ct_cond_wait&&
+                parallelMiddle)
             {
                 Task* owner = it->second;
                 ContextId cid = owner->getContextId();
@@ -442,7 +444,8 @@ reset_middle:
                     //      and recording its successor(s)
                     //   If it is not active, then only joins remain to update this task
                     if (otherContext.activeTask() != otherTask &&
-                        otherContext.isCompleteJoin(otherTaskId))
+                        otherContext.isCompleteJoin(otherTaskId)&&
+                        parallelMiddle)
                     {
                         bool rem = otherContext.removeTask(otherTask);
                         
@@ -549,7 +552,7 @@ reset_middle:
                 continuation->addPredecessor(barrierTask->getTaskId());
                 
                 // The last of the contexts has exited the barrier, so the barrier is complete
-                if (isFinished)
+                if (isFinished && parallelMiddle)
                 {
                     ContextId cid = barrierTask->getContextId();
                     bool remove = context[cid].removeTask(barrierTask);
