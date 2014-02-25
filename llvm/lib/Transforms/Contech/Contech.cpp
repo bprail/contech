@@ -1297,7 +1297,8 @@ cleanup:
         // Being really conservative every block has a check, this also
         //   requires disabling the dominator tree traversal in the runOnModule routine
         //
-        if (/*containCall == true && */containQueueBuf == false && markOnly == false)
+        //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
+        if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
         {
             debugLog("checkBufferFunction @" << __LINE__);
             CallInst::Create(checkBufferFunction, "", iPt);
