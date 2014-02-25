@@ -1,3 +1,7 @@
+#define _GNU_SOURCE
+#ifndef __USE_GNU
+#define __USE_GNU
+#endif
 #include "ct_runtime.h"
 #include "rdtsc.h"
 #include <stdlib.h>
@@ -6,6 +10,12 @@
 #include <string.h>
 #include <sys/timeb.h>
 #include <sys/sysinfo.h>
+#include <sys/mman.h>
+#include <assert.h>
+
+
+#include <sched.h>
+
 
 // Check for NULL on every instrumentation routine
 //#define __NULL_CHECK
@@ -66,6 +76,8 @@ pthread_mutex_t __ctQueueBufferLock;
 pthread_cond_t __ctQueueSignal;
 pthread_mutex_t __ctFreeBufferLock;
 pthread_cond_t __ctFreeSignal;
+
+pthread_mutex_t ctAllocLock;
 
 void* (__ctBackgroundThreadWriter)(void*);
 void __ctStoreThreadJoinInternal(bool, unsigned int, ct_tsc_t);
@@ -151,6 +163,7 @@ int main(int argc, char** argv)
         pthread_cond_init(&__ctQueueSignal, NULL);
         pthread_mutex_init(&__ctFreeBufferLock, NULL);
         pthread_cond_init(&__ctFreeSignal, NULL);
+        pthread_mutex_init(&ctAllocLock, NULL);
 #ifdef DEBUG        
         pthread_mutex_init(&__ctPrintLock, NULL);
 #endif
@@ -229,11 +242,13 @@ void __ctAllocateLocalBuffer()
             __ctCurrentBuffers++;
             pthread_mutex_unlock(&__ctFreeBufferLock);
             __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + serialBufferSize);
+            //__ctThreadLocalBuffer = ctInternalAllocateBuffer();
             if (__ctThreadLocalBuffer == NULL)
             {
                 // This may be a bad thing, but we're already failing memory allocations
                 pthread_exit(NULL);
             }
+            //fprintf(stdout, "%p\n", __ctThreadLocalBuffer);
             
             // Buffer was malloc, so set the length
             __ctThreadLocalBuffer->pos = 0;
@@ -322,6 +337,16 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     a = ptc->arg;
     p = ptc->parent_ctid;
     start = rdtsc();
+    
+    // HACK -- REMOVE!!!
+    #if 0
+    printf("Hello!\n"); fflush(stdout);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(24 - (ptc->child_ctid % 16), &cpuset);
+    int r = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
+    printf("%d - %d - %llx\n", ptc->child_ctid, r, cpuset);
+    #endif
     
     //
     // Now compute the skew
@@ -1389,3 +1414,53 @@ unsigned int __ctPeekIdStack(pcontech_id_stack *head)
     unsigned int id = elem->id;
     return id;
 }
+
+__thread unsigned int ctAllocCount = 4;
+__thread char* ctBaseChunk = NULL;
+
+pct_serial_buffer ctInternalAllocateBuffer()
+{
+    if (ctAllocCount == 4)
+    {
+        ctBaseChunk = mmap(NULL, 4 * SERIAL_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        ctAllocCount = 0;
+    }
+    char* r = ctBaseChunk + ctAllocCount * SERIAL_BUFFER_SIZE;
+    ctAllocCount++;
+    return (pct_serial_buffer) r;
+}
+
+#if 0
+{
+    char* r = __sync_add_and_fetch(&ctBaseChunk, 1);
+    unsigned long int i = ((unsigned long int)r) & 511;
+    char* myBase = (char*)(((unsigned long long)r) & (~511));
+    
+    if (myBase == NULL) goto chunkAlloc;
+    if (i < 256)
+        return (pct_serial_buffer) (myBase + SERIAL_BUFFER_SIZE * i);
+chunkAlloc:
+    pthread_mutex_lock(&ctAllocLock);
+    if ((char*)(((unsigned long long)ctBaseChunk) & (~511)) == NULL ||
+        (((unsigned long long)ctBaseChunk)&511))
+    {
+        char* t = mmap(NULL, 256 * SERIAL_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, 0, 0);
+        if (t == NULL) {fprintf(stderr, "Failed mmap of internal buffer\n"); exit(0);}
+        ctBaseChunk = t;
+        pthread_mutex_unlock(&ctAllocLock);
+        return (pct_serial_buffer) t;
+    }
+    else
+    {
+        // someone else has already allocated a chunk
+        r = __sync_add_and_fetch(&ctBaseChunk, 1);
+        i = ((unsigned long int)r) & 511;
+        myBase = (char*)(((unsigned long long)r) & (~511));
+        
+        assert(i < 256);
+        pthread_mutex_unlock(&ctAllocLock);
+        return (pct_serial_buffer) (myBase + SERIAL_BUFFER_SIZE * i);
+    }
+    
+}
+#endif

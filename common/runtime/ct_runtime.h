@@ -11,6 +11,7 @@
 // Used to store serial data
 typedef struct _ct_serial_buffer
 {
+    // TODO: Investigate removing length field
     unsigned int pos, length, id;
     struct _ct_serial_buffer* next; // can order buffers 
     char data[0];
@@ -78,6 +79,8 @@ void __ctOMPPopParent();
 void __ctPushIdStack(pcontech_id_stack*, unsigned int);
 unsigned int __ctPopIdStack(pcontech_id_stack*);
 unsigned int __ctPeekIdStack(pcontech_id_stack*);
+
+pct_serial_buffer ctInternalAllocateBuffer();
 
 void __ctQueueBuffer(bool);
 // (contech_id, basic block id, num of ops)
