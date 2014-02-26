@@ -107,7 +107,7 @@ int main(int argc, char* argv[])
     // Open input file
     // Use command line argument or stdin
     ct_file* in;
-    bool parallelMiddle = false;
+    bool parallelMiddle = true;
     pthread_t backgroundT;
     
     // First attempt middle layer in parallel, if there is an error,
@@ -981,6 +981,7 @@ void* backgroundTaskWriter(void* v)
         // It would be better if we could ensure the broadest set of tasks in the worklist,
         //   so that the oldest BFS task is written.
         //
+        if (!noMoreTasks) continue;
         while (!workList.empty())
         {
             TaskId id = workList.top().second;
