@@ -27,6 +27,9 @@
 // Include debugging checks / prints
 //#define DEBUG
 
+// Should the create events measure clock skew
+//#define CT_CLOCK_SKEW
+
 typedef struct _ct_serial_buffer_sized
 {
     unsigned int pos, length, id;
@@ -316,9 +319,11 @@ int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
     //
     // Now compute the skew
     //
+#ifdef CT_CLOCK_SKEW
     while (ptc->child_skew == 0) ;
     temp = ptc->child_skew - rdtsc();
     ptc->parent_skew = (temp)?temp:1;
+#endif
     
 create_exit: 
     return ret;
@@ -351,12 +356,16 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     //
     // Now compute the skew
     //
+#ifdef CT_CLOCK_SKEW
     skew = 0;
     while (ptc->parent_skew == 0)
     {
         ptc->child_skew = rdtsc();
     }
     skew = ptc->parent_skew;
+#else
+    skew = 1;
+#endif
     
     __ctThreadLocalNumber = ptc->child_ctid;//__sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
     __ctAllocateLocalBuffer();
