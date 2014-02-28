@@ -6,7 +6,7 @@ import json
 
 
 def main():
-    launchBackend("barrimbl")
+    launchBackend("parhist")
 
 def launchBackend(backend):
     CONTECH_HOME = util.findContechInstall()
