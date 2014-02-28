@@ -129,6 +129,10 @@ Task* Context::createContinuation(task_type type, ct_tsc_t startTime, ct_tsc_t e
         createBasicBlockContinuation();
     }
     
+    assert(startTime >= currentTime &&
+           endTime >= startTime);
+    currentTime = endTime;
+    
     // Set the end time of the previous basic block task
     activeTask()->setEndTime(startTime);
 

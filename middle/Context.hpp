@@ -48,6 +48,8 @@ public:
 
     // Time offset between absolute time and relative time for this contech
     ct_tsc_t timeOffset = 0;
+    
+    ct_tsc_t currentTime = 0;
 };
 
 } // end namespace contech

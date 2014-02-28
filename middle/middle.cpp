@@ -986,6 +986,9 @@ void* backgroundTaskWriter(void* v)
         {
             TaskId id = workList.top().second;
             Task* t = tasks[id].first;
+            
+            assert(tasks.find(id) != tasks.end());
+            
             workList.pop();
             
             // Task will be null if it has already been handled
@@ -1010,7 +1013,7 @@ void* backgroundTaskWriter(void* v)
                     {
                         auto it = tasks.find(succ);
                         
-                        // If the successor has not been received, then store that one its
+                        // If the successor has not been received, then store that once its
                         //   predecessors has already been written
                         if (it == tasks.end())
                         {
@@ -1025,7 +1028,7 @@ void* backgroundTaskWriter(void* v)
                     
                     // Delete the task
                     delete t;
-                    tasks[id].first = NULL;
+                    //tasks[id].first = NULL;
                     tasks.erase(id);
                 }
             }
