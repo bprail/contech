@@ -56,6 +56,10 @@ def aggregate(root):
                 config = r["config"]
                 if config in ["llvm", "pin"]:
                     row[config+"Time"] = float(r["executionTime"]["real"])
+                    if (float(r["executionTime"]["real"]) > 0.0):
+                        row[config+"Parallel"] = float(r["executionTime"]["user"]) / float(r["executionTime"]["real"])
+                    else:
+                        row[config+"Parallel"] = float(0.0)
                     row[config+"FlushTime"] = float(0.0)
                 elif config in  ["contech"]:
                     row[config+"Time"] = float(r["timestamps"]["RUNTIME"])
@@ -109,8 +113,8 @@ def generateCgoTables(table):
         generateTaskGraphTable(table, format="LaTeX")
 
 def generateCsv(table, filename):
-    header = re.sub(r" +", " ", "Benchmark, LLVM Build Time [s], LLVM Run Time [s], Contech Build Time [s], Contech Run Time [s], Contech Flush Time [s],          Slowdown,  Middle Time [s], LLVM Memory Usage [MB], Contech Memory Usage [MB],   Uncompressed Size [MB],  Compressed Bytes [MB],   Total Tasks,   Average Basic Blocks per Task, Average MemOps per Basic Block ")
-    line =   re.sub(r" +", " ", "   {name},     {llvmBuildTime},        {llvmTime},     {contechBuildTime},        {contechTime},     {contechFlushTime}, {contechSlowdown},     {middleTime},      {llvmMemoryUsage},      {contechMemoryUsage},      {uncompressedBytes},      {compressedBytes}, {Total Tasks}, {Average Basic Blocks per Task}, {Average MemOps per Basic Block}")
+    header = re.sub(r" +", " ", "Benchmark, LLVM Build Time [s], LLVM Run Time [s],  LLVM Parallel, Contech Build Time [s], Contech Run Time [s], Contech Flush Time [s],          Slowdown,  Middle Time [s], LLVM Memory Usage [MB], Contech Memory Usage [MB],   Uncompressed Size [MB],  Compressed Bytes [MB],   Total Tasks,   Average Basic Blocks per Task, Average MemOps per Basic Block ")
+    line =   re.sub(r" +", " ", "   {name},     {llvmBuildTime},        {llvmTime}, {llvmParallel},  {contechBuildTime},        {contechTime},     {contechFlushTime}, {contechSlowdown},     {middleTime},      {llvmMemoryUsage},      {contechMemoryUsage},      {uncompressedBytes},      {compressedBytes}, {Total Tasks}, {Average Basic Blocks per Task}, {Average MemOps per Basic Block}")
     
     with open(filename, "w") as file:
         file.write(header + "\n")
@@ -122,6 +126,20 @@ def generateCsv(table, filename):
                 
     print "Results written to " + filename
 
+def generateRunCsv(table, filename):
+    header = re.sub(r" +", " ", "Benchmark, LLVM Run Time [s],  LLVM Parallel, Contech Run Time [s], Contech Flush Time [s],          Slowdown,  Middle Time [s], LLVM Memory Usage [MB], Contech Memory Usage [MB],   Uncompressed Size [MB],  Compressed Bytes [MB],   Total Tasks,   Average Basic Blocks per Task, Average MemOps per Basic Block ")
+    line =   re.sub(r" +", " ", "   {name},        {llvmTime}, {llvmParallel},        {contechTime},     {contechFlushTime}, {contechSlowdown},     {middleTime},      {llvmMemoryUsage},      {contechMemoryUsage},      {uncompressedBytes},      {compressedBytes}, {Total Tasks}, {Average Basic Blocks per Task}, {Average MemOps per Basic Block}")
+    
+    with open(filename, "w") as file:
+        file.write(header + "\n")
+        for row in table:
+            try:
+                file.write(line.format(**row) + "\n")
+            except KeyError as e:
+                warn("{}: missing {}".format(row["name"], e))
+                
+    print "Results written to " + filename
+    
 def generateRunTimeTable(table, format="LaTeX"):
     # Generate table of compile/run times in TeX format
     print
