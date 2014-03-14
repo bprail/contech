@@ -31,6 +31,7 @@ def main(parsec=False):
         HAMMER = os.path.join(CONTECH_HOME, "backend/Hammer/hammer")
         BARRIMBL = os.path.join(CONTECH_HOME, "backend/BarrImbal/barrImbl")
         PARHIST = os.path.join(CONTECH_HOME, "backend/ParHist/parHist")
+        FSHARE = os.path.join(CONTECH_HOME, "backend/FalseShare/falseShare")
     else:
         print_error("Error: Could not find contech installation. Set CONTECH_HOME to the root of your contech directory.")
         exit(1)
@@ -197,6 +198,9 @@ def main(parsec=False):
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
+                elif "falseShare" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/FalseShare/output/", name + ".csv")
+                    pcall([FSHARE, taskgraph, ">", output])    
                 else:
                     print_warning("Unrecognized backend: " + backend)
                     
