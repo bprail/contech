@@ -1,10 +1,10 @@
 PROJECT = libct_runtime.a
 OBJECTS = ct_runtime.o
-CFLAGS  = -O2 -g 
+CFLAGS  = -O3 -g 
 HEADERS = ct_runtime.h
 BITCODE = ct_runtime.bc
 
-all: $(PROJECT) $(BITCODE)
+all: $(BITCODE)
 
 .c.o:
 	gcc -c $(CFLAGS) $<
@@ -12,7 +12,7 @@ all: $(PROJECT) $(BITCODE)
 $(PROJECT): $(OBJECTS)
 	ar scru $(PROJECT) $(OBJECTS)
 
-$(BITCODE): $(OBJECTS)
+$(BITCODE):
 	$(CONTECH_LLVM_HOME)/bin/clang -emit-llvm -c $(CFLAGS) ct_runtime.c -o ct_runtime.bc -I/net/tinker/local/include -std=c89 -DCT_MAIN
 
 install: all
