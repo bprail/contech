@@ -12,7 +12,7 @@ all: $(BITCODE)
 $(PROJECT): $(OBJECTS)
 	ar scru $(PROJECT) $(OBJECTS)
 
-$(BITCODE):
+$(BITCODE): ct_runtime.c
 	$(CONTECH_LLVM_HOME)/bin/clang -emit-llvm -c $(CFLAGS) ct_runtime.c -o ct_runtime.bc -I/net/tinker/local/include -std=c89 -DCT_MAIN
 
 install: all
