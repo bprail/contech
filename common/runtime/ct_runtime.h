@@ -11,17 +11,10 @@
 // Used to store serial data
 typedef struct _ct_serial_buffer
 {
-    // TODO: Investigate removing length field
     unsigned int pos, length, id;
     struct _ct_serial_buffer* next; // can order buffers 
     char data[0];
 } ct_serial_buffer, *pct_serial_buffer;
-
-// possibly unneeded with __thread variables
-typedef struct _ct_serial_header
-{
-
-} ct_serial_header, *pct_serial_header;
 
 typedef struct _contech_thread_create {
     void* (*func)(void*);
