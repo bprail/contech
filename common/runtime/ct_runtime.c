@@ -769,12 +769,12 @@ unsigned int __ctCheckBufferSizePos(unsigned int pos)
     return pos;
 }
 
-void __ctCheckBufferSize()
+void __ctCheckBufferSize(unsigned int p)
 {
     #ifdef POS_USED
     // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
     //   4 for basic block, 32 for other event, then 6 for each memop
-    if ((__ctThreadLocalBuffer->length - __ctThreadLocalBuffer->pos) < 1024)
+    if ((SERIAL_BUFFER_SIZE - p) < 1024)
         __ctQueueBuffer(true);
     #endif
 }
@@ -853,10 +853,13 @@ unsigned int __ctStoreBasicBlockPos(unsigned int bbid, unsigned int num_ops, uns
     #endif
 }
 
-void __ctStoreBasicBlockComplete(unsigned int c)
+unsigned int __ctStoreBasicBlockComplete(unsigned int c)
 {
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += c * 6 * sizeof(char) + sizeof(unsigned int);// sizeof(ct_memory_op);
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    p += c * 6 * sizeof(char) + sizeof(unsigned int);// sizeof(ct_memory_op);
+    __ctThreadLocalBuffer->pos = p;
+    return p;
     #endif
 }
 
@@ -1288,7 +1291,7 @@ void __ctOMPTaskCreate(int ret)
             __ctStoreThreadJoinInternal(false, elem->id, elem->start);
             elem = elem->next;
             free(elem);
-            __ctCheckBufferSize();
+            __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
         }
         __ctJoinStack = NULL;
         return;
@@ -1362,7 +1365,7 @@ void __ctOMPThreadJoin(unsigned int parent)
         __ctStoreThreadJoinInternal(false, elem->id, elem->start);
         elem = elem->next;
         free(elem);
-        __ctCheckBufferSize();
+        __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
     }
     __ctJoinStack = NULL;
     

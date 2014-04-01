@@ -88,14 +88,14 @@ char* __ctStoreBasicBlock(unsigned int bbid);
 // (basic block id, size of string, string)
 void __ctStoreBasicBlockInfo (unsigned int, unsigned int, char*);
 void __ctStoreMemOp(void*, unsigned int, char*);
-void __ctStoreBasicBlockComplete(unsigned int);
+unsigned int __ctStoreBasicBlockComplete(unsigned int);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);
 void __ctStoreSync(void*, int, int, ct_tsc_t);
 void __ctStoreBarrier(bool, void*, ct_tsc_t);
 void __ctStoreMemoryEvent(bool, unsigned long long, void*);
 void* __ctInitThread(void*);//pcontech_thread_create ptc
-void __ctCheckBufferSize();
+void __ctCheckBufferSize(unsigned int);
 void __ctStoreDelay(ct_tsc_t start_t);
 
 void __ctAddThreadInfo(pthread_t *pt, unsigned int);

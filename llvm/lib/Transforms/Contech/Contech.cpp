@@ -199,6 +199,7 @@ namespace llvm {
         FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
         FunctionType* funI8I32Ty;
+        FunctionType* funI32I32Ty;
 
         LLVMContext &ctx = M.getContext();
         int8Ty = Type::getInt8Ty(ctx);
@@ -226,7 +227,6 @@ namespace llvm {
         // void (void) functions:
         funVoidVoidTy = FunctionType::get(voidTy, false);
         allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
-        checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidVoidTy);
         storeMemReadMarkFunction = M.getOrInsertFunction("__ctStoreMemReadMark", funVoidVoidTy);
         storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
         ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
@@ -245,12 +245,15 @@ namespace llvm {
         
         // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
         funVoidI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsTC, 1), false);
-        storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funVoidI32Ty);
         storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
         pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
         ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
         ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
         ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
+        checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
+        
+        funI32I32Ty = FunctionType::get(int32Ty, ArrayRef<Type*>(argsTC, 1), false);
+        storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
         
         Type* argsME[] = {int8Ty, int64Ty, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
@@ -1300,8 +1303,9 @@ cleanup:
         //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
         if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
         {
+            Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
-            CallInst::Create(checkBufferFunction, "", iPt);
+            CallInst::Create(checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             containCall = true;
         }
         
