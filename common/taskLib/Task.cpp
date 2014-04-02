@@ -269,7 +269,7 @@ Task* Task::readContechTask(ct_file* in)
     uint recordLength;
     ct_read(&recordLength, sizeof(uint), in);
 
-    if (ct_eof(in)) { return NULL;}
+    if (ct_eof(in)) { delete task; return NULL;}
 
     ct_read(&task->taskId, sizeof(TaskId), in);
     ct_read(&task->startTime, sizeof(ct_timestamp), in);
