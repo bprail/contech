@@ -7,6 +7,98 @@
 using namespace std;
 using namespace contech;
 
+bool noMoreTasks = false;
+pthread_mutex_t taskQueueLock;
+pthread_cond_t taskQueueCond;
+deque<Task*>* taskQueue;
+
+//
+// Queue a task for the background thread to write out
+//
+//   This releases ownership of the task.  It is expected that there should
+//   be no further changes to a task so queued.  It may be deleted at any time
+//   by the background thread.
+//
+#define QUEUE_SIGNAL_THRESHOLD 16
+void backgroundQueueTask(Task* t)
+{
+    unsigned int qSize;
+    pthread_mutex_lock(&taskQueueLock);
+    qSize = taskQueue->size();
+    taskQueue->push_back(t);
+    if (qSize == QUEUE_SIGNAL_THRESHOLD) {pthread_cond_signal(&taskQueueCond);}
+    pthread_mutex_unlock(&taskQueueLock);
+}
+
+//
+// Debug routine
+//
+//   This routine has no call, instead it is invoked in the debugger to display
+//   the tasks currently queued at a context.  And to display the details of the
+//   oldest task.
+//
+void displayContextTasks(map<ContextId, Context> &context, int id)
+{
+    Context tgt = context[id];
+    Task* last;
+    
+    for (Task* t : tgt.tasks)
+    {
+        last = t;
+        printf("%llx  ", t->getTaskId());
+    }
+    if (last != NULL)
+    {
+        cout << last->toString() << endl;
+    }
+}
+
+void updateContextTaskList(Context &c)
+{
+    // Non basic block tasks are handled by their creation logic
+    //   basic block tasks can be queued, if they are not the newest task
+    //   and they have a predecessor (i.e., have been created by another context).
+    //   Task(0:0) has no predecessor and is a special case here.
+    //
+    // Creates must be complete when they are not the active task.  The child is
+    //   known at creation time, so no update is required of this task.
+    Task* t = c.tasks.back();
+    bool exited = (c.endTime != 0);
+    
+    // TODO: Should we 'cache' getType() or can the compiler do this?
+    //   task_type tType ...
+    
+    if (exited == false)
+    {
+        while (t != c.activeTask() &&
+               (( t->getType() == task_type_basic_blocks &&
+               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
+               (t->getType() == task_type_create)))
+              
+        {
+            c.tasks.pop_back();
+            backgroundQueueTask(t);
+            t = c.tasks.back();
+        }
+    }
+    else
+    {
+        // If the context has exited, then even the active task can go
+        if (c.tasks.empty()) return;
+        while (( t->getType() == task_type_basic_blocks &&
+               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
+               (t->getSuccessorTasks().size() > 0)) ||
+               t->getType() == task_type_create)
+              
+        {
+            c.tasks.pop_back();
+            backgroundQueueTask(t);
+            t = c.tasks.back();
+            if (c.tasks.empty()) return;
+        }
+    }
+}
+
 //
 // Support routine to determine what is the blocking task
 // 
@@ -64,7 +156,8 @@ void* backgroundTaskWriter(void* v)
     
     priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskIndex;
     
-    uint64 bytesWritten = 0;
+    uint64 bytesWritten = ct_tell(out);
+    long pos;
     bool firstTime = true;
     struct timeb timest;
     unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
@@ -187,8 +280,9 @@ void* backgroundTaskWriter(void* v)
                 else
                 {
                     // Write out the task
-                    t->setFileOffset(bytesWritten);
-                    taskIndex.push(make_pair(startTime, make_pair(id, bytesWritten)));
+                    //t->setFileOffset(bytesWritten);
+                    pos = ct_tell(out);
+                    taskIndex.push(make_pair(startTime, make_pair(id, pos)));
                     bytesWritten += Task::writeContechTask(*t, out);
                     taskWriteCount += 1;
                     
@@ -222,22 +316,24 @@ void* backgroundTaskWriter(void* v)
     
     // Write how many entries are in the index
     //   The write each index entry pair
-    ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
+    pos = ct_tell(out);
+    printf("Writing index for %d at %lld\n", taskWriteCount, pos);
+    size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
     //for (auto it = taskIndex.begin(), et = taskIndex.end(); it != et; ++it)
     while (!taskIndex.empty())
     {
         TaskId tid = taskIndex.top().second.first;
-        uint64 offset = taskIndex.top().second.second;
+        unsigned long long offset = taskIndex.top().second.second;
         
         ct_write(&tid, sizeof(TaskId), out);
-        ct_write(&offset, sizeof(uint64), out);
+        ct_write(&offset, sizeof(unsigned long long), out);
         
         taskIndex.pop();
     }
     
     // Now write the position of the index
     ct_seek(out, 4);
-    ct_write(&bytesWritten, sizeof(bytesWritten), out);
+    ct_write(&pos, sizeof(pos), out);
     
     //
     // Stats for the background thread.

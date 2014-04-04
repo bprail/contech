@@ -1,104 +1,12 @@
 #include "middle.hpp"
+#include "taskWrite.hpp"
 #include <sys/timeb.h>
 #include <pthread.h>
 
 using namespace std;
 using namespace contech;
 
-bool noMoreTasks = false;
-pthread_mutex_t taskQueueLock;
-pthread_cond_t taskQueueCond;
-deque<Task*>* taskQueue;
-
-
 void* backgroundTaskWriter(void*);
-
-//
-// Queue a task for the background thread to write out
-//
-//   This releases ownership of the task.  It is expected that there should
-//   be no further changes to a task so queued.  It may be deleted at any time
-//   by the background thread.
-//
-#define QUEUE_SIGNAL_THRESHOLD 16
-void backgroundQueueTask(Task* t)
-{
-    unsigned int qSize;
-    pthread_mutex_lock(&taskQueueLock);
-    qSize = taskQueue->size();
-    taskQueue->push_back(t);
-    if (qSize == QUEUE_SIGNAL_THRESHOLD) {pthread_cond_signal(&taskQueueCond);}
-    pthread_mutex_unlock(&taskQueueLock);
-}
-
-//
-// Debug routine
-//
-//   This routine has no call, instead it is invoked in the debugger to display
-//   the tasks currently queued at a context.  And to display the details of the
-//   oldest task.
-//
-void displayContextTasks(map<ContextId, Context> &context, int id)
-{
-    Context tgt = context[id];
-    Task* last;
-    
-    for (Task* t : tgt.tasks)
-    {
-        last = t;
-        printf("%llx  ", t->getTaskId());
-    }
-    if (last != NULL)
-    {
-        cout << last->toString() << endl;
-    }
-}
-
-void updateContextTaskList(Context &c)
-{
-    // Non basic block tasks are handled by their creation logic
-    //   basic block tasks can be queued, if they are not the newest task
-    //   and they have a predecessor (i.e., have been created by another context).
-    //   Task(0:0) has no predecessor and is a special case here.
-    //
-    // Creates must be complete when they are not the active task.  The child is
-    //   known at creation time, so no update is required of this task.
-    Task* t = c.tasks.back();
-    bool exited = (c.endTime != 0);
-    
-    // TODO: Should we 'cache' getType() or can the compiler do this?
-    //   task_type tType ...
-    
-    if (exited == false)
-    {
-        while (t != c.activeTask() &&
-               (( t->getType() == task_type_basic_blocks &&
-               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
-               (t->getType() == task_type_create)))
-              
-        {
-            c.tasks.pop_back();
-            backgroundQueueTask(t);
-            t = c.tasks.back();
-        }
-    }
-    else
-    {
-        // If the context has exited, then even the active task can go
-        if (c.tasks.empty()) return;
-        while (( t->getType() == task_type_basic_blocks &&
-               (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
-               (t->getSuccessorTasks().size() > 0)) ||
-               t->getType() == task_type_create)
-              
-        {
-            c.tasks.pop_back();
-            backgroundQueueTask(t);
-            t = c.tasks.back();
-            if (c.tasks.empty()) return;
-        }
-    }
-}
 
 int main(int argc, char* argv[])
 {
@@ -131,7 +39,7 @@ reset_middle:
     if (argc > 2)
     {
         //out = fopen(argv[2], "wb");
-        out = create_ct_file_w(argv[2],true);
+        out = create_ct_file_w(argv[2],false);
         assert(out != NULL && "Could not open output file");
     }
     else
@@ -140,7 +48,9 @@ reset_middle:
     }
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
+    unsigned long long space = 0;
     ct_write(&taskGraphVersion, sizeof(int), out);
+    ct_write(&space, sizeof(unsigned long long), out);
     
     pthread_mutex_init(&taskQueueLock, NULL);
     pthread_cond_init(&taskQueueCond, NULL);
@@ -632,7 +542,7 @@ reset_middle:
                 else
                 {
                     // Write out the task
-                    t->setFileOffset(bytesWritten);
+                    //t->setFileOffset(bytesWritten);
                     bytesWritten += Task::writeContechTask(*t, out);
                     
                     // Add successors to the work list

@@ -1,5 +1,5 @@
 #include "../common/eventLib/ct_event.h"
-#include "../common/taskLib/Task.hpp"
+#include "../common/taskLib/TaskGraph.hpp"
 
 #include "Context.hpp"
 #include "BarrierWrapper.hpp"
@@ -31,6 +31,16 @@ class first_compare
 {
 public:
     bool operator()(pair<ct_tsc_t,TaskId> n1,pair<ct_tsc_t,TaskId> n2)
+    {
+
+      if(n1.first>n2.first)
+      return true;
+      else
+      return false;
+
+    }
+    
+    bool operator()(pair<ct_tsc_t, pair<TaskId, uint64> > n1,pair<ct_tsc_t,pair<TaskId, uint64> > n2)
     {
 
       if(n1.first>n2.first)
