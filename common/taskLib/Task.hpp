@@ -23,8 +23,14 @@ typedef uint64 ct_timestamp;
 enum task_type { task_type_basic_blocks = 0, task_type_sync, task_type_barrier, task_type_create, task_type_join};
 enum sync_type { sync_type_lock = 0, sync_type_condition_variable, sync_type_user_defined};
 
+class TaskGraph;
+
 class Task
 {
+friend class TaskGraph;
+protected:
+    static Task* readContechTask(ct_file* in);
+
 private:
 
     TaskId taskId = 0;
@@ -43,7 +49,7 @@ private:
     sync_type syncType;
         
     // file offset (in bytes) in a taskgraph file. Enables constant time task access
-    uint64 fileOffset;
+    //uint64 fileOffset;
 
     int bbCount;
     
@@ -89,8 +95,8 @@ public:
     sync_type getSyncType() const;
     void setSyncType(sync_type e);
         
-    uint64 getFileOffset() const;
-    void setFileOffset(uint64 offset);
+    //uint64 getFileOffset() const;
+    //void setFileOffset(uint64 offset);
 
     string toString() const;
 
@@ -99,7 +105,6 @@ public:
     
     //returns the record size written
     static size_t writeContechTask(Task& task, ct_file* out);
-    static Task* readContechTask(ct_file* in);
 
     // Wraps the internal list of actions, presenting it as an iterable collection of only memory reads and writes
     // Internally, we skip past actions that we don't care about on increment

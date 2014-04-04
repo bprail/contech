@@ -1,5 +1,5 @@
 PROJECT = libTask.a
-OBJECTS = Task.o Action.o ct_file.o ct_graph.o
+OBJECTS = TaskGraph.o TaskGraphInfo.o Task.o Action.o ct_file.o
 CC = gcc
 CFLAGS = -std=c99 -O3 -g -Wall
 CXX = g++
@@ -15,8 +15,8 @@ objects: $(OBJECTS)
 
 
 # ct_file is compiled separately for c and c++ usage
-ct_file.o:
-	g++ -c $(CXXFLAGS) ct_file.c -o ct_file.o
+#ct_file.o:
+#	g++ -c $(CXXFLAGS) ct_file.c -o ct_file.o
 
 ct_file_C.o:
 	gcc -c $(CFLAGS) ct_file.c -o ct_file_C.o 

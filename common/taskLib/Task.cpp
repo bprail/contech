@@ -1,4 +1,5 @@
 #include "Task.hpp"
+#include <string.h>
 
 using namespace std;
 using namespace contech;
@@ -266,64 +267,97 @@ Task* Task::readContechTask(ct_file* in)
     Task* task = new Task();
         
     // Read in record length
-    uint recordLength;
-    ct_read(&recordLength, sizeof(uint), in);
-
+    unsigned long recordLength;
+    ct_read(&recordLength, sizeof(unsigned long), in);
+    unsigned long compLength;
+    ct_read(&compLength, sizeof(unsigned long), in);
+    
     if (ct_eof(in)) { delete task; return NULL;}
+    
+    unsigned char* comp = (unsigned char*) malloc(compLength);
+    unsigned char* uncomp = (unsigned char*) malloc(recordLength);
+    unsigned long uncompPos = 0;
+    
+    ct_read(comp, compLength, in);
+    uncompress(uncomp, &recordLength, comp, compLength);
 
-    ct_read(&task->taskId, sizeof(TaskId), in);
-    ct_read(&task->startTime, sizeof(ct_timestamp), in);
-    ct_read(&task->endTime, sizeof(ct_timestamp), in);
+    //ct_read(&task->taskId, sizeof(TaskId), in);
+    memcpy(&task->taskId, uncomp + uncompPos, sizeof(TaskId));
+    uncompPos += sizeof(TaskId);
+    //ct_read(&task->startTime, sizeof(ct_timestamp), in);
+    memcpy(&task->startTime, uncomp + uncompPos, sizeof(ct_timestamp));
+    uncompPos += sizeof(ct_timestamp);
+    //ct_read(&task->endTime, sizeof(ct_timestamp), in);
+    memcpy(&task->endTime, uncomp + uncompPos, sizeof(ct_timestamp));
+    uncompPos += sizeof(ct_timestamp);
 
     // Read size and data for a vector
     uint asize;
     task->bbCount = 0;
     ct_read(&asize, sizeof(uint), in);
+    memcpy(&asize, uncomp + uncompPos, sizeof(uint));
+    uncompPos += sizeof(uint);
     task->a.clear();
     task->a.reserve(asize);
     assert(task->a.capacity() >= asize);
     for (uint i = 0; i < asize; i++)
     {
         Action action;
-        ct_read(&action.data, sizeof(uint64), in);
+        //ct_read(&action.data, sizeof(uint64), in);
+        memcpy(&action.data, uncomp + uncompPos, sizeof(uint64));
+        uncompPos += sizeof(uint64);
         task->a.push_back(action);
         if (action.isBasicBlockAction()) task->bbCount++;
     }
 
     // Read size and data for s vector
     uint ssize;
-    ct_read(&ssize, sizeof(uint), in);
+    //ct_read(&ssize, sizeof(uint), in);
+    memcpy(&ssize, uncomp + uncompPos, sizeof(uint));
+    uncompPos += sizeof(uint);
     task->s.reserve(ssize);
     for (uint i = 0; i < ssize; i++)
     {
         TaskId succ;
-        ct_read(&succ, sizeof(TaskId), in);
+        //ct_read(&succ, sizeof(TaskId), in);
+        memcpy(&succ, uncomp + uncompPos, sizeof(TaskId));
+        uncompPos += sizeof(TaskId);
         task->s.push_back(succ);
     }
 
     // Read size and data for p vector
     uint psize;
-    ct_read(&psize, sizeof(uint), in);
+    //ct_read(&psize, sizeof(uint), in);
+    memcpy(&psize, uncomp + uncompPos, sizeof(uint));
+    uncompPos += sizeof(uint);
     task->p.clear();
     task->p.reserve(psize);
     for (uint i = 0; i < psize; i++)
     {
         TaskId pred;
-        ct_read(&pred, sizeof(TaskId), in);
+        //ct_read(&pred, sizeof(TaskId), in);
+        memcpy(&pred, uncomp + uncompPos, sizeof(TaskId));
+        uncompPos += sizeof(TaskId);
         task->p.push_back(pred);
     }
 
     task_type typeInt;
-    ct_read(&typeInt, sizeof(task_type), in);
+    //ct_read(&typeInt, sizeof(task_type), in);
+    memcpy(&typeInt, uncomp + uncompPos, sizeof(task_type));
+    uncompPos += sizeof(task_type);
     task->type = (task_type)typeInt;
     
     sync_type typeIntSync;
-    ct_read(&typeIntSync, sizeof(sync_type), in);
+    //ct_read(&typeIntSync, sizeof(sync_type), in);
+    memcpy(&typeIntSync, uncomp + uncompPos, sizeof(sync_type));
+    uncompPos += sizeof(sync_type);
     task->syncType = (sync_type)typeIntSync;
     
-    uint64 fileOffset;
-    ct_read(&fileOffset,sizeof(uint64),in);
-    task->setFileOffset(fileOffset);
+    // uint64 fileOffset;
+    //ct_read(&fileOffset,sizeof(uint64),in);
+    // memcpy(&typeIntSync, uncomp + uncompPos, sizeof(sync_type));
+    // uncompPos += sizeof(sync_type);
+    // task->setFileOffset(fileOffset);
     
     return task;
 }
@@ -336,7 +370,7 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
     uint ssize = task.s.size();
     uint psize = task.p.size();
 
-    uint recordLength =
+    unsigned long recordLength =
         // Unique ID
         sizeof(TaskId) +
         // Start Time
@@ -358,60 +392,96 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
         // Type
         sizeof(task_type) +
         // Sync Type
-        sizeof(sync_type) + 
-        //fileOffset
-        sizeof(uint64);
+        sizeof(sync_type);
 
+    // No task larger than 2GB
+    assert(recordLength < ((unsigned long long)2 * 1024 * 1024 * 1024));
+        
+    unsigned char* src = (unsigned char*) malloc(recordLength);
+    unsigned char* dst = (unsigned char*) malloc(recordLength+12);
+    uint srcPos = 0;
+        
     // Record length
-    ct_write(&recordLength, sizeof(uint), out);
+    //ct_write(&recordLength, sizeof(uint), out);
+    //memcpy(src + srcPos, &recordLength, sizeof(uint));
+    //srcPos += sizeof(uint);
 
     // Unique ID
-    ct_write(&task.taskId, sizeof(TaskId), out);
+    //ct_write(&task.taskId, sizeof(TaskId), out);
+    memcpy(src + srcPos, &task.taskId, sizeof(TaskId));
+    srcPos += sizeof(TaskId);
+    
     // Start Time
-    ct_write(&task.startTime, sizeof(ct_timestamp), out);
+    //ct_write(&task.startTime, sizeof(ct_timestamp), out);
+    memcpy(src + srcPos, &task.startTime, sizeof(ct_timestamp));
+    srcPos += sizeof(ct_timestamp);
+    
     // Req Time
-    ct_write(&task.endTime, sizeof(ct_timestamp), out);
+    //ct_write(&task.endTime, sizeof(ct_timestamp), out);
+    memcpy(src + srcPos, &task.endTime, sizeof(ct_timestamp));
+    srcPos += sizeof(ct_timestamp);
 
     // Size of action list
-    ct_write(&asize, sizeof(uint), out);
+    //ct_write(&asize, sizeof(uint), out);
+    memcpy(src + srcPos, &asize, sizeof(uint));
+    srcPos += sizeof(uint);
     // action list
     for (Action a : task.a)
     {
-        ct_write(&a.data, sizeof(uint64), out);
+        //ct_write(&a.data, sizeof(uint64), out);
+        memcpy(src + srcPos, &a.data, sizeof(uint64));
+        srcPos += sizeof(uint64);
     }
 
     // Size of s list
-    ct_write (&ssize, sizeof(uint), out);
+    //ct_write (&ssize, sizeof(uint), out);
+    memcpy(src + srcPos, &ssize, sizeof(uint));
+    srcPos += sizeof(uint);
     // s list
     for (TaskId val : task.s)
     {
-        ct_write(&val, sizeof(TaskId), out);
+        //ct_write(&val, sizeof(TaskId), out);
+        memcpy(src + srcPos, &val, sizeof(uint64));
+        srcPos += sizeof(uint64);
     }
 
     // Size of p list
-    ct_write (&psize, sizeof(uint), out);
+    //ct_write (&psize, sizeof(uint), out);
+    memcpy(src + srcPos, &psize, sizeof(uint));
+    srcPos += sizeof(uint);
     // p list
     for (TaskId val : task.p)
     {
-        ct_write(&val, sizeof(TaskId), out);
+        //ct_write(&val, sizeof(TaskId), out);
+        memcpy(src + srcPos, &val, sizeof(TaskId));
+        srcPos += sizeof(TaskId);
     }
 
     // Terminator Event
-    ct_write(&task.type, sizeof(task_type), out);
-    ct_write(&task.syncType, sizeof(sync_type), out);
+    //ct_write(&task.type, sizeof(task_type), out);
+    memcpy(src + srcPos, &task.type, sizeof(task_type));
+    srcPos += sizeof(task_type);
+    //ct_write(&task.syncType, sizeof(sync_type), out);
+    memcpy(src + srcPos, &task.syncType, sizeof(sync_type));
+    srcPos += sizeof(sync_type);
     
     //File offset
-    ct_write(&task.fileOffset,sizeof(uint64),out);
+    //ct_write(&task.fileOffset,sizeof(uint64),out);
+    //memcpy(src + srcPos, &task.fileOffset, sizeof(uint64));
+    //srcPos += sizeof(uint64);
+    
+    unsigned long dstLen = recordLength + 12;
+    compress(dst, &dstLen, src, recordLength);
+    ct_write(&recordLength, sizeof(recordLength), out);
+    ct_write(&dstLen, sizeof(dstLen), out);
+    ct_write(dst, dstLen, out);
+    //printf("%u, %lu, %f\n", recordLength, dstLen, ((float)dstLen )/ ((float)recordLength));
+    
+    free(dst);
+    free(src);
     
     //account for the recordLength itself with the addition
-    return recordLength + sizeof(uint);
-}
-
-uint64 Task::getFileOffset() const {
-    return this->fileOffset;
-}
-void Task::setFileOffset(uint64 offset){
-    this->fileOffset = offset;
+    return recordLength + sizeof(recordLength) + sizeof(dstLen);
 }
 
 /*
@@ -450,7 +520,6 @@ string Task::toString() const {
     out << "startTime:" << startTime << endl;
     out << "endTime:" << endTime << endl;
     out << "Type:" << type << endl;
-    out << "fileOffset:" << fileOffset << endl;
 
     out << "a:";
     for (Action action : a)

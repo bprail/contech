@@ -7,15 +7,10 @@
 #include <assert.h>
 #include <stdbool.h>
 
-
-//#if ! defined(__cplusplus) || ! defined(bool)
-//typedef unsigned char bool;
-//static const bool false = 0;
-//static const bool true = 1;
-//#endif
-
-
-
+#if defined(__cplusplus)
+extern "C"
+{
+#endif
 
 //Class to abstract file handles, compressed or uncompressed. 
 typedef struct _ct_file
@@ -54,13 +49,18 @@ void close_ct_file(ct_file* handle);
 
 //wrapper to read from a ct_file handle. Abstracts the details of compressesion
 size_t ct_read(void * ptr, size_t size, ct_file* handle);
+
 //wrapper to write to a ct_file handle. Abstracts the details of compression
 size_t ct_write(void * ptr, size_t size, ct_file* handle);
+
 //returns the value of feof or gzeof depending on whether the handle is compressed or not.
 int ct_eof(ct_file* handle);
 
 //fast forward the handle to the specified offset (absolute, from start of file) in raw data stream bytes
-int ct_seek( unsigned long long offset,ct_file* handle);
+int ct_seek( ct_file* handle, unsigned long long offset);
+
+// get the current position in the file
+long ct_tell( ct_file* handle);
 
 //rewinds a file to the beginning
 void ct_rewind(ct_file* handle);
@@ -69,8 +69,9 @@ void ct_rewind(ct_file* handle);
 //can slow this down. This is meant more for finalization.
 int ct_flush(ct_file* handle);
 
-
-
+#if defined(__cplusplus)
+}
 #endif
 
 
+#endif

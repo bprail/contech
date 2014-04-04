@@ -1,5 +1,5 @@
 #include "ct_file.h"
-
+#include <stdio.h>
 
 ct_file* create_ct_file_blank(){
     ct_file* newHandle = (ct_file*) calloc(1,sizeof(ct_file));
@@ -115,10 +115,12 @@ int ct_eof(ct_file* handle){
     return result;
 }
 
-int ct_seek( unsigned long long offset,ct_file* handle){
+int ct_seek( ct_file* handle, unsigned long long offset){
     int result;
     if(isCompressed(handle)){
         result = gzseek (getCompressedHandle(handle), offset, SEEK_SET);
+        // success for gzseek is defined as offset, whereas fseek returns 0
+        if (result == offset) return 0;
     } else {
         result = fseek (getUncompressedHandle(handle), offset, SEEK_SET );
     }
@@ -126,7 +128,7 @@ int ct_seek( unsigned long long offset,ct_file* handle){
 }
 
 void ct_rewind(ct_file* handle){
-    ct_seek(0,handle);
+    ct_seek(handle, 0);
 }
 
 int ct_flush(ct_file* handle){
@@ -139,11 +141,13 @@ int ct_flush(ct_file* handle){
     return result;
 }
 
-
-
-
-
-
-
-
-
+long ct_tell(ct_file* handle)
+{
+    long result = 0;
+    if(isCompressed(handle)){
+        result = gztell (getCompressedHandle(handle));
+    } else {
+        result = ftell (getUncompressedHandle(handle));
+    }
+    return result;
+}
