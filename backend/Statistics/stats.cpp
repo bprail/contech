@@ -1,4 +1,4 @@
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include <algorithm>
 #include <iostream>
 #include <set>
@@ -15,7 +15,7 @@ int main(int argc, char const *argv[])
     }
 
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(isClosed(taskGraphIn)){
+    if(taskGraphIn == NULL){
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
     }
@@ -40,8 +40,10 @@ int main(int argc, char const *argv[])
 
     set<uint> uniqueBlocks;
 
+    TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    if (tg == NULL) {}
 
-    while(Task* currentTask = Task::readContechTask(taskGraphIn)){
+    while(Task* currentTask = tg->readContechTask()){
 
         totalTasks++;
         uint basicBlocksInTask = 0;
@@ -93,6 +95,8 @@ int main(int argc, char const *argv[])
 
         delete currentTask;
     }
+
+    delete tg;
 
     averageMemOpsPerBasicBlock = ((double)totalMemOps / totalBasicBlocks);
     averageBasicBlocksPerTask = ((double)totalBasicBlocks / totalTasks);
