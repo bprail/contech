@@ -216,16 +216,21 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         
         case (ct_event_basic_block_info):
         {
-            unsigned int id, len;
+            unsigned int id, len, line;
             fread_check(&id, sizeof(unsigned int), 1, fptr);
             if (id >= bb_count)
             {
                 fprintf(stderr, "ERROR: INFO for block %d exceeds number of unique basic blocks\n", id);
                 dumpAndTerminate(fptr);
             }
+            npe->bbi.basic_block_id = id;
+            
+            fread_check(&line, sizeof(unsigned int), 1, fptr);
+            npe->bbi.line_num = line;
             
             fread_check(&len, sizeof(unsigned int), 1, fptr);
             bb_info_table[id].len = len;
+            npe->bbi.num_mem_ops = len;
             
             //fprintf(stderr, "Store INFO [%d].len = %d\n", id, len);
             

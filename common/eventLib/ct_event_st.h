@@ -12,7 +12,7 @@
 //#endif
 //#endif
 
-#define CONTECH_EVENT_VERSION 3
+#define CONTECH_EVENT_VERSION 4
 
 typedef unsigned long long ct_tsc_t;
 typedef unsigned long long ct_addr_t;
@@ -60,8 +60,8 @@ typedef enum _ct_sync_type ct_sync_type;
 //
 typedef struct _ct_basic_block_info
 {
-    unsigned int basic_block_id, name_len;
-    char name[0];
+    unsigned int basic_block_id, file_name_len, num_mem_ops, line_num;
+    char* file_name;
 } ct_basic_block_info, *pct_basic_block_info;
 
 typedef struct _ct_basic_block
