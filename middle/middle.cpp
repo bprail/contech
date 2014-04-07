@@ -90,6 +90,7 @@ reset_middle:
     
     // Scan through the file for the first real event
     bool seenFirstEvent = false;
+    TaskGraphInfo *tgi = new TaskGraphInfo();
     while (ct_event* event = createContechEvent(in))
     {
         if (event->contech_id == 0
@@ -101,10 +102,22 @@ reset_middle:
             if (DEBUG) printf("Global offset is %llu\n", context[0].timeOffset);
             seenFirstEvent = true;
         }
+        else if (event->event_type == ct_event_basic_block_info)
+        {
+            // TODO: Pass each event to class TaskGraphInfo
+            printf("%d - %d at %d\n", event->bbi.basic_block_id, event->bbi.num_mem_ops, event->bbi.line_num);
+            tgi->addRawBasicBlockInfo(event->bbi.basic_block_id, 
+                                     event->bbi.line_num, 
+                                     event->bbi.num_mem_ops, 
+                                     event->bbi.file_name);
+        }
         deleteContechEvent(event);
         if (seenFirstEvent) break;
     }
     assert(seenFirstEvent);
+    
+    tgi->writeTaskGraphInfo(out);
+    delete tgi;
 
     // Main loop: Process the events from the file in order
     while (ct_event* event = getNextContechEvent(in))
@@ -486,7 +499,8 @@ reset_middle:
                 activeContech.activeTask()->recordFreeAction(event->mem.alloc_addr);
             }
 
-        } // End switch block on event type
+        } 
+        // End switch block on event type
 
         // Free memory for the processed event
         deleteContechEvent(event);
