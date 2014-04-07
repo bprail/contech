@@ -45,6 +45,8 @@
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/Support/DebugLoc.h"
 #include <map>
 #include <set>
 #include <vector>
@@ -454,7 +456,7 @@ namespace llvm {
                 }
                 continue;
             }
-            // If this function is one Contech adds for OpenMP
+            // If this function is one Contech adds when instrumenting for OpenMP
             // then it can be skipped
             else if (contechAddedFunctions.find(&*F) != contechAddedFunctions.end())
             {
@@ -495,7 +497,7 @@ namespace llvm {
                 }
             }
         
-            // Now insturment each basic block in the function
+            // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
                 
@@ -581,20 +583,29 @@ cleanup:
         //contechStateFile->seekp(0, ios_base::beg);
         if (buffer == NULL)
         {
+            // New state file starts with the basic block count
             contechStateFile->write((char*)&bb_count, sizeof(unsigned int));
         }
         else
         {
+            // Write the existing data back out
+            //   First, put a new basic block count at the start of the existing data
             *(unsigned int*) buffer = bb_count;
             contechStateFile->write(buffer, length);
         }
         //contechStateFile->seekp(0, ios_base::end);
         
         int wcount = 0;
+        char evTy = ct_event_basic_block_info;
         for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
         {
             pllvm_mem_op t = bi->second->first_op;
+            
+            // Write out basic block info events
+            //   Then runtime can directly pass the events to the event list
+            contechStateFile->write((char*)&evTy, sizeof(char));
             contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
             contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
             //errs() << "BB: " << bi->second->id << " Len: " << bi->second->len << "\n";
             
@@ -712,8 +723,15 @@ cleanup:
         bool containCall = false, containQueueBuf = false;
         bool containKeyCall = false;
         Value* posValue = NULL;
+        unsigned int lineNum = 0;
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
+            MDNode *N;
+            if (lineNum == 0 && (N = I->getMetadata("dbg"))) {
+                DILocation Loc(N);
+                lineNum = Loc.getLineNumber();
+            }
+        
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
             if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) {
@@ -791,6 +809,7 @@ cleanup:
         }
         bi->id = bbid;
         bi->first_op = NULL;
+        bi->lineNum = lineNum;
         
         //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
         //debugLog("checkBufferFunction @" << __LINE__);
