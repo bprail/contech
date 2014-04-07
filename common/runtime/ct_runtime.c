@@ -538,7 +538,12 @@ void* __ctBackgroundThreadWriter(void* d)
         bb_info += 4; // skip the basic block count
         while (bb_info != _binary_contech_bin_end)
         {
-            // id,len, memop_0, ... memop_len-1
+            // id, len, memop_0, ... memop_len-1
+            // Contech pass lays out the events in appropriate format
+            size_t tl = fwrite(bb_info, sizeof(char), _binary_contech_bin_end - bb_info, serialFile);
+            bb_info += tl;
+            totalWritten += tl;
+#if 0
             unsigned int bb_len = *(unsigned int*) (bb_info + 4);
             char evTy = ct_event_basic_block_info;
             size_t byteToWrite = sizeof(unsigned int) * 2 + sizeof(char) * (2 * bb_len), tl = 0;
@@ -557,6 +562,7 @@ void* __ctBackgroundThreadWriter(void* d)
 #endif
             bb_info += byteToWrite;
             totalWritten += byteToWrite + sizeof(char);
+#endif
         }
     }
     
