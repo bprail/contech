@@ -51,7 +51,7 @@ void close_ct_file(ct_file* handle);
 size_t ct_read(void * ptr, size_t size, ct_file* handle);
 
 //wrapper to write to a ct_file handle. Abstracts the details of compression
-size_t ct_write(void * ptr, size_t size, ct_file* handle);
+size_t ct_write(const void * ptr, size_t size, ct_file* handle);
 
 //returns the value of feof or gzeof depending on whether the handle is compressed or not.
 int ct_eof(ct_file* handle);

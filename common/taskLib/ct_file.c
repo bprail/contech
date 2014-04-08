@@ -95,7 +95,7 @@ size_t ct_read(void * ptr, size_t size, ct_file* handle){
 }
 
 
-size_t ct_write(void * ptr, size_t size, ct_file* handle){
+size_t ct_write(const void * ptr, size_t size, ct_file* handle){
     size_t written = 0;
     if(isCompressed(handle)){
         written = gzwrite (getCompressedHandle(handle), ptr, size);
