@@ -95,7 +95,7 @@ int main(int argc, char const *argv[])
 
         delete currentTask;
     }
-
+    
     delete tg;
 
     averageMemOpsPerBasicBlock = ((double)totalMemOps / totalBasicBlocks);
@@ -123,7 +123,6 @@ int main(int argc, char const *argv[])
     printf("Create tasks: %u\n", createCount);
     printf("Join tasks: %u\n", joinCount);
     printf("\n");
-
 
     close_ct_file(taskGraphIn);
     return 0;
