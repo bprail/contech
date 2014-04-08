@@ -102,11 +102,11 @@ void TaskGraph::initTaskIndex(unsigned long long off)
         fprintf(stderr, "Failed to seek to specified offset for Task Graph Index - %lld\n", off);
         return;
     }
-    printf("At %lld, ready to read index\n", off);
+    //printf("At %lld, ready to read index\n", off);
     
     uint64 taskCount;
     ct_read(&taskCount, sizeof(uint64), inputFile);
-    printf("Tasks in index - %llu\n", taskCount);
+    //printf("Tasks in index - %llu\n", taskCount);
     
     for (uint i = 0; i < taskCount; i++)
     {
@@ -129,7 +129,8 @@ TaskGraphInfo* TaskGraph::readTaskGraphInfo()
     // Task Graph Info follows the version number + task index offset
     //   assert(inputFile is at offset 4 + 8)
     
-    TaskGraphInfo* tTgi = new TaskGraphInfo(inputFile);
+    TaskGraphInfo* tTgi = new TaskGraphInfo();
+    tTgi->initTaskGraphInfo(inputFile);
 
     return tTgi;
 }

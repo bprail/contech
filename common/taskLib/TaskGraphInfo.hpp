@@ -22,9 +22,10 @@ class BasicBlockInfo
 {
 public:
     uint lineNumber;
-    uint functionNumber;
-    uint fileName;
-    vector <uint> typeOfMemOps;
+    uint numOfMemOps;
+    string functionName;
+    string fileName;
+    //vector <uint> typeOfMemOps;
 };
 
 class FunctionInfo
@@ -43,16 +44,20 @@ class TypeInfo
 
 class TaskGraphInfo
 {
-public:
+private:
     map <uint, BasicBlockInfo> bbInfo;
-    map <uint, TypeInfo> tyInfo;
-    map <uint, FunctionInfo> funInfo;
-    map <uint, string> fileName;
-    TaskGraphInfo(ct_file*);
+    //map <uint, TypeInfo> tyInfo;
+    //map <uint, FunctionInfo> funInfo;
+    //map <uint, string> fileName;
+    
+public:    
+    void initTaskGraphInfo(ct_file*);
     TaskGraphInfo();
     
-    void addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, string function);
+    void addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, string function, string file);
     void writeTaskGraphInfo(ct_file*);
+    
+    BasicBlockInfo& getBasicBlockInfo(uint bbid);
 };
 
 }
