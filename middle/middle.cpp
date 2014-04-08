@@ -49,6 +49,8 @@ reset_middle:
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
     unsigned long long space = 0;
+    
+    // Init TaskGraphFile
     ct_write(&taskGraphVersion, sizeof(int), out);
     ct_write(&space, sizeof(unsigned long long), out);
     
@@ -104,12 +106,16 @@ reset_middle:
         }
         else if (event->event_type == ct_event_basic_block_info)
         {
-            // TODO: Pass each event to class TaskGraphInfo
-            printf("%d - %d at %d\n", event->bbi.basic_block_id, event->bbi.num_mem_ops, event->bbi.line_num);
+            string functionName, fileName;
+            if (event->bbi.fun_name != NULL) functionName.assign(event->bbi.fun_name);
+            if (event->bbi.file_name != NULL) fileName.assign(event->bbi.file_name);
+            //printf("%d - %d at %d\t", event->bbi.basic_block_id, event->bbi.num_mem_ops, event->bbi.line_num);
+            //printf("in %s() of %s\n", event->bbi.fun_name, event->bbi.file_name);
             tgi->addRawBasicBlockInfo(event->bbi.basic_block_id, 
                                      event->bbi.line_num, 
                                      event->bbi.num_mem_ops, 
-                                     event->bbi.file_name);
+                                     functionName,
+                                     fileName);
         }
         deleteContechEvent(event);
         if (seenFirstEvent) break;
