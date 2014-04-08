@@ -73,7 +73,6 @@ using namespace std;
 //#define SPLIT_DEBUG
 
 map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
-cl::opt<string> ContechCFGFilename("ContechCFG", cl::desc("File to write Contech's CFG"), cl::value_desc("filename"));
 cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current Contech state"), cl::value_desc("filename"));
 cl::opt<bool> ContechMarkFrontend("ContechMarkFE", cl::desc("Generate a minimal marked output"));
 cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally instrumented output"));
@@ -156,17 +155,15 @@ namespace llvm {
         Type* int64Ty;
         Type* pthreadTy;
         Type* threadArgsTy;  // needed when wrapping pthread_create
-        ofstream*     contechCFGFile;
-        //fstream*      contechStateFile;
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
-
+        
         Contech() : ModulePass(ID) {
         }
         
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
-        virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly);
+        virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
         void internalAddAllocate(BasicBlock& B);
@@ -299,16 +296,6 @@ namespace llvm {
         FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(int32Ty, ArrayRef<Type*>(argsCTA,4), false);
         createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
 		
-        contechCFGFile = new ofstream(ContechCFGFilename.c_str(), ios_base::out | ios_base::binary | ios_base::app);
-        if (contechCFGFile != NULL && contechCFGFile->good())
-        {
-            //errs() << "File success!\n";
-        }
-        else
-        {
-            //contechCFGFile = errs;
-        }
-        
         return true;
     }
     
@@ -408,22 +395,16 @@ namespace llvm {
             //errs() << ContechStateFilename.c_str() << "\n";
         }
         
-
-        
-        //icontechStateFile->read((char*)&bb_count, sizeof(unsigned int));
-        // *contechStateFile >> bb_count;
         // for unknown reasons, a file that does not exist needs to clear all bits and not
         // just eof for writing
         icontechStateFile->close();
         delete icontechStateFile;
-        //contechStateFile->clear(contechStateFile->rdstate() & ~(ios_base::eofbit));
-        
-        // errs() << "Start BB: " << bb_count << "\n";
         
         for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
             int status;
             const char* fmn = F->getName().data();
             char* fn = abi::__cxa_demangle(fmn, 0, 0, &status);
+            bool inMain = false;
 
             // If status is 0, then we demangled the name
             if (status != 0)
@@ -442,7 +423,9 @@ namespace llvm {
                 // Only rename main if this is not the marker front end
                 if (ContechMarkFrontend == false)
                 {
-                    F->setName(Twine("ct_orig_main"));
+                    // This invalidates F->getName(), ie possibly fmn is invalid
+                    //F->setName(Twine("ct_orig_main"));
+                    inMain = true;
                 }
             }
             // Add other functions that Contech should not instrument here
@@ -483,7 +466,7 @@ namespace llvm {
                 BasicBlock &pB = *B;
                 CallInst *ci;
                 int status = 0;
-                
+
                 if (internalSplitOnCall(pB, &ci, &status) == false)
                 {
                     B++;
@@ -501,7 +484,7 @@ namespace llvm {
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
                 
-                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend);
+                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
                 bb_count++;
             }
             
@@ -509,6 +492,12 @@ namespace llvm {
             if (fmn == fn)
             {
                 free(fn);
+            }
+            
+            // Renaming invalidates the current name of the function
+            if (inMain == true)
+            {
+                F->setName(Twine("ct_orig_main"));
             }
         }
         
@@ -518,8 +507,6 @@ namespace llvm {
         // iterate over cfgInfoMap
         for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(), t; bi != bie; ++bi)
         {
-            *contechCFGFile << bi->second->id <<","<<bi->second->ev<<",";
-            
             // TODO: replace with a wrapper that operates on each tgts
             // For each tgt, record its event type and the basic block number(s) that follow
             // Also, check if the target has already been reached and that it dominates this block.
@@ -532,12 +519,12 @@ namespace llvm {
             }
             if (t == bie)
             {
-                *contechCFGFile << "-1,";
+                
             }
             else
             {
                 dTree = &getAnalysis<DominatorTree>(*(bi->first->getParent()));
-                *contechCFGFile << t->second->id <<",";
+                
                 
                 // T is the map entry for tgts[0]
                 if (t->second->hasCheckBuffer == 0)
@@ -558,11 +545,11 @@ namespace llvm {
             }
             if (t == bie)
             {
-                *contechCFGFile << "-1\n";
+                
             }
             else
             {
-                *contechCFGFile << t->second->id <<"\n";
+                
                 
                 dTree = &getAnalysis<DominatorTree>(*(bi->first->getParent()));
                 // t is the map entry for tgts[1]
@@ -606,8 +593,16 @@ cleanup:
             contechStateFile->write((char*)&evTy, sizeof(char));
             contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
             contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
+            int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
+            contechStateFile->write((char*)&strLen, sizeof(int));
+            *contechStateFile << bi->second->fnName;
+            //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
+            
+            
+            strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
+            contechStateFile->write((char*)&strLen, sizeof(int));
+            contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
             contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
-            //errs() << "BB: " << bi->second->id << " Len: " << bi->second->len << "\n";
             
             while (t != NULL)
             {
@@ -622,10 +617,8 @@ cleanup:
         }
         //errs() << "Wrote: " << wcount << " basic blocks\n";
         cfgInfoMap.clear();
-        contechCFGFile->close();
         contechStateFile->close();
         delete contechStateFile;
-        delete contechCFGFile;
         
         return true;
     }
@@ -712,7 +705,7 @@ cleanup:
     //
     // For each basic block
     //
-    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly)
+    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName)
     {
         Instruction* iPt = B.getTerminator();
         std::vector<pllvm_mem_op> opsInBlock;
@@ -729,6 +722,7 @@ cleanup:
             MDNode *N;
             if (lineNum == 0 && (N = I->getMetadata("dbg"))) {
                 DILocation Loc(N);
+                
                 lineNum = Loc.getLineNumber();
             }
         
@@ -810,6 +804,8 @@ cleanup:
         bi->id = bbid;
         bi->first_op = NULL;
         bi->lineNum = lineNum;
+        bi->fnName.assign(fnName);
+        bi->fileName = M.getModuleIdentifier().data();
         
         //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
         //debugLog("checkBufferFunction @" << __LINE__);

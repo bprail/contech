@@ -6,6 +6,8 @@
 //#include "llvm/Pass.h"
 //#include "llvm/Module.h"
 
+#include <string>
+
 namespace llvm {
     class Contech;
     ModulePass* createContechPass();
@@ -22,6 +24,9 @@ namespace llvm {
         int hasCheckBuffer;
         ct_event_id ev; // if ev == ct_event_basic_block, then no sync in this block
         pllvm_mem_op first_op;
+        std::string fnName;
+        //const char* fnName;
+        const char* fileName;
         BasicBlock* tgts[2]; // basic blocks may branch into up to two other blocks
     } llvm_basic_block, *pllvm_basic_block;
     
