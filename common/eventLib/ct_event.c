@@ -217,6 +217,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         case (ct_event_basic_block_info):
         {
             unsigned int id, len, line;
+            char* tStr = NULL;
             fread_check(&id, sizeof(unsigned int), 1, fptr);
             if (id >= bb_count)
             {
@@ -227,6 +228,47 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             
             fread_check(&line, sizeof(unsigned int), 1, fptr);
             npe->bbi.line_num = line;
+            
+            fread_check(&len, sizeof(unsigned int), 1, fptr);
+            npe->bbi.fun_name_len = len;
+            if (len > 0)
+            {
+                tStr = (char*) malloc(sizeof(char) * (len + 1));
+                if (tStr == NULL)
+                {
+                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    free(npe);
+                    return NULL;
+                }
+                tStr[len] = '\0';
+                fread_check(tStr, sizeof(char), len, fptr);
+                npe->bbi.fun_name = tStr;
+            }
+            else
+            {
+                npe->bbi.fun_name = NULL;
+            }
+            
+            fread_check(&len, sizeof(unsigned int), 1, fptr);
+            npe->bbi.file_name_len = len;
+            if (len > 0)
+            {
+                tStr = (char*) malloc(sizeof(char) * (len + 1));
+                if (tStr == NULL)
+                {
+                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    free(npe->bbi.fun_name);
+                    free(npe);
+                    return NULL;
+                }
+                tStr[len] = '\0';
+                fread_check(tStr, sizeof(char), len, fptr);
+                npe->bbi.file_name = tStr;
+            }
+            else
+            {
+                npe->bbi.file_name = NULL;
+            }
             
             fread_check(&len, sizeof(unsigned int), 1, fptr);
             bb_info_table[id].len = len;
@@ -409,6 +451,11 @@ void deleteContechEvent(pct_event e)
 {
     if (e == NULL) return;
     if (e->event_type == ct_event_basic_block && e->bb.mem_op_array != NULL) free(e->bb.mem_op_array);
+    if (e->event_type == ct_event_basic_block_info)
+    {
+        if (e->bbi.fun_name != NULL) free(e->bbi.fun_name);
+        if (e->bbi.file_name != NULL) free(e->bbi.file_name);
+    }    
     free(e);
 }
 
