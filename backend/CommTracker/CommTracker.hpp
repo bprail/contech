@@ -3,7 +3,7 @@
 
 
 #include "CommRecord.hpp"
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include <iostream>
 #include <map>
 #include <vector>

@@ -1,7 +1,7 @@
 #ifndef TASKGRAPH_FRONTEND_H
 #define TASKGRAPH_FRONTEND_H
 
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include "markedCodeContainer.hpp"
 #include <inttypes.h>
 #include <string.h>
@@ -28,6 +28,7 @@ private:
 
     // Maintain position within the task graph
     ct_file* taskGraphFile;
+    contech::TaskGraph* tg;
     contech::Task* currentTask;
     contech::Task::basicBlockActionCollection blocksInTask;
     contech::Task::basicBlockActionCollection::iterator currentBlockId;

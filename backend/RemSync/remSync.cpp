@@ -1,4 +1,4 @@
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include <algorithm>
 #include <iostream>
 #include <set>
@@ -6,77 +6,6 @@
 
 using namespace std;
 using namespace contech;
-
-// support structures to enable ordered access and get task by id
-deque<Task*> taskList;
-map<TaskId, Task*> taskMap;
-
-//
-// Get next task from the order
-//
-Task* getNextTask(ct_file* in)
-{
-    // Task list holds the pending ordered traversal, if empty, go to file
-    if (taskList.empty())
-    {
-        //fprintf(stderr, "From file\n");
-        return Task::readContechTask(in);
-    }
-    else
-    {
-        //fprintf(stderr, "From list %d\n", taskList.size());
-        Task* t = taskList.front();
-        taskList.pop_front();
-        taskMap.erase(t->getTaskId());
-        return t;
-    }
-    
-    return NULL;
-}
-
-//
-// Request tasks in order until ID is found
-//
-Task* getTaskById(ct_file* in, TaskId id)
-{
-    Task* t = NULL;
-    auto f = taskMap.find(id);
-    ct_timestamp st;
-    
-    // Is the requested task in the map?
-    if (f != taskMap.end())
-    {
-        //fprintf(stderr, "From Map %s\n", id.toString().c_str());
-        t = f->second;
-        return t;
-    }
-    
-    // Process tasks from file until the requested task is found
-    while ((t = Task::readContechTask(in)) != NULL)
-    {
-        TaskId tid = t->getTaskId();
-        //fprintf(stderr, "  Have %s want %s tid->cont: %ld\n", tid.toString().c_str(), id.toString().c_str(), t->getContinuationTaskId());
-        
-        // Assert that tasks are in order
-        if (!taskList.empty())
-            assert(taskList.back()->getStartTime() <= t->getStartTime());
-            
-        // Add task to ordered list and to map by id
-        taskList.push_back(t);
-        taskMap[tid] = t;
-        
-        if (tid == id)
-        {
-            return t;
-        }
-        else
-        {
-
-        }
-    }
-
-    return NULL;
-}
 
 int main(int argc, char const *argv[])
 {
@@ -86,8 +15,13 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
+    // TODO: support writing out of a task graph by a backend, as currently the logic
+    //  partially resides in middle layer
+    fprintf(stderr, "ERROR: BACKEND NOT REVISED FOR CURRENT TASK GRAPH FORMAT\n");
+    return 0;
+    
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(isClosed(taskGraphIn)){
+    if (taskGraphIn == NULL){
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
     }
@@ -95,7 +29,11 @@ int main(int argc, char const *argv[])
     map<TaskId, Task*> taskGraph;
     vector<Task*> taskGraphOrder;
     int mergeCount = 0;
-    while(Task* currentTask = getNextTask(taskGraphIn))
+    
+    TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    if (tg == NULL) {}
+
+    while(Task* currentTask = tg->readContechTask())
     {
         // If this task is only related to its contech, then it is a candidate
         // forall p  in (currentTask->getPredecessorTasks()) 
@@ -124,7 +62,7 @@ int main(int argc, char const *argv[])
                 }
                 else
                 {
-                    p_tasks.push_back(getTaskById(taskGraphIn, (*it)));
+                    p_tasks.push_back(tg->getContechTask(*it));
                 }
             }
 
@@ -133,7 +71,7 @@ int main(int argc, char const *argv[])
             for (auto it = succ.begin(), et = succ.end(); it != et; ++it)
             {
                 if (it->getContextId() != ctci) goto nonCandidate;
-                t_tasks.push_back(getTaskById(taskGraphIn, (*it)));
+                t_tasks.push_back(tg->getContechTask(*it));
             }
             
             if (!Task::removeTask(currentTask, &p_tasks, &t_tasks))
@@ -184,12 +122,10 @@ int main(int argc, char const *argv[])
                         }
                         else
                         {
-                            t_t_tasks.push_back(getTaskById(taskGraphIn, (*it)));
+                            t_t_tasks.push_back(tg->getContechTask(*it));
                         }
                     }
                     p->appendTask(t, &t_t_tasks);
-                    taskList.erase(find(taskList.begin(), taskList.end(), t));
-                    taskMap.erase(t->getTaskId());
                     delete t;
                 }
                 
@@ -201,13 +137,14 @@ nonCandidate:
         taskGraph[currentTask->getTaskId()] = currentTask;
         taskGraphOrder.push_back(currentTask);
     }
+    delete tg;
 
     cout << "Successfully removed: " << mergeCount << " tasks." << endl;
     
     close_ct_file(taskGraphIn);
     
     ct_file* taskGraphOut  = create_ct_file_w(argv[2], true);
-    if(isClosed(taskGraphOut)){
+    if (taskGraphOut == NULL){
         cerr << "ERROR: Couldn't open output file" << endl;
         exit(1);
     }
@@ -215,7 +152,7 @@ nonCandidate:
     for (auto it = taskGraphOrder.begin(), et = taskGraphOrder.end(); it != et; ++it)
     {
         Task* currentTaskCandidate = *it;
-        currentTaskCandidate->setFileOffset(bytesWritten);
+        //currentTaskCandidate->setFileOffset(bytesWritten);
         //currentTaskCandidate->printTask();
         bytesWritten += Task::writeContechTask(*currentTaskCandidate, taskGraphOut);
         delete currentTaskCandidate;

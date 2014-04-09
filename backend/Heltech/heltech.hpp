@@ -1,4 +1,4 @@
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 
 #include <string.h>
 

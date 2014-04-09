@@ -189,8 +189,9 @@ std::ostream& operator<<(std::ostream &out, const CommTracker &rhs)
 CommTracker* CommTracker::fromFile(ct_file* taskGraphIn)
 {
     CommTracker* tracker = new CommTracker();
+    TaskGraph* taskGraph = TaskGraph::initFromFile(taskGraphIn);
 
-    while(Task* currentTask = Task::readContechTask(taskGraphIn))
+    while(Task* currentTask = taskGraph->readContechTask())
     {
         TaskId uid = currentTask->getTaskId();
 
@@ -245,6 +246,9 @@ CommTracker* CommTracker::fromFile(ct_file* taskGraphIn)
 
         delete currentTask;
     }
+    
+    delete taskGraph;
+    
     return tracker;
 }
 

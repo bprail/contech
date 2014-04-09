@@ -1,6 +1,6 @@
 #include "gvc.h"
 #include "cgraph.h"
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include "../../common/taskLib/ct_file.h"
 #include <algorithm>
 #include <iostream>
@@ -33,7 +33,7 @@ int main(int argc, char const *argv[])
 
     // Count the number of times each basic block ran
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(isClosed(taskGraphIn)){
+    if(taskGraphIn == NULL){
         cerr << "Error: Couldn't open input file" << endl;
         exit(1);
     }
@@ -50,8 +50,10 @@ int main(int argc, char const *argv[])
     for (uint32_t i = 0; i < MAX_CONTECHS; i++) {lastBlock[i] = NULL;}
 
     // Process the task graph
-    Task* currentTask;
-    while(currentTask = Task::readContechTask(taskGraphIn)){
+    TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    if (tg == NULL) {}
+
+    while(Task* currentTask = tg->readContechTask()){
         BasicBlock* bb;
         for (BasicBlockAction a : currentTask->getBasicBlockActions())
         {
@@ -112,6 +114,8 @@ int main(int argc, char const *argv[])
 
         delete currentTask;
     }
+    
+    delete tg;
 
     // Create a directed graph
     GVC_t *gvc = gvContext();
@@ -178,6 +182,7 @@ int main(int argc, char const *argv[])
 
     // Create communication edges
     ct_rewind(taskGraphIn);
+    
     CommTracker* tracker = CommTracker::fromFile(taskGraphIn);
     cout << "Recorded " << tracker->getRecords().size() << " instances of communication. " << endl;
 

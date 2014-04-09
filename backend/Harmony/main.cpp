@@ -1,5 +1,5 @@
 #include "../../common/taskLib/ct_file.h"
-#include "../../common/taskLib/Task.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -23,77 +23,6 @@ typedef struct _ctid_harmony_state
     Task::basicBlockActionCollection::iterator currentBB;    //current basic block to next be processed
     Task::basicBlockActionCollection currentBBCol;           //hold the basic block collection for the end iterator
 } ctid_harmony_state, *pctid_harmony_state;
-
-// support structures to enable ordered access and get task by id
-deque<Task*> taskList;
-map<TaskId, Task*> taskMap;
-
-//
-// Get next task from the order
-//
-Task* getNextTask(ct_file* in)
-{
-    // Task list holds the pending ordered traversal, if empty, go to file
-    if (taskList.empty())
-    {
-        //fprintf(stderr, "From file\n");
-        return Task::readContechTask(in);
-    }
-    else
-    {
-        //fprintf(stderr, "From list %d\n", taskList.size());
-        Task* t = taskList.front();
-        taskList.pop_front();
-        taskMap.erase(t->getTaskId());
-        return t;
-    }
-    
-    return NULL;
-}
-
-//
-// Request tasks in order until ID is found
-//
-Task* getTaskById(ct_file* in, TaskId id)
-{
-    Task* t = NULL;
-    auto f = taskMap.find(id);
-    ct_timestamp st;
-    
-    // Is the requested task in the map?
-    if (f != taskMap.end())
-    {
-        //fprintf(stderr, "From Map %s\n", Task::taskIdToString(id).c_str());
-        t = f->second;
-        return t;
-    }
-    
-    // Process tasks from file until the requested task is found
-    while ((t = Task::readContechTask(in)) != NULL)
-    {
-        TaskId tid = t->getTaskId();
-        //fprintf(stderr, "  Have %s want %s tid->cont: %ld\n", Task::taskIdToString(tid).c_str(), Task::taskIdToString(id).c_str(), t->getContinuationTaskId());
-        
-        // Assert that tasks are in order
-        if (!taskList.empty())
-            assert(taskList.back()->getStartTime() <= t->getStartTime());
-            
-        // Add task to ordered list and to map by id
-        taskList.push_back(t);
-        taskMap[tid] = t;
-        
-        if (tid == id)
-        {
-            return t;
-        }
-        else
-        {
-
-        }
-    }
-
-    return NULL;
-}
 
 //
 // Scan the vector of successor tasks and find the next in sequence
@@ -126,12 +55,11 @@ int main(int argc, char const *argv[])
     }
 
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(taskGraphIn == NULL) { //getUncompressedHandle(taskGraphIn) == NULL){
+    if (taskGraphIn == NULL) {
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
     }
 
-    Task* currentTask;
     ct_timestamp oldStart = 0;
     int runningThreads = 0;
     map<ContextId, ctid_harmony_state*> contechState;
@@ -141,7 +69,10 @@ int main(int argc, char const *argv[])
     //   Mark all basic blocks before this task has started based on runningThreads
     //   Then update existing tasks if complete
     //   Then include new task into state
-    while (currentTask = getNextTask(taskGraphIn))
+    TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    if (tg == NULL) {}
+
+    while(Task* currentTask = tg->readContechTask())
     {
         TaskId ctui = currentTask->getTaskId();
         ContextId ctci = currentTask->getContextId();
@@ -231,7 +162,7 @@ int main(int argc, char const *argv[])
                 }
                 else
                 {
-                    tempState->currentTask = getTaskById(taskGraphIn, (tempState->nextTaskId));
+                    tempState->currentTask = tg->getContechTask(tempState->nextTaskId);
                 }
                 
                 if (tempState->currentTask->getType() == task_type_basic_blocks)
@@ -323,7 +254,7 @@ int main(int argc, char const *argv[])
             contechState[ctci] = tempState;
         }
     }
-
+    delete tg;
     // TODO: Process any remaining tasks that have not terminated
     
     // Print the basic block counts to csv format

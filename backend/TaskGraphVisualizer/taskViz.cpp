@@ -38,7 +38,7 @@ int main(int argc, char const *argv[])
     //Create file handles for input and output
     FILE* taskGraphOut = fopen("taskGraph.png","wb");
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(isClosed(taskGraphIn)){
+    if (taskGraphIn == NULL){
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
     }
@@ -74,9 +74,12 @@ int main(int argc, char const *argv[])
         set< pair<TaskId, TaskId> > edgeSet;
 
         //read Tasks and create graph
-        Task* currentTask;
+        TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+        Task* currentTask = NULL;
+        if (tg == NULL) {}
+
         int loopCount = 0;
-        while((loopCount < MAX_GRAPH_NODE_SIZE) && (currentTask = Task::readContechTask(taskGraphIn)))
+        while((loopCount < MAX_GRAPH_NODE_SIZE) && (currentTask = tg->readContechTask()))
         {
             
 

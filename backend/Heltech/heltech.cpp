@@ -150,8 +150,10 @@ void hbRaceDetector(ct_file* taskGraphIn)
     map<TaskId, uint> vecClockRef;
     
     // Process the task graph
-    Task* currentTask;
-    while(currentTask = Task::readContechTask(taskGraphIn)){
+    TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    if (tg == NULL) {}
+
+    while(Task* currentTask = tg->readContechTask()){
             
         TaskId ctid = currentTask->getTaskId();
         if(printVerbose){
@@ -245,6 +247,7 @@ void hbRaceDetector(ct_file* taskGraphIn)
 
         delete currentTask;
     }
+    delete tg;
     
     if(racesReported == 0){
         cerr << "\nNo data races found!!!" << endl;

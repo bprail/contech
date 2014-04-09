@@ -27,14 +27,16 @@ TaskGraphFrontEnd::TaskGraphFrontEnd(string basename, unsigned int cpuId)
     // Load the task graph
     string taskGraphFileName(basename + ".taskgraph");
     taskGraphFile = create_ct_file_r(taskGraphFileName.c_str());
-    if (isClosed(taskGraphFile)) { cerr << "Could not open " << taskGraphFileName << endl; exit(1); }
+    if (taskGraphFile == NULL) { cerr << "Could not open " << taskGraphFileName << endl; exit(1); }
     if (DEBUG) cerr << "TaskGraphFrontEnd (cpuId=" << cpuId << "): Opened " << taskGraphFileName << endl;
     // Find my first task
-    currentTask = NULL;
-    do{
-        if (currentTask != NULL) delete currentTask;
-        currentTask = Task::readContechTask(taskGraphFile);
-    } while (currentTask != NULL && !isMyTask(currentTask));
+    
+    tg = TaskGraph::initFromFile(taskGraphFile);
+    if (tg == NULL) {}
+
+    TaskId firstId(cpuId, 0);
+    currentTask = tg->getContechTask(firstId);
+    
     if (currentTask == NULL) { cerr << "No tasks for core " << cpuId << endl; return; }
 
     // Load the first basic block
@@ -158,10 +160,9 @@ bool TaskGraphFrontEnd::getNextInstruction(IFrontEnd::Instruction& inst)
             }
             
             // Get the next task for this core
-            do{
-                delete currentTask;
-                currentTask = Task::readContechTask(taskGraphFile);
-            } while (currentTask != NULL && !isMyTask(currentTask));
+            TaskId nextId = currentTask->getTaskId().getNext();
+            delete currentTask;
+            currentTask = tg->getContechTask(nextId);
 
             // If there are no more tasks, we are done. The last instruction will return true, the next call will return false
             if (currentTask == NULL) { return true; }
