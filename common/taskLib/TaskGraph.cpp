@@ -56,9 +56,9 @@ TaskGraph::TaskGraph(ct_file* f)
 //
 Task* TaskGraph::getNextTask()
 {
-    if (nextTask == taskIdx.end()) return NULL;
+    if (nextTask == taskOrder.end()) return NULL;
     
-    ct_seek(inputFile, nextTask->second);
+    ct_seek(inputFile, *nextTask);
     ++nextTask;
     
     return Task::readContechTask(inputFile);
@@ -120,8 +120,9 @@ void TaskGraph::initTaskIndex(unsigned long long off)
         assert(pos < off);
         
         taskIdx[tid] = pos;
+        taskOrder.push_back(pos);
     }
-    nextTask = taskIdx.begin();
+    nextTask = taskOrder.begin();
 }
 
 TaskGraphInfo* TaskGraph::readTaskGraphInfo()

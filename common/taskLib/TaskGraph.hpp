@@ -30,7 +30,8 @@ private:
     
     // Use an index to find each task in the graph
     map<TaskId, uint64> taskIdx;
-    map<TaskId, uint64>::iterator nextTask;
+    vector<uint64> taskOrder;
+    vector<uint64>::iterator nextTask;
     
     Task* getNextTask();
     Task* getTaskById(TaskId id);
