@@ -229,6 +229,9 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             fread_check(&line, sizeof(unsigned int), 1, fptr);
             npe->bbi.line_num = line;
             
+            fread_check(&line, sizeof(unsigned int), 1, fptr);
+            npe->bbi.num_ops = line;
+            
             fread_check(&len, sizeof(unsigned int), 1, fptr);
             npe->bbi.fun_name_len = len;
             if (len > 0)

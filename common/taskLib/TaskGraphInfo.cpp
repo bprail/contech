@@ -11,12 +11,13 @@ void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
     {  
         uint strLen;
         uint bbid = 0;
-        uint lineNumber, numOfMemOps;
+        uint lineNumber, numOfMemOps, numOps;
         char* f;
         string function, file;
         
         ct_read(&bbid, sizeof(uint), in);
         ct_read(&lineNumber, sizeof(uint), in);
+        ct_read(&numOps, sizeof(uint), in);
         ct_read(&numOfMemOps, sizeof(uint), in);
         
         ct_read(&strLen, sizeof(uint), in);
@@ -37,7 +38,7 @@ void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
             free(f);
         }
         
-        addRawBasicBlockInfo(bbid, lineNumber, numOfMemOps, function, file);
+        addRawBasicBlockInfo(bbid, lineNumber, numOfMemOps, numOps, function, file);
     }
 }
 
@@ -46,12 +47,13 @@ TaskGraphInfo::TaskGraphInfo()
 
 }
 
-void TaskGraphInfo::addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, string function, string file)
+void TaskGraphInfo::addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, uint numOps, string function, string file)
 {
     BasicBlockInfo bbi;
     
     bbi.lineNumber = lineNum;
     bbi.numOfMemOps = numMemOps;
+    bbi.numOfOps = numOps;
     bbi.functionName = function;
     bbi.fileName = file;
     
@@ -69,6 +71,7 @@ void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
         ct_write(&bbid, sizeof(uint), out);
         ct_write(&it->second.lineNumber, sizeof(uint), out);
         ct_write(&it->second.numOfMemOps, sizeof(uint), out);
+        ct_write(&it->second.numOfOps, sizeof(uint), out);
         
         strLen = it->second.functionName.length();
         ct_write(&strLen, sizeof(uint), out);

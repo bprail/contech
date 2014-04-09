@@ -113,7 +113,8 @@ reset_middle:
             //printf("in %s() of %s\n", event->bbi.fun_name, event->bbi.file_name);
             tgi->addRawBasicBlockInfo(event->bbi.basic_block_id, 
                                      event->bbi.line_num, 
-                                     event->bbi.num_mem_ops, 
+                                     event->bbi.num_mem_ops,
+                                     event->bbi.num_ops,
                                      functionName,
                                      fileName);
         }

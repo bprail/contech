@@ -593,6 +593,8 @@ cleanup:
             contechStateFile->write((char*)&evTy, sizeof(char));
             contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
             contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
+            
             int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
             contechStateFile->write((char*)&strLen, sizeof(int));
             *contechStateFile << bi->second->fnName;
@@ -716,7 +718,7 @@ cleanup:
         bool containCall = false, containQueueBuf = false;
         bool containKeyCall = false;
         Value* posValue = NULL;
-        unsigned int lineNum = 0;
+        unsigned int lineNum = 0, numIROps = B.size();
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
             MDNode *N;
@@ -730,10 +732,12 @@ cleanup:
             //   compare with getFirstInsertionPt
             if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) {
                 getNextI = true;
+                numIROps --;
                 continue;
             }
             else if (/*LandingPadInst *lpi = */dyn_cast<LandingPadInst>(&*I)){
                 getNextI = true;
+                numIROps --;
                 continue;
             }
             else if (/*LoadInst *li = */dyn_cast<LoadInst>(&*I)){
@@ -804,6 +808,7 @@ cleanup:
         bi->id = bbid;
         bi->first_op = NULL;
         bi->lineNum = lineNum;
+        bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
         bi->fileName = M.getModuleIdentifier().data();
         
