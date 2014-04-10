@@ -17,8 +17,8 @@ void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
         
         ct_read(&bbid, sizeof(uint), in);
         ct_read(&lineNumber, sizeof(uint), in);
-        ct_read(&numOps, sizeof(uint), in);
         ct_read(&numOfMemOps, sizeof(uint), in);
+        ct_read(&numOps, sizeof(uint), in);
         
         ct_read(&strLen, sizeof(uint), in);
         if (strLen > 0)
