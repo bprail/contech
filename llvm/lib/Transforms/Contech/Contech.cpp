@@ -582,40 +582,43 @@ cleanup:
         }
         //contechStateFile->seekp(0, ios_base::end);
         
-        int wcount = 0;
-        char evTy = ct_event_basic_block_info;
-        for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
+        if (ContechMarkFrontend == false && ContechMinimal == false)
         {
-            pllvm_mem_op t = bi->second->first_op;
-            
-            // Write out basic block info events
-            //   Then runtime can directly pass the events to the event list
-            contechStateFile->write((char*)&evTy, sizeof(char));
-            contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
-            contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
-            contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
-            
-            int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
-            contechStateFile->write((char*)&strLen, sizeof(int));
-            *contechStateFile << bi->second->fnName;
-            //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
-            
-            
-            strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
-            contechStateFile->write((char*)&strLen, sizeof(int));
-            contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
-            contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
-            
-            while (t != NULL)
+            int wcount = 0;
+            char evTy = ct_event_basic_block_info;
+            for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
             {
-                pllvm_mem_op tn = t->next;
-                contechStateFile->write((char*)&t->isWrite, sizeof(bool));
-                contechStateFile->write((char*)&t->size, sizeof(char));
-                delete (t);
-                t = tn;
+                pllvm_mem_op t = bi->second->first_op;
+                
+                // Write out basic block info events
+                //   Then runtime can directly pass the events to the event list
+                contechStateFile->write((char*)&evTy, sizeof(char));
+                contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
+                
+                int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
+                contechStateFile->write((char*)&strLen, sizeof(int));
+                *contechStateFile << bi->second->fnName;
+                //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
+                
+                
+                strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
+                contechStateFile->write((char*)&strLen, sizeof(int));
+                contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
+                contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
+                
+                while (t != NULL)
+                {
+                    pllvm_mem_op tn = t->next;
+                    contechStateFile->write((char*)&t->isWrite, sizeof(bool));
+                    contechStateFile->write((char*)&t->size, sizeof(char));
+                    delete (t);
+                    t = tn;
+                }
+                wcount++;
+                free(bi->second);
             }
-            wcount++;
-            free(bi->second);
         }
         //errs() << "Wrote: " << wcount << " basic blocks\n";
         cfgInfoMap.clear();
