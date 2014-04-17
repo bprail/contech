@@ -28,6 +28,8 @@ TaskGraph::TaskGraph(ct_file* f)
     unsigned long long taskIndexOffset = 0;
     inputFile = f;
     
+    ct_seek(f, 0);
+    
     // First is the version number
     ct_read(&version, sizeof(uint), f);
     if (false /*sizeof(uint) != ct_read(&version, sizeof(uint), f)*/)
@@ -49,6 +51,11 @@ TaskGraph::TaskGraph(ct_file* f)
     
     // Now skip to the index
     initTaskIndex(taskIndexOffset);
+}
+
+TaskGraph::~TaskGraph()
+{
+    delete tgi;
 }
 
 //

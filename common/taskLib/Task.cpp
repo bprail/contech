@@ -278,6 +278,9 @@ Task* Task::readContechTask(ct_file* in)
     unsigned char* uncomp = (unsigned char*) malloc(recordLength);
     unsigned long uncompPos = 0;
     
+    assert(comp != NULL);
+    assert(uncomp != NULL);
+    
     ct_read(comp, compLength, in);
     uncompress(uncomp, &recordLength, comp, compLength);
 
@@ -294,7 +297,7 @@ Task* Task::readContechTask(ct_file* in)
     // Read size and data for a vector
     uint asize;
     task->bbCount = 0;
-    ct_read(&asize, sizeof(uint), in);
+    //ct_read(&asize, sizeof(uint), in);
     memcpy(&asize, uncomp + uncompPos, sizeof(uint));
     uncompPos += sizeof(uint);
     task->a.clear();
@@ -359,6 +362,9 @@ Task* Task::readContechTask(ct_file* in)
     // uncompPos += sizeof(sync_type);
     // task->setFileOffset(fileOffset);
     
+    free(uncomp);
+    free(comp);
+    
     return task;
 }
 
@@ -400,6 +406,9 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
     unsigned char* src = (unsigned char*) malloc(recordLength);
     unsigned char* dst = (unsigned char*) malloc(recordLength+12);
     uint srcPos = 0;
+        
+    assert(src != NULL);
+    assert(dst != NULL);
         
     // Record length
     //ct_write(&recordLength, sizeof(uint), out);

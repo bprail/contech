@@ -49,6 +49,7 @@ public:
     Task* readContechTask();
     Task* getContechTask(TaskId);
     TaskGraphInfo* getTaskGraphInfo();
+    ~TaskGraph();
 };
 
 }
