@@ -29,7 +29,7 @@ class Task
 {
 friend class TaskGraph;
 protected:
-    static Task* readContechTask(ct_file* in);
+    static Task* readContechTaskUnlock(ct_file* in);
 
 private:
 

@@ -1,8 +1,23 @@
 #include "ct_file.h"
 #include <stdio.h>
+#include <pthread.h>
+
+//Class to abstract file handles, compressed or uncompressed. 
+typedef struct _ct_file
+{
+    //A handle for a compressed file
+    gzFile compressedHandle;
+    //and a handle for an uncompressed file
+    FILE* uncompressedHandle;
+    
+    pthread_mutex_t fileLock;
+} ct_file;
 
 ct_file* create_ct_file_blank(){
     ct_file* newHandle = (ct_file*) calloc(1,sizeof(ct_file));
+    
+    pthread_mutex_init(&newHandle->fileLock, NULL);
+    
     return newHandle;
 }
 
@@ -150,4 +165,14 @@ long ct_tell(ct_file* handle)
         result = ftell (getUncompressedHandle(handle));
     }
     return result;
+}
+
+int ct_lock(ct_file* handle)
+{
+    return pthread_mutex_lock(&handle->fileLock);
+}
+
+int ct_unlock(ct_file* handle)
+{
+    return pthread_mutex_unlock(&handle->fileLock);
 }

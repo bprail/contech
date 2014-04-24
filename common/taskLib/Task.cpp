@@ -262,7 +262,7 @@ sync_type Task::getSyncType() const { return syncType; }
 void Task::setSyncType(sync_type e) { syncType = e; }
 
 // Deserialize a Task from a file
-Task* Task::readContechTask(ct_file* in)
+Task* Task::readContechTaskUnlock(ct_file* in)
 {
     Task* task = new Task();
         
@@ -272,16 +272,19 @@ Task* Task::readContechTask(ct_file* in)
     unsigned long compLength;
     ct_read(&compLength, sizeof(unsigned long), in);
     
-    if (ct_eof(in)) { delete task; return NULL;}
+    if (ct_eof(in)) { delete task; ct_unlock(in); return NULL;}
     
     unsigned char* comp = (unsigned char*) malloc(compLength);
-    unsigned char* uncomp = (unsigned char*) malloc(recordLength);
+    
     unsigned long uncompPos = 0;
     
     assert(comp != NULL);
-    assert(uncomp != NULL);
     
     ct_read(comp, compLength, in);
+    ct_unlock(in);
+    
+    unsigned char* uncomp = (unsigned char*) malloc(recordLength);
+    assert(uncomp != NULL);
     uncompress(uncomp, &recordLength, comp, compLength);
 
     //ct_read(&task->taskId, sizeof(TaskId), in);

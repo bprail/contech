@@ -12,14 +12,7 @@ extern "C"
 {
 #endif
 
-//Class to abstract file handles, compressed or uncompressed. 
-typedef struct _ct_file
-{
-    //A handle for a compressed file
-    gzFile compressedHandle;
-    //and a handle for an uncompressed file
-    FILE* uncompressedHandle;
-} ct_file;
+typedef struct _ct_file ct_file;
     
 //default constructor, returns a pointer to a ct_file with a clean slate
 ct_file* create_ct_file_blank();
@@ -68,6 +61,9 @@ void ct_rewind(ct_file* handle);
 //Flush out the file handle. Any buffers are written out. Not recommended to use too often as the gzip variety
 //can slow this down. This is meant more for finalization.
 int ct_flush(ct_file* handle);
+
+int ct_lock(ct_file* handle);
+int ct_unlock(ct_file* handle);
 
 #if defined(__cplusplus)
 }

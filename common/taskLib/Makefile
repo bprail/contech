@@ -1,9 +1,9 @@
 PROJECT = libTask.a
 OBJECTS = TaskGraph.o TaskGraphInfo.o Task.o Action.o ct_file.o
 CC = gcc
-CFLAGS = -std=c99 -O3 -g -Wall
+CFLAGS = -std=c99 -O3 -g -Wall -pthread
 CXX = g++
-CXXFLAGS  = -std=c++11 -O3 -g -Wall
+CXXFLAGS  = -std=c++11 -O3 -g -Wall -pthread
 HEADERS = Task.h 
 
 all: $(PROJECT) ct_file_C.o

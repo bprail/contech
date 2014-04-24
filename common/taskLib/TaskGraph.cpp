@@ -63,12 +63,15 @@ TaskGraph::~TaskGraph()
 //
 Task* TaskGraph::getNextTask()
 {
+    int e;
     if (nextTask == taskOrder.end()) return NULL;
+    
+    if ((e = ct_lock(inputFile))) return NULL;
     
     ct_seek(inputFile, *nextTask);
     ++nextTask;
     
-    return Task::readContechTask(inputFile);
+    return Task::readContechTaskUnlock(inputFile);
 }
 
 //
@@ -80,9 +83,10 @@ Task* TaskGraph::getTaskById(TaskId id)
     
     if (it == taskIdx.end()) return NULL;
     
+    if (ct_lock(inputFile)) return NULL;
     ct_seek(inputFile, it->second);
     
-    return Task::readContechTask(inputFile);
+    return Task::readContechTaskUnlock(inputFile);
 }
 
 Task* TaskGraph::readContechTask()
