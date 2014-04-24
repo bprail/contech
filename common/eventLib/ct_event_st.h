@@ -60,7 +60,7 @@ typedef enum _ct_sync_type ct_sync_type;
 //
 typedef struct _ct_basic_block_info
 {
-    unsigned int basic_block_id, fun_name_len, file_name_len, num_mem_ops, line_num, num_ops;
+    unsigned int basic_block_id, fun_name_len, file_name_len, num_mem_ops, line_num, num_ops, crit_path_len;
     char* file_name;
     char* fun_name;
 } ct_basic_block_info, *pct_basic_block_info;

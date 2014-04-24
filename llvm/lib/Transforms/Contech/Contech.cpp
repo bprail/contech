@@ -170,6 +170,7 @@ namespace llvm {
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
+        unsigned int getCriticalPathLen(BasicBlock& B);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -335,6 +336,46 @@ namespace llvm {
                 return;
             }
         }
+    }
+    
+    //
+    // Scan through each instruction in the basic block
+    //   For each op used by the instruction, this instruction is 1 deeper than it
+    //
+    unsigned int Contech::getCriticalPathLen(BasicBlock& B)
+    {
+        map<Instruction*, unsigned int> depthOfInst;
+        unsigned int maxDepth = 0;
+        
+        for (BasicBlock::iterator it = B.begin(), et = B.end(); it != et; ++it)
+        {
+            unsigned int currIDepth = 0;
+            for (User::op_iterator itUse = it->op_begin(), etUse = it->op_end(); 
+                                 itUse != etUse; ++itUse)
+            {
+                unsigned int tDepth;
+                Instruction* inU = dyn_cast<Instruction>(itUse->get());
+                map<Instruction*, unsigned int>::iterator depI = depthOfInst.find(inU);
+                
+                if (depI == depthOfInst.end())
+                {
+                    // Dependent on value from a different basic block
+                    tDepth = 1;
+                }
+                else
+                {
+                    // The path in this block is 1 more than the dependent instruction's depth
+                    tDepth = depI->second + 1;
+                }
+                
+                if (tDepth > currIDepth) currIDepth = tDepth;
+            }
+            
+            depthOfInst[&*it] = currIDepth;
+            if (currIDepth > maxDepth) maxDepth = currIDepth;
+        }
+    
+        return maxDepth;
     }
     
     //
@@ -596,6 +637,7 @@ cleanup:
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
                 
                 int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
                 contechStateFile->write((char*)&strLen, sizeof(int));
@@ -814,6 +856,7 @@ cleanup:
         bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
         bi->fileName = M.getModuleIdentifier().data();
+        bi->critPathLen = getCriticalPathLen(B);
         
         //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
         //debugLog("checkBufferFunction @" << __LINE__);

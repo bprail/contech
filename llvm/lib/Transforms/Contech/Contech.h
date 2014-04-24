@@ -20,7 +20,7 @@ namespace llvm {
     } llvm_mem_op, *pllvm_mem_op;
 
     typedef struct _llvm_basic_block {
-        unsigned int id, len, lineNum, numIROps;
+        unsigned int id, len, lineNum, numIROps, critPathLen;
         int hasCheckBuffer;
         ct_event_id ev; // if ev == ct_event_basic_block, then no sync in this block
         pllvm_mem_op first_op;
