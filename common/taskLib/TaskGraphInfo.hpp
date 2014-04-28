@@ -24,6 +24,7 @@ public:
     uint lineNumber;
     uint numOfMemOps;
     uint numOfOps;
+    uint critPathLen;
     string functionName;
     string fileName;
     //vector <uint> typeOfMemOps;
@@ -55,7 +56,7 @@ public:
     void initTaskGraphInfo(ct_file*);
     TaskGraphInfo();
     
-    void addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, uint numOps, string function, string file);
+    void addRawBasicBlockInfo(uint bbid, uint lineNum, uint numMemOps, uint numOps, uint critPathLen, string function, string file);
     void writeTaskGraphInfo(ct_file*);
     
     BasicBlockInfo& getBasicBlockInfo(uint bbid);
