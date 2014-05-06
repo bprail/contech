@@ -556,21 +556,38 @@ void* __ctBackgroundThreadWriter(void* d)
             size_t tl = fwrite(bb_info, sizeof(char), _binary_contech_bin_end - bb_info, serialFile);
             bb_info += tl;
             totalWritten += tl;
+#if 0
+            unsigned int bb_len = *(unsigned int*) (bb_info + 4);
+            char evTy = ct_event_basic_block_info;
+            size_t byteToWrite = sizeof(unsigned int) * 2 + sizeof(char) * (2 * bb_len), tl = 0;
+            //fprintf(stderr, "Write bb_info %p - %d %d\n", bb_info, *(unsigned int*)bb_info, bb_len);
+            //fflush(stderr);
+#if EVENT_COMPRESS
+            gzwrite(serialFileComp, &evTy, sizeof(char));
+            gzwrite(serialFileComp, bb_info, byteToWrite);
+#else
+            while (1 != fwrite(&evTy, sizeof(char), 1, serialFile));
+            do {
+                size_t wl = fwrite(bb_info + tl, sizeof(char), byteToWrite - tl, serialFile);
+                if (wl > 0)
+                    tl += wl;
+            } while (tl < byteToWrite);
+#endif
+            bb_info += byteToWrite;
+            totalWritten += byteToWrite + sizeof(char);
+#endif
         }
     }
     
-    // Main loop
-    //   Write queued buffer to disk until program terminates
     pthread_mutex_lock(&__ctQueueBufferLock);
     do {
-        // Check for queued buffer, i.e. is the program generating events
         while (__ctQueuedBuffers == NULL)
         {
             pthread_cond_wait(&__ctQueueSignal, &__ctQueueBufferLock);
         }
         pthread_mutex_unlock(&__ctQueueBufferLock);
     
-        // The thread writer will likely sit in this loop except when the memory limit is triggered
+        
         while (__ctQueuedBuffers != NULL)
         {
             // Write buffer to file
