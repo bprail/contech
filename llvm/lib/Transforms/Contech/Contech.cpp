@@ -1160,7 +1160,7 @@ cleanup:
                     debugLog("queueBufferFunction @" << __LINE__);
                     /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
                                                         "", I);                   
-                    I++;
+                    ++I;
                     cArgs[0] = ConstantInt::get(int8Ty, 0);
                     // Record the barrier exit
                     debugLog("storeBarrierFunction @" << __LINE__);
