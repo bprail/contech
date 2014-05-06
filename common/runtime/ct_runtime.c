@@ -388,10 +388,11 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
 
 //
 //  Put the current local buffer into the queue and allocate a new buffer
-//     Assumes that the buffer is full
 //
-__attribute__((noinline)) void __ctQueueBufferFull(bool alloc)
+void __ctQueueBuffer(bool alloc)
 {
+    pct_serial_buffer localBuffer = NULL;
+    
 #ifdef DEBUG
     pthread_mutex_lock(&__ctPrintLock);
     fprintf(stderr, "q,%p,%d\n", __ctThreadLocalBuffer, __ctThreadLocalNumber);
@@ -406,44 +407,6 @@ __attribute__((noinline)) void __ctQueueBufferFull(bool alloc)
         return;
     }
     
-    if (__ctThreadLocalBuffer->id != __ctThreadLocalNumber)
-    {
-        fprintf(stderr, "WARNING: Local Buffer has migrated from %d to %d since allocation\n",
-                __ctThreadLocalBuffer->id, __ctThreadLocalNumber);
-    }
-    
-    pthread_mutex_lock(&__ctQueueBufferLock);
-    __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
-    
-    if (__builtin_expect(__ctQueuedBuffers == NULL, false))
-    {
-        __ctQueuedBuffers = __ctThreadLocalBuffer;
-        __ctQueuedBufferTail = __ctThreadLocalBuffer;
-        __ctThreadLocalBuffer = NULL;
-        pthread_cond_signal(&__ctQueueSignal);
-    }
-    else
-    {
-        pct_serial_buffer t = __ctQueuedBuffers;
-        __ctQueuedBufferTail->next = __ctThreadLocalBuffer;
-        __ctQueuedBufferTail = __ctThreadLocalBuffer;
-        __ctThreadLocalBuffer = NULL;
-    }
-    pthread_mutex_unlock(&__ctQueueBufferLock);
-    
-    if (alloc)
-    {
-        __ctAllocateLocalBuffer();
-    }
-}
-
-//
-//  Checks whether the buffer is full or just queued
-//
-void __ctQueueBuffer(bool alloc)
-{
-    pct_serial_buffer localBuffer = NULL;
-
     // If we need to allocate a new buffer, and the current one is rather empty,
     //   then allocate one for the current, copy data and reuse the existing buffer
     if (alloc && 
@@ -470,7 +433,29 @@ void __ctQueueBuffer(bool alloc)
         }
     }
     
-    __ctQueueBufferFull(false);
+    if (__ctThreadLocalBuffer->id != __ctThreadLocalNumber)
+    {
+        fprintf(stderr, "WARNING: Local Buffer has migrated from %d to %d since allocation\n",
+                __ctThreadLocalBuffer->id, __ctThreadLocalNumber);
+    }
+    
+    pthread_mutex_lock(&__ctQueueBufferLock);
+    __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
+    if (__ctQueuedBuffers == NULL)
+    {
+        __ctQueuedBuffers = __ctThreadLocalBuffer;
+        __ctQueuedBufferTail = __ctThreadLocalBuffer;
+        __ctThreadLocalBuffer = NULL;
+        pthread_cond_signal(&__ctQueueSignal);
+    }
+    else
+    {
+        pct_serial_buffer t = __ctQueuedBuffers;
+        __ctQueuedBufferTail->next = __ctThreadLocalBuffer;
+        __ctQueuedBufferTail = __ctThreadLocalBuffer;
+        __ctThreadLocalBuffer = NULL;
+    }
+    pthread_mutex_unlock(&__ctQueueBufferLock);
 
     if (localBuffer != NULL)
     {
@@ -480,6 +465,8 @@ void __ctQueueBuffer(bool alloc)
     else if (alloc)
     {
         __ctAllocateLocalBuffer();
+        //__ctThreadLocalBuffer->pos = 0;
+        //__ctThreadLocalBuffer->length = SERIAL_BUFFER_SIZE;
     }
 }
 
@@ -773,13 +760,13 @@ void* __ctBackgroundThreadWriter(void* d)
     } while (1);
 }
 
-__attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
+void __ctCheckBufferSize(unsigned int p)
 {
     #ifdef POS_USED
     // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
     //   4 for basic block, 32 for other event, then 6 for each memop
-    if (__builtin_expect((SERIAL_BUFFER_SIZE - 1024) < p, false))
-        __ctQueueBufferFull(true);
+    if ((SERIAL_BUFFER_SIZE - 1024) < p)
+        __ctQueueBuffer(true);
     #endif
 }
 
@@ -822,7 +809,7 @@ void __ctSetBufferPos(unsigned int pos)
 }
 
 // (contech_id, basic block id, num of ops)
-__attribute__((always_inline)) __attribute__((returns_nonnull)) char* __ctStoreBasicBlock(unsigned int bbid)
+__attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -849,7 +836,7 @@ unsigned int __ctStoreBasicBlockComplete(unsigned int c)
     #endif
 }
 
-__attribute__((always_inline)) __attribute__((nonnull (3))) void __ctStoreMemOp(void* addr, unsigned int c, char* r)
+__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
