@@ -33,9 +33,6 @@ private:
     vector<uint64> taskOrder;
     vector<uint64>::iterator nextTask;
     
-    Task* getNextTask();
-    Task* getTaskById(TaskId id);
-    
     // Privately, attempt to read a task graph info struct
     TaskGraphInfo* readTaskGraphInfo();
     void initTaskIndex(unsigned long long);
@@ -46,8 +43,13 @@ public:
     static TaskGraph* initFromFile(char*);
     static TaskGraph* initFromFile(ct_file*);
     
+    Task* getNextTask();
+    Task* getTaskById(TaskId id);
+    
+    // These calls are deprecated and will be removed soon...
     Task* readContechTask();
     Task* getContechTask(TaskId);
+    
     TaskGraphInfo* getTaskGraphInfo();
     ~TaskGraph();
 };
