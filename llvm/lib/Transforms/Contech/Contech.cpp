@@ -195,6 +195,7 @@ namespace llvm {
         FunctionType* funVoidI8I64VoidPtrTy;
         FunctionType* funVoidI8Ty;
         FunctionType* funVoidI32Ty;
+        FunctionType* funVoidI32I32Ty;
         FunctionType* funVoidI8VoidPtrI64Ty;
         FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
@@ -254,6 +255,10 @@ namespace llvm {
         
         funI32I32Ty = FunctionType::get(int32Ty, ArrayRef<Type*>(argsTC, 1), false);
         storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
+        
+        Type* argsII[] = {int32Ty, int32Ty};
+        funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsII, 2), false);
+        checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32I32Ty);
         
         Type* argsME[] = {int8Ty, int64Ty, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
@@ -1361,7 +1366,7 @@ cleanup:
         
         //
         // Being conservative, if another function was called, then
-        // the insturmentation needs to check that the buffer isn't full
+        // the instrumentation needs to check that the buffer isn't full
         //
         // Being really conservative every block has a check, this also
         //   requires disabling the dominator tree traversal in the runOnModule routine
@@ -1372,6 +1377,13 @@ cleanup:
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
             CallInst::Create(checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+            containCall = true;
+        }
+        else if (memOpCount > ((1024 - 4) / 6))
+        {
+            Value* argsCheck[] = {sbbc, memOpCount};
+            debugLog("checkBufferLargeFunction @" << __LINE__);
+            CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 2), "", iPt);
             containCall = true;
         }
         

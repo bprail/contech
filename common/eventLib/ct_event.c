@@ -7,9 +7,9 @@
 
 void dumpAndTerminate(ct_file *fptr);
 
-//#define fread_check(x,y,z,a) do {if (z != (t = fread(x,y,z,a))) {fprintf(stderr, "FREAD failure at %d after %llu\n", __LINE__, sum);dumpAndTerminate();} sum += (t * y);} while(0)
+//#define fread_check(x,y,z,a) do {if (z != (t = fread(x,y,z,a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate();} sum += (t * y);} while(0)
 // Use ct_file
-#define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d after %llu\n", __LINE__, sum);dumpAndTerminate(a);} sum += (t);} while(0)
+#define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate(a);} sum += (t);} while(0)
 
 // DEBUG information
 static unsigned long long sum = 0;
@@ -38,7 +38,7 @@ static unsigned int version = 0;
 
 // In version 1, we get currentID from the header events, instead
 // of from the individual events
-static unsigned int currentID = 0;
+static unsigned int currentID = ~0;
 
 // Interpret basic blocks using the following information
 static unsigned int bb_count = 0;
@@ -405,7 +405,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             if (version > CONTECH_EVENT_VERSION)
                 fprintf(stderr, "WARNING: Version %d exceeds supported versions\n", version);
             else
-                fprintf(stderr, "Event Version set: %d\n", version);
+                fprintf(stderr, "Event Version set: %d\tBasic Block table: %d\n", version, bb_count);
                 
                 
             for (int i = 0; i < 512; i++) binInfo[i] = 0;

@@ -743,6 +743,36 @@ void* __ctBackgroundThreadWriter(void* d)
     } while (1);
 }
 
+//
+// __ctDebugLocalBuffer
+//   This function is only invoked by the debugger to look at the contents
+//     of the local buffer and investigate whether there is an issue
+//
+void __ctDebugLocalBuffer()
+{
+    printf("Local buffer: %p\n", __ctThreadLocalBuffer);
+    printf("Capacity: %d\tSize: %d\n", __ctThreadLocalBuffer->length, __ctThreadLocalBuffer->pos);
+    printf("First Bytes:\n");
+    for (int i = 0; i < 32; i++)
+    {
+        printf("%x", __ctThreadLocalBuffer->data[i]);
+    }
+    printf("\nLast Bytes:\n");
+    for (i = 0; i < 32; i++)
+    {
+        printf("%x", __ctThreadLocalBuffer->data[__ctThreadLocalBuffer->pos + i - 32]);
+    }
+    printf("\n");
+}
+
+void __ctCheckBufferBySize(unsigned int numOps, unsigned int p)
+{
+    #ifdef POS_USED
+    if ((SERIAL_BUFFER_SIZE - (numOps + 1)*6) < p)
+        __ctQueueBuffer(true);
+    #endif
+}
+
 void __ctCheckBufferSize(unsigned int p)
 {
     #ifdef POS_USED
