@@ -132,6 +132,7 @@ namespace llvm {
         Constant* storeBulkMemoryOpFunction;
         Constant* getCurrentTickFunction;
         Constant* createThreadActualFunction;
+        Constant* checkBufferLargeFunction;
         
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
@@ -1381,7 +1382,7 @@ cleanup:
         }
         else if (memOpCount > ((1024 - 4) / 6))
         {
-            Value* argsCheck[] = {sbbc, memOpCount};
+            Value* argsCheck[] = {llvm_nops, sbbc};
             debugLog("checkBufferLargeFunction @" << __LINE__);
             CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 2), "", iPt);
             containCall = true;
