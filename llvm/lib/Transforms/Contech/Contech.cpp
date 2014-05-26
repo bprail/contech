@@ -23,6 +23,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/DebugInfo.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #include "llvm/Constants.h"
@@ -34,6 +35,7 @@
 #include "llvm/Metadata.h"
 #include "llvm/Function.h"
 #include "llvm/Attributes.h"
+#include "llvm/Analysis/DebugInfo.h"
 #define ALWAYS_INLINE (Attributes::AttrVal::AlwaysInline)
 #endif
 #endif
@@ -45,7 +47,6 @@
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/Dominators.h"
-#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Support/DebugLoc.h"
 #include <map>
 #include <set>
