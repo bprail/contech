@@ -267,16 +267,16 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     Task* task = new Task();
         
     // Read in record length
-    unsigned long recordLength;
-    ct_read(&recordLength, sizeof(unsigned long), in);
-    unsigned long compLength;
-    ct_read(&compLength, sizeof(unsigned long), in);
-    
+    uint64 recordLength;
+    ct_read(&recordLength, sizeof(uint64), in);
+    uint64 compLength;
+    ct_read(&compLength, sizeof(uint64), in);
+
     if (ct_eof(in)) { delete task; ct_unlock(in); return NULL;}
     
     unsigned char* comp = (unsigned char*) malloc(compLength);
     
-    unsigned long uncompPos = 0;
+    uint64 uncompPos = 0;
     
     assert(comp != NULL);
     
@@ -285,7 +285,7 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     
     unsigned char* uncomp = (unsigned char*) malloc(recordLength);
     assert(uncomp != NULL);
-    uncompress(uncomp, &recordLength, comp, compLength);
+    uncompress(uncomp, (uLongf*)&recordLength, comp, compLength);
 
     //ct_read(&task->taskId, sizeof(TaskId), in);
     memcpy(&task->taskId, uncomp + uncompPos, sizeof(TaskId));
@@ -365,6 +365,8 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     // uncompPos += sizeof(sync_type);
     // task->setFileOffset(fileOffset);
     
+    assert(task->bbCount > 0 || task->type != task_type_basic_blocks);
+    
     free(uncomp);
     free(comp);
     
@@ -379,7 +381,7 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
     uint ssize = task.s.size();
     uint psize = task.p.size();
 
-    unsigned long recordLength =
+    uint64 recordLength =
         // Unique ID
         sizeof(TaskId) +
         // Start Time
@@ -482,7 +484,7 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
     //memcpy(src + srcPos, &task.fileOffset, sizeof(uint64));
     //srcPos += sizeof(uint64);
     
-    unsigned long dstLen = recordLength + 12;
+    uint64 dstLen = recordLength + 12;
     compress(dst, &dstLen, src, recordLength);
     ct_write(&recordLength, sizeof(recordLength), out);
     ct_write(&dstLen, sizeof(dstLen), out);
