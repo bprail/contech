@@ -221,6 +221,13 @@ reset_middle:
                 
                 activeT = activeContech.activeTask();
             }
+            else if (activeT->getBBCount() > 10000000)
+            {
+                activeContech.createBasicBlockContinuation();
+                updateContextTaskList(activeContech);
+                
+                activeT = activeContech.activeTask();
+            }
             
             // Record that this task executed this basic block
             activeT->recordBasicBlockAction(event->bb.basic_block_id);
