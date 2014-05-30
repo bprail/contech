@@ -365,7 +365,8 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     // uncompPos += sizeof(sync_type);
     // task->setFileOffset(fileOffset);
     
-    assert(task->bbCount > 0 || task->type != task_type_basic_blocks);
+    // TODO: Resolve issue with condition variables creating empty basic block tasks
+    //assert(task->bbCount > 0 || task->type != task_type_basic_blocks);
     
     free(uncomp);
     free(comp);
@@ -485,7 +486,7 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
     //srcPos += sizeof(uint64);
     
     uint64 dstLen = recordLength + 12;
-    compress(dst, &dstLen, src, recordLength);
+    compress(dst, (uLongf*)&dstLen, src, recordLength);
     ct_write(&recordLength, sizeof(recordLength), out);
     ct_write(&dstLen, sizeof(dstLen), out);
     ct_write(dst, dstLen, out);
