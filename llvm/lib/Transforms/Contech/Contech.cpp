@@ -1103,6 +1103,7 @@ cleanup:
                     Value* cArg[] = {bciMut, ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0), nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4), "", ci);
+                    // TODO: Can avoid queuing after the first sync?
                     if (ContechMinimal == false)
                     {
                         cArg[0] = ConstantInt::get(int8Ty, 1);
