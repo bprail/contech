@@ -374,10 +374,10 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     //__ctThreadLocalBuffer->length = SERIAL_BUFFER_SIZE;
     __ctThreadInfoList = NULL;
 
-    __ctStoreThreadCreate(p, skew, start);
-
     free(ptc);
     
+    __ctStoreThreadCreate(p, skew, start);
+ 
     g = __ctCleanupThread;
     pthread_cleanup_push(g, NULL);
     
