@@ -186,8 +186,6 @@ int main(int argc, char** argv)
     
     // Allocate a real CT buffer for the main thread, this replaces initBuffer
     __ctAllocateLocalBuffer();
-    // __ctThreadLocalBuffer->pos = 0;
-    // __ctThreadLocalBuffer->length = serialBufferSize;
 
     {
         struct timeb tp;
@@ -302,6 +300,7 @@ int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
     ptc->child_skew = 0;
     ptc->parent_skew = 0;
     
+    // Parent, store the create event before creating
     __ctStoreThreadCreate(child_ctid, 0, start);
     __ctQueueBuffer(true);
     
@@ -370,8 +369,6 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     __ctThreadLocalNumber = ptc->child_ctid;//__sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
     __ctAllocateLocalBuffer();
     
-    //__ctThreadLocalBuffer->pos = 0;
-    //__ctThreadLocalBuffer->length = SERIAL_BUFFER_SIZE;
     __ctThreadInfoList = NULL;
 
     free(ptc);
@@ -402,7 +399,7 @@ void __ctQueueBuffer(bool alloc)
 
     assert(__ctThreadLocalBuffer->pos < SERIAL_BUFFER_SIZE);
     
-    // __ctThreadExitNumber == __ctThreadGlobalNumber &&
+    // If this thread is still using the init buffer, then discard the events
     if (__ctThreadLocalBuffer == (pct_serial_buffer)&initBuffer)
     {
         __ctThreadLocalBuffer->pos = 0;
@@ -451,6 +448,10 @@ void __ctQueueBuffer(bool alloc)
     assert(s < 16);
 #endif
     
+    //
+    // Queue the thread local buffer to the back of the queue, tail pointer available
+    //   Signal the background thread if the queue is empty
+    //
     pthread_mutex_lock(&__ctQueueBufferLock);
     __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
     if (__ctQueuedBuffers == NULL)
@@ -469,16 +470,20 @@ void __ctQueueBuffer(bool alloc)
     }
     pthread_mutex_unlock(&__ctQueueBufferLock);
 
+    //
+    // Used a temporary to hold the thread local buffer, restore
+    //
     if (localBuffer != NULL)
     {
         localBuffer->pos = 0;
         __ctThreadLocalBuffer = localBuffer;
     }
+    //
+    // If we need to allocate a new buffer do so now
+    //
     else if (alloc)
     {
         __ctAllocateLocalBuffer();
-        //__ctThreadLocalBuffer->pos = 0;
-        //__ctThreadLocalBuffer->length = SERIAL_BUFFER_SIZE;
     }
 }
 
@@ -633,7 +638,7 @@ void* __ctBackgroundThreadWriter(void* d)
 #endif
                 // if (wl < 0)
                 // {
-                    // continue;
+                //     continue;
                 // }
                 tl += wl;
                 if (qb != __ctQueuedBuffers)
@@ -844,19 +849,17 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid)
     
     __ctCheckBufferSizeDebug(bbid);
     
+    // Shift 1 byte of 0s, which is the basic block event
     *((unsigned int*)r) = bbid << 8;
     
     return r;
 }
 
-unsigned int __ctStoreBasicBlockComplete(unsigned int c)
+unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps)
 {
     #ifdef POS_USED
-    /* unsigned int p = __ctThreadLocalBuffer->pos;
-    p += c * 6 * sizeof(char) + sizeof(unsigned int);// sizeof(ct_memory_op);
-    __ctThreadLocalBuffer->pos = p;
-    return p;*/
-    (__ctThreadLocalBuffer->pos += c * 6 * sizeof(char) + sizeof(unsigned int));
+    // 6 bytes per memory op, unsigned int for id + event
+    (__ctThreadLocalBuffer->pos += numMemOps * 6 * sizeof(char) + sizeof(unsigned int));
     return __ctThreadLocalBuffer->pos;
     #endif
 }
@@ -885,9 +888,10 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
     
     // Unix 0 is successful
+    //   So non zeros indicate the sync event did not happen
     if (success != 0) return;
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync /*<<24*/;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
     *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = start_t;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
