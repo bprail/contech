@@ -399,6 +399,8 @@ void __ctQueueBuffer(bool alloc)
     fflush(stderr);
     pthread_mutex_unlock(&__ctPrintLock);
 #endif
+
+    assert(__ctThreadLocalBuffer->pos < SERIAL_BUFFER_SIZE);
     
     // __ctThreadExitNumber == __ctThreadGlobalNumber &&
     if (__ctThreadLocalBuffer == (pct_serial_buffer)&initBuffer)
@@ -609,7 +611,7 @@ void* __ctBackgroundThreadWriter(void* d)
             {
                 if (qb->pos > SERIAL_BUFFER_SIZE)
                 {
-                    fprintf(stderr, "Illegal buffer size\n");
+                    fprintf(stderr, "Illegal buffer size - %d\n", qb->pos);
                 }
 #if EVENT_COMPRESS
                 wl = gzwrite (serialFileComp, __ctQueuedBuffers->data + tl, (__ctQueuedBuffers->pos) - tl);
@@ -765,10 +767,10 @@ void __ctDebugLocalBuffer()
     printf("\n");
 }
 
-void __ctCheckBufferBySize(unsigned int numOps, unsigned int p)
+void __ctCheckBufferBySize(unsigned int numOps)
 {
     #ifdef POS_USED
-    if ((SERIAL_BUFFER_SIZE - (numOps + 1)*6) < p)
+    if ((SERIAL_BUFFER_SIZE - (numOps + 1)*6) < __ctThreadLocalBuffer->pos)
         __ctQueueBuffer(true);
     #endif
 }
