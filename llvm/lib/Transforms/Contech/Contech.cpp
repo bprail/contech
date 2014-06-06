@@ -1373,7 +1373,7 @@ cleanup:
             // TODO: Function not defined in ct_runtime
             Value* argsCheck[] = {llvm_nops};
             debugLog("checkBufferLargeFunction @" << __LINE__);
-            CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", aPhi);
+            CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
             containCall = true;
         }
         //
