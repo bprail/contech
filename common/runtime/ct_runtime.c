@@ -441,6 +441,16 @@ void __ctQueueBuffer(bool alloc)
                 __ctThreadLocalBuffer->id, __ctThreadLocalNumber);
     }
     
+#if 0
+    // This check verifies that the first 16 bytes of a buffer are not 0s
+    //   Such a failure would likely indicate the lack of a basic block (or other) event
+    //   to start a buffer.  The check is disabled for runtime reasons.
+    int s = 0;
+    for (int i = 0; i < 16; i++)
+        if (__ctThreadLocalBuffer->data[i] == 0) s++;
+    assert(s < 16);
+#endif
+    
     pthread_mutex_lock(&__ctQueueBufferLock);
     __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
     if (__ctQueuedBuffers == NULL)
