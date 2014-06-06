@@ -66,6 +66,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     outFileComingNext = False;
     compileOnly = False;
     depsOnly = False;
+    dragon = False;
     
     for arg in sys.argv[1:]:
 
@@ -115,7 +116,8 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             isCpp = False
         elif ".f" == arg[-2:]:
             # Fortran only supported through dragonEgg and not clang
-            compileOnly = True
+            cfile = arg
+            dragon = True
         # Object file
         elif ".o" == arg[-2:]:
             ofiles = ofiles + " " + arg
@@ -146,8 +148,36 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     if cfile == "" and compileOnly:
         passThrough(CC)
     
+    # Requires dragon egg
+    elif dragon == True:
+        name=cfile[0: len(cfile) - 2]
+        
+        # Define names of intermediate files
+        A= name + ".ll"
+        B= name + "_ct.bc"
+        
+        # Define name of compiled file
+        newobj = ""
+        if out != "" :
+            newobj = out
+        else:
+            newobj = name + ".o"
+        
+        # Make sure the output ends in .o
+        if newobj[-2:] != ".o":
+            newobj = newobj + ".o"
+        
+        # -fplugin=$CONTECH_LLVM_HOME/lib64/dragonegg.so -S -fplugin-arg-dragonegg-emit-ir
+        pcall(["gcc", CFLAGS, "-S", "-fplugin=" + CONTECH_LLVM_HOME + "/lib/dragonegg.so" , "-fplugin-arg-dragonegg-emit-ir", cfile, "-o", A])
+        
+        pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", A, "-o", B, "-ContechState", stateFile])
+        # Compile bitcode back to a .o file
+        pcall([CC, CFLAGS, "-c", "-o", newobj, B])
+        # Add the generated object file to the list of things to link
+        ofiles = ofiles + " " + newobj
+        
     # Input file found, assuming compile requested.
-    # Compile with contech
+    # Compile with contech   
     elif cfile != "":
         
         # Get the name of cfile without an extension
