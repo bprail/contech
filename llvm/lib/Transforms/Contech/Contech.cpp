@@ -254,13 +254,13 @@ namespace llvm {
         ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
         ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
         checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
+        checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
         
         funI32I32Ty = FunctionType::get(int32Ty, ArrayRef<Type*>(argsTC, 1), false);
         storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
         
         Type* argsII[] = {int32Ty, int32Ty};
         funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsII, 2), false);
-        checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32I32Ty);
         
         Type* argsME[] = {int8Ty, int64Ty, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
@@ -1367,6 +1367,15 @@ cleanup:
             }
         }
         
+        // If there are more than 170 memops, then "prealloc" space
+        if (memOpCount > ((1024 - 4) / 6))
+        {
+            // TODO: Function not defined in ct_runtime
+            Value* argsCheck[] = {llvm_nops};
+            debugLog("checkBufferLargeFunction @" << __LINE__);
+            CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", aPhi);
+            containCall = true;
+        }
         //
         // Being conservative, if another function was called, then
         // the instrumentation needs to check that the buffer isn't full
@@ -1375,20 +1384,14 @@ cleanup:
         //   requires disabling the dominator tree traversal in the runOnModule routine
         //
         //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
-        if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
+        else if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
         {
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
             CallInst::Create(checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             containCall = true;
         }
-        else if (memOpCount > ((1024 - 4) / 6))
-        {
-            Value* argsCheck[] = {llvm_nops, sbbc};
-            debugLog("checkBufferLargeFunction @" << __LINE__);
-            CallInst::Create(checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 2), "", iPt);
-            containCall = true;
-        }
+        
         
         
         // Finally record the information about this basic block
