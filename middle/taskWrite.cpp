@@ -2,6 +2,7 @@
 #include "middle.hpp"
 #include "../common/taskLib/TaskGraph.hpp"
 #include <sys/timeb.h>
+#include <sys/sysinfo.h>
 #include <map>
 
 using namespace std;
@@ -26,7 +27,8 @@ void backgroundQueueTask(Task* t)
     pthread_mutex_lock(&taskQueueLock);
     qSize = taskQueue->size();
     taskQueue->push_back(t);
-    if (qSize == QUEUE_SIGNAL_THRESHOLD) {pthread_cond_signal(&taskQueueCond);}
+    // Signal if there are enough tasks, or a "maximal" sized task is queued
+    if (qSize == QUEUE_SIGNAL_THRESHOLD || t->getBBCount() > (MAX_BLOCK_THRESHOLD - 1)) {pthread_cond_signal(&taskQueueCond);}
     pthread_mutex_unlock(&taskQueueLock);
 }
 
@@ -125,21 +127,36 @@ void debugBackground(map<TaskId, pair<Task*, int> > &tasks)
     
     if (minT != NULL)
     {
-        cout << "Minimum Task is: " << endl;
-        cout << minT->toString() << endl;
+        cout << "Minimum Task is: ";
+        cout << minT->getTaskId().toString() << " of type - ";
+        cout << minT->getType() << endl;
         printf("Waiting on: %d tasks\n", predWait);
         for (TaskId p : minT->getPredecessorTasks())
         {
             if (tasks.find(p) == tasks.end())
             {
-                printf("Predecessor: %llx - Not Present\n", p);
+                printf("Predecessor: %s - Not Present\n", p.toString().c_str());
             }
             else
             {
-                printf("Predecessor: %llx - Present\n", p);
+                printf("Predecessor: %s - Present\n", p.toString().c_str());
             }
         }
     }
+}
+
+unsigned long long getCurrentFreeMemory()
+{
+    struct sysinfo t_info;
+    unsigned long long mem_size = 0;
+            
+    if (0 == sysinfo(&t_info))
+    {
+        mem_size = (unsigned long long)t_info.freeram * (unsigned long long)t_info.mem_unit;
+        return mem_size;
+    }
+    
+    return 0;
 }
 
 void* backgroundTaskWriter(void* v)
@@ -159,8 +176,19 @@ void* backgroundTaskWriter(void* v)
     uint64 bytesWritten = ct_tell(out);
     long pos;
     bool firstTime = true;
+    bool seqWritePhase = true;
     struct timeb timest;
     unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
+    unsigned long long mem_size = 0;
+    
+    struct sysinfo t_info;
+            
+    if (0 == sysinfo(&t_info))
+    {
+        mem_size = (unsigned long long)t_info.freeram * (unsigned long long)t_info.mem_unit;
+        mem_size = (mem_size * 2) / 10;
+        printf("Flush tasks when free memory is below: %llu\n", mem_size);
+    }
     
     //
     // noMoreTasks is a flag from the foreground thread
@@ -255,8 +283,22 @@ void* backgroundTaskWriter(void* v)
         //
         // It would be better if we could ensure the broadest set of tasks in the worklist,
         //   so that the oldest BFS task is written.
+        //   But it is also good to not run out of memory.
         //
-        if (!noMoreTasks) continue;
+        //if (!noMoreTasks) continue;
+        if (seqWritePhase == false && !noMoreTasks) 
+        {
+            unsigned long long cmem = getCurrentFreeMemory();
+            if (cmem > mem_size)
+            {
+                continue;
+            }
+            if (!workList.empty())
+            {
+                printf("Continuing via memory threshold: %llu\tTaskWriteCount: %d\tTaskCount: %d\n", cmem, taskWriteCount, taskCount);
+            }
+        }
+        
         while (!workList.empty())
         {
             ct_timestamp startTime = workList.top().first;
@@ -264,6 +306,16 @@ void* backgroundTaskWriter(void* v)
             Task* t = tasks[id].first;
             
             assert(tasks.find(id) != tasks.end());
+            
+            //
+            // Background writing has reached the first non-zero context,
+            //   stop writing tasks until all tasks have been received.
+            //
+            if (seqWritePhase == true && t->getType() == task_type_create)
+            {
+                seqWritePhase = false;
+                break;
+            }
             
             workList.pop();
             
@@ -317,6 +369,11 @@ void* backgroundTaskWriter(void* v)
     // Write how many entries are in the index
     //   The write each index entry pair
     pos = ct_tell(out);
+    if (pos == -1)
+    {
+        //int esav = errno;
+        perror("Cannot identify index position");
+    }
     printf("Writing index for %d at %lld\n", taskWriteCount, pos);
     size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
     //for (auto it = taskIndex.begin(), et = taskIndex.end(); it != et; ++it)
