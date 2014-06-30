@@ -127,6 +127,8 @@ void TaskGraph::initTaskIndex(unsigned long long off)
         ct_read(&tid, sizeof(TaskId), inputFile);
         ct_read(&pos, sizeof(unsigned long long), inputFile);
         
+        //printf("%s at %llu\n", tid.toString().c_str(), pos);
+        
         // We expect that the index comes after every task in the file
         assert(pos < off);
         
@@ -145,4 +147,9 @@ TaskGraphInfo* TaskGraph::readTaskGraphInfo()
     tTgi->initTaskGraphInfo(inputFile);
 
     return tTgi;
+}
+
+unsigned int TaskGraph::getNumberOfTasks()
+{
+    return taskOrder.size();
 }

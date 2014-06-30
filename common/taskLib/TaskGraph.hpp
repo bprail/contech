@@ -29,7 +29,10 @@ private:
     TaskGraphInfo* tgi;
     
     // Use an index to find each task in the graph
+    //   TaskId -> position in file
     map<TaskId, uint64> taskIdx;
+    
+    // Store the positions of each task
     vector<uint64> taskOrder;
     vector<uint64>::iterator nextTask;
     
@@ -45,6 +48,7 @@ public:
     
     Task* getNextTask();
     Task* getTaskById(TaskId id);
+    unsigned int getNumberOfTasks();
     
     // These calls are deprecated and will be removed soon...
     Task* readContechTask();
