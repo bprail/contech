@@ -19,6 +19,8 @@
 // Maximum number of contechs (thread contexts)
 #define MAX_CONTECHS 1024
 
+#define MAX_BLOCK_THRESHOLD 10000000
+
 using namespace contech;
 
 int main(int argc, char* argv[]);

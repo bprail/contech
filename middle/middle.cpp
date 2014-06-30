@@ -221,7 +221,7 @@ reset_middle:
                 
                 activeT = activeContech.activeTask();
             }
-            else if (activeT->getBBCount() > 10000000)
+            else if (activeT->getBBCount() > MAX_BLOCK_THRESHOLD)
             {
                 activeContech.createBasicBlockContinuation();
                 updateContextTaskList(activeContech);
