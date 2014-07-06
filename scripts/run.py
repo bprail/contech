@@ -195,6 +195,9 @@ def main(parsec=False):
                 elif "barrimbl" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/BarrImbal/output/", name + ".csv")
                     pcall([BARRIMBL, taskgraph, ">", output])
+                elif "memUse" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/MemUse/output", name + ".csv")
+                    pcall([os.path.join(CONTECH_HOME, "backend/MemUse/memUse"), taskgraph, ">", output])
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
