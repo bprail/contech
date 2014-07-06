@@ -31,6 +31,13 @@ void BackendMemUse::updateBackend(contech::Task* t)
                 assert((*it).getType() == action_type_size);
                 uint32_t allocSize = ((MemoryAction)(*it)).addr;
                 sizeStats[allocSize].alloc_count++;
+                
+                if (sizeOfAlloc.find(addr) != sizeOfAlloc.end())
+                {
+                    // This means that malloc has ordered the alloc / free calls
+                    //   in a way beyond what we track.
+                    // TODO: Insert free for this address, or a ref count?
+                }
                 sizeOfAlloc[addr] = allocSize;
                 
                 if (seqAllocCurrent == 0)
@@ -44,6 +51,8 @@ void BackendMemUse::updateBackend(contech::Task* t)
             {
                 uint64_t addr = ((MemoryAction)(*it)).addr;
                 uint32_t allocSize = sizeOfAlloc[addr];
+                
+                sizeOfAlloc.erase(addr);
                 
                 sizeStats[allocSize].free_count++;
             
