@@ -6,7 +6,7 @@ import json
 
 
 def main():
-    launchBackend("parhist")
+    launchBackend("memUse")
 
 def launchBackend(backend):
     CONTECH_HOME = util.findContechInstall()
@@ -16,7 +16,7 @@ def launchBackend(backend):
     ./run_parsec.py --cached {0} -n 16 -i simmedium --backend {1}
 """
     for b in util.Benchmarks.all:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend), resources=["nodes=1:ppn=20"]) 
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend), resources=["nodes=1:ppn=4"]) 
     
 def buildLocal(benchmark):
     CONTECH_HOME = util.findContechInstall()
