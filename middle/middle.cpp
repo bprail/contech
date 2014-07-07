@@ -223,6 +223,10 @@ reset_middle:
             }
             else if (activeT->getBBCount() > MAX_BLOCK_THRESHOLD)
             {
+                // There is no available time stamp for ending this task
+                //   Assume that every basic block costs 1 cycle, which is a
+                //   lower bound
+                activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
                 activeContech.createBasicBlockContinuation();
                 updateContextTaskList(activeContech);
                 
