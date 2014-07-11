@@ -5,6 +5,7 @@
 //#include "../taskLib/ct_file.h"
 #include <pthread.h>
 #include <zlib.h>
+#include <stdint.h>
 
 #define SERIAL_BUFFER_SIZE (1024 * 1024)
 
@@ -93,5 +94,43 @@ void __ctStoreDelay(ct_tsc_t start_t);
 
 void __ctAddThreadInfo(pthread_t *pt, unsigned int);
 unsigned int __ctLookupThreadInfo(pthread_t pt);
+
+typedef struct _ct_serial_buffer_sized
+{
+    unsigned int pos, length, id;
+    struct _ct_serial_buffer* next; // can order buffers 
+    char data[SERIAL_BUFFER_SIZE];
+} ct_serial_buffer_sized;
+
+extern ct_serial_buffer_sized initBuffer;
+
+extern __thread pct_serial_buffer __ctThreadLocalBuffer;
+extern __thread unsigned int __ctThreadLocalNumber; // no static
+extern __thread pcontech_thread_info __ctThreadInfoList;
+extern __thread pcontech_id_stack __ctParentIdStack;
+extern __thread pcontech_id_stack __ctThreadIdStack;
+extern __thread pcontech_join_stack __ctJoinStack;
+
+extern unsigned long long __ctGlobalOrderNumber;
+extern unsigned int __ctThreadGlobalNumber;
+extern unsigned int __ctThreadExitNumber;
+extern unsigned int __ctMaxBuffers;
+extern unsigned int __ctCurrentBuffers;
+extern pct_serial_buffer __ctQueuedBuffers;
+extern pct_serial_buffer __ctQueuedBufferTail;
+extern pct_serial_buffer __ctFreeBuffers;
+// Setting the size in a variable, so that future code can tune / change this value
+const extern size_t serialBufferSize;
+
+extern pthread_mutex_t __ctQueueBufferLock;
+extern pthread_cond_t __ctQueueSignal;
+extern pthread_mutex_t __ctFreeBufferLock;
+extern pthread_cond_t __ctFreeSignal;
+
+extern pthread_mutex_t ctAllocLock;
+
+extern uint8_t _binary_contech_bin_start[];// asm("_binary_contech_bin_start");
+extern uint8_t _binary_contech_bin_size[];// asm("_binary_contech_bin_size");
+extern uint8_t _binary_contech_bin_end[];//  asm("_binary_contech_bin_end");
 
 #endif

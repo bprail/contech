@@ -33,7 +33,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         if markOnly:
             RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.o"
         else:
-            RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc"
+            RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc " + CONTECH_HOME + "/common/runtime/ct_main.bc "
         
         if os.environ.has_key("CONTECH_STATE_FILE"):
             stateFile = os.environ["CONTECH_STATE_FILE"]
