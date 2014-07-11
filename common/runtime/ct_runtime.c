@@ -381,10 +381,11 @@ void __ctQueueBuffer(bool alloc)
 //
 void __ctDebugLocalBuffer()
 {
+    int i;
     printf("Local buffer: %p\n", __ctThreadLocalBuffer);
     printf("Capacity: %d\tSize: %d\n", __ctThreadLocalBuffer->length, __ctThreadLocalBuffer->pos);
     printf("First Bytes:\n");
-    for (int i = 0; i < 32; i++)
+    for (i = 0; i < 32; i++)
     {
         printf("%x", __ctThreadLocalBuffer->data[i]);
     }

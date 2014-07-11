@@ -4,7 +4,7 @@ CFLAGS  = -O3 -g
 HEADERS = ct_runtime.h
 BITCODE = ct_runtime.bc ct_main.bc
 
-all: $(BITCODE)
+all: $(BITCODE) $(OBJECTS)
 
 .c.o:
 	gcc -c $(CFLAGS) $<

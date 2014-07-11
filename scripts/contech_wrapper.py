@@ -31,6 +31,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         LLVMHAMMER = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMHammer.so"
         #RUNTIME = CONTECH_HOME + "/common/runtime/libct_runtime.a"
         if markOnly:
+            # Use the .o file so that LLVM does not optimize away the marker calls
             RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.o"
         else:
             RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc " + CONTECH_HOME + "/common/runtime/ct_main.bc "
