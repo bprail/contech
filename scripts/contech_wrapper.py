@@ -89,7 +89,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                         outFileComingNext = False
                     elif token == "-o":
                         outFileComingNext = True
-                # Make sure the whole option makes it to the CFlAGS, just in case
+                # Make sure the whole option makes it to the CFLAGS, just in case
                 CFLAGS = CFLAGS + " " + arg
                 
             # -o attached to the front of the name
