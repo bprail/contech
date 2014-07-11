@@ -241,7 +241,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                 pcall([OBJCOPY, "--input binary", "--output elf64-x86-64", "--binary-architecture i386", "contech.bin", "contech_state.o"])
                 
                 # Compile final executable
-                pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-flto", "-lpthread", "-lz", "contech_state.o"])
+                pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-flto", "-lpthread", "contech_state.o"])
                         
         else:
             passThrough(CC)
