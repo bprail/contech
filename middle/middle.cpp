@@ -221,7 +221,7 @@ reset_middle:
                 
                 activeT = activeContech.activeTask();
             }
-            else if (activeT->getBBCount() > MAX_BLOCK_THRESHOLD)
+            else if (activeT->getBBCount() >= MAX_BLOCK_THRESHOLD)
             {
                 // There is no available time stamp for ending this task
                 //   Assume that every basic block costs 1 cycle, which is a

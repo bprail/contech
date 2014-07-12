@@ -171,7 +171,8 @@ void* backgroundTaskWriter(void* v)
     // Write out all tasks in breadth-first order, starting with task 0
     priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
     
-    priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskIndex;
+    //priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskIndex;
+    queue< pair<TaskId, uint64> > taskIndex;
     
     uint64 bytesWritten = ct_tell(out);
     long pos;
@@ -334,7 +335,10 @@ void* backgroundTaskWriter(void* v)
                     // Write out the task
                     //t->setFileOffset(bytesWritten);
                     pos = ct_tell(out);
-                    taskIndex.push(make_pair(startTime, make_pair(id, pos)));
+                    
+                    // Add the task to the index, note that the index is a priority queue based on timestamp
+                    //taskIndex.push(make_pair(startTime, make_pair(id, pos)));
+                    taskIndex.push( make_pair(id, pos));
                     bytesWritten += Task::writeContechTask(*t, out);
                     taskWriteCount += 1;
                     
@@ -379,8 +383,10 @@ void* backgroundTaskWriter(void* v)
     //for (auto it = taskIndex.begin(), et = taskIndex.end(); it != et; ++it)
     while (!taskIndex.empty())
     {
-        TaskId tid = taskIndex.top().second.first;
-        unsigned long long offset = taskIndex.top().second.second;
+        //TaskId tid = taskIndex.top().second.first;
+        //unsigned long long offset = taskIndex.top().second.second;
+        TaskId tid = taskIndex.front().first;
+        unsigned long long offset = taskIndex.front().second;
         
         ct_write(&tid, sizeof(TaskId), out);
         ct_write(&offset, sizeof(unsigned long long), out);
