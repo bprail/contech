@@ -3,6 +3,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdint.h>
+#include <stdarg.h>
 #include "../taskLib/ct_file.h"
 
 void dumpAndTerminate(ct_file *fptr);
@@ -55,6 +57,60 @@ typedef struct _internal_basic_block_info
 } internal_basic_block_info, *pinternal_basic_block_info;
 
 static pinternal_basic_block_info bb_info_table = NULL;
+
+/* unpack: unpack packed items from buf, return length */
+int unpack(uint8_t *buf, char *fmt, ...)
+{
+    va_list args;
+    char *p;
+    uint8_t *bp, *pc;
+    uint16_t *ps;
+    uint32_t *pl;
+
+    bp = buf;
+    va_start(args, fmt);
+    for (p = fmt; *p != '\0'; p++) {
+
+        switch (*p) 
+        {
+            case 'c': /* char */
+            {
+                pc = va_arg(args, uint8_t*);
+
+                *pc = *bp++;
+
+                break;
+            }
+            case 's': /* short */
+            {
+                ps = va_arg(args, uint16_t*);
+                
+                *ps = *bp++ << 8;
+                *ps |= *bp++;
+
+                break;
+            }
+            case 'l': /* long */
+            {
+                pl = va_arg(args, uint32_t*);
+
+                *pl = *bp++ << 24;
+                *pl |= *bp++ << 16;
+                *pl |= *bp++ << 8;
+                *pl |= *bp++;
+            }
+            default: /* illegal type character */
+            {
+                va_end(args);
+
+                return -1;
+            }
+        }
+     }
+     va_end(args);
+
+     return bp - buf;
+}
 
 void resetEventLib()
 {
