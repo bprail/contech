@@ -1,6 +1,5 @@
 #include "../../common/taskLib/ct_file.h"
-#include "../../common/taskLib/Task.hpp"
-#include "../../common/taskLib/ct_graph.hpp"
+#include "../../common/taskLib/TaskGraph.hpp"
 #include "../CommTracker/CommTracker.hpp"
 #include "commFileIO.hpp"
 #include <cstring>
@@ -19,8 +18,8 @@ string blockTrafficAnalysis(CommTracker* tracker, uint minThreshold);
 string migratoryAnalysis(CommTracker* tracker, float minThreshold);
 string threadCommunicationAnalysis(CommTracker* tracker);
 
-void bbCommAnalysisFromSrc(CommTracker* tracker, ct_graph& taskGraph, string outFile);
-void bbCommAnalysisFromDst(CommTracker* tracker, ct_graph& taskGraph, string outFile);
+void bbCommAnalysisFromSrc(CommTracker* tracker, TaskGraph& taskGraph, string outFile);
+void bbCommAnalysisFromDst(CommTracker* tracker, TaskGraph& taskGraph, string outFile);
 string getBasicBLockStringFromSignature(string bbSig);
 string getBasicBlockSignatureWithThread(Task::basicBlockActionCollection bbList,ContextId contech);
 
@@ -237,7 +236,7 @@ void blockWriteSetAnalysis(CommTracker* tracker)
     }
 }
 */
-void bbCommAnalysisFromSrc(CommTracker* tracker, ct_graph& taskGraph, string outFile)
+void bbCommAnalysisFromSrc(CommTracker* tracker, TaskGraph& taskGraph, string outFile)
 {
     // 'first' is the sender. 'second' is a bit vector of receivers
     map<uint64_t, ct_sharers_t> destinations;
@@ -271,7 +270,7 @@ void bbCommAnalysisFromSrc(CommTracker* tracker, ct_graph& taskGraph, string out
         }
         */
         // Obtain a signature of the source based on the basic blocks it executed
-        Task* srcTask = taskGraph.getTaskByUniqueId(r.sender);
+        Task* srcTask = taskGraph.getTaskById(r.sender);
         bbCount += srcTask->getBasicBlockActions().size();
         
         
@@ -332,7 +331,7 @@ void bbCommAnalysisFromSrc(CommTracker* tracker, ct_graph& taskGraph, string out
     delete serializer;
 }
 
-void bbCommAnalysisFromDst(CommTracker* tracker, ct_graph& taskGraph, string outFile)
+void bbCommAnalysisFromDst(CommTracker* tracker, TaskGraph& taskGraph, string outFile)
 {
     // 'first' is the destination. 'second' is a bit vector of senders
     map<uint64_t, ct_sharers_t> sources;
@@ -370,7 +369,7 @@ void bbCommAnalysisFromDst(CommTracker* tracker, ct_graph& taskGraph, string out
 
         // Obtain a signature of the destination based on the basic blocks it executed
         //cout << "Receiver: " << r.receiver << endl;
-        Task* dstTask = taskGraph.getTaskByUniqueId(r.receiver);
+        Task* dstTask = taskGraph.getTaskById(r.receiver);
         bbCount += dstTask->getBasicBlockActions().size();
         
         
