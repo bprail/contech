@@ -57,8 +57,6 @@
 #include "llvm/Support/CommandLine.h"
 #include <cxxabi.h>
 
-
-#include <ct_event_st.h>
 #include "Contech.h"
 using namespace llvm;
 using namespace std;

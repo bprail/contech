@@ -7,6 +7,7 @@
 //#include "llvm/Module.h"
 
 #include <string>
+#include <ct_event_st.h>
 
 namespace llvm {
     class Contech;
