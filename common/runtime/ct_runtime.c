@@ -29,6 +29,9 @@
 // Should the create events measure clock skew
 //#define CT_CLOCK_SKEW
 
+// Record overhead from instrumentation
+//#define CT_OVERHEAD_TRACK
+
 //
 // initBuffer is a special static buffer, whenever a thread is being created or exiting,
 // it stores events into this buffer.  The buffer may be assigned to multiple threads,
@@ -42,6 +45,14 @@ __thread pcontech_thread_info __ctThreadInfoList = NULL;
 __thread pcontech_id_stack __ctParentIdStack = NULL;
 __thread pcontech_id_stack __ctThreadIdStack = NULL;
 __thread pcontech_join_stack __ctJoinStack = NULL;
+
+#ifdef CT_OVERHEAD_TRACK
+__thread ct_tsc_t __ctTotalThreadOverhead = 0;
+__thread unsigned int __ctTotalThreadBuffersQueued = 0;
+__thread ct_tsc_t __ctLastQueueBuffer = 0;
+__thread ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
+//__thread uint64_t __ctCurrentOverheadStart = 0;
+#endif
 
 unsigned long long __ctGlobalOrderNumber = 0;
 unsigned int __ctThreadGlobalNumber = 0;
@@ -157,10 +168,21 @@ void __ctCleanupThread(void* v)
 {
     // A thread has exited
     // TODO: Verify whether the atomic add should be before the queue buffer
+    #ifdef CT_OVERHEAD_TRACK
+    ct_tsc_t start = rdtsc();
+    #endif
     __sync_fetch_and_add(&__ctThreadExitNumber, 1);
     __ctStoreThreadJoinInternal(true, __ctThreadLocalNumber, rdtsc());
     __ctQueueBuffer(false);
     __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
+    #ifdef CT_OVERHEAD_TRACK
+    ct_tsc_t end = rdtsc();
+    //__ctTotalThreadOverhead += (end - start);
+    printf("T(%d): %lld, %lld, %d\n", __ctThreadLocalNumber, 
+                                __ctTotalThreadOverhead, 
+                                __ctTotalTimeBetweenQueueBuffers,
+                                __ctTotalThreadBuffersQueued);
+    #endif
 }
 
 int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
@@ -264,6 +286,13 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     g = __ctCleanupThread;
     pthread_cleanup_push(g, NULL);
     
+    #ifdef CT_OVERHEAD_TRACK
+    {
+        ct_tsc_t end = rdtsc();
+        //__ctTotalThreadOverhead += (end - start);
+    }
+    #endif
+    
     a = f(a);
     pthread_cleanup_pop(1);
     return a;
@@ -275,6 +304,10 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
 void __ctQueueBuffer(bool alloc)
 {
     pct_serial_buffer localBuffer = NULL;
+#ifdef CT_OVERHEAD_TRACK
+    ct_tsc_t start, end;
+    start = rdtsc();
+#endif
     
 #ifdef DEBUG
     pthread_mutex_lock(&__ctPrintLock);
@@ -371,6 +404,18 @@ void __ctQueueBuffer(bool alloc)
     {
         __ctAllocateLocalBuffer();
     }
+    
+#ifdef CT_OVERHEAD_TRACK
+    end = rdtsc();
+    __ctTotalThreadOverhead += (end - start);
+    __ctTotalThreadBuffersQueued ++;
+    
+    if (__ctLastQueueBuffer != 0)
+    {
+        __ctTotalTimeBetweenQueueBuffers += (end - __ctLastQueueBuffer);
+    }
+    __ctLastQueueBuffer = end;
+#endif 
 }
 
 
