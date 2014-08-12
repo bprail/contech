@@ -14,6 +14,7 @@ typedef struct _ct_serial_buffer
 {
     unsigned int pos, length, id;
     struct _ct_serial_buffer* next; // can order buffers 
+    //char pad[24];
     char data[0];
 } ct_serial_buffer, *pct_serial_buffer;
 
