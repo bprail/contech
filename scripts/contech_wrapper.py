@@ -56,7 +56,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     # Name of the output file
     out=""
     # All remaining flags to be passed on to clang
-    CFLAGS="-flto --verbose"
+    CFLAGS="-flto --verbose -pthread"
 
     # Choose correct compiler
     if isCpp:
@@ -105,9 +105,12 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             outFileComingNext = False
             
         # C++ file
+        elif ".cxx" == arg[-4:]:
+            cfile = arg
+            isCpp = True
         elif ".cpp" == arg[-4:]:
             cfile = arg
-            isCpp = True;
+            isCpp = True
         elif ".cc" == arg[-3:]:
             cfile = arg
             isCpp = True
