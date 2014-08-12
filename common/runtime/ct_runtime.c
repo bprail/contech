@@ -520,8 +520,8 @@ unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps)
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int for id + event
     (__ctThreadLocalBuffer->pos += numMemOps * 6 * sizeof(char) + sizeof(unsigned int));
-    return __ctThreadLocalBuffer->pos;
     #endif
+    return __ctThreadLocalBuffer->pos;
 }
 
 __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r)
@@ -532,6 +532,7 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     
     // With a little endian machine, we write 8 bytes and then will overwrite the highest two
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
+    // void __builtin_ia32_movntq (di *, di)
     *((uint64_t*)(r + c * 6 * sizeof(char) + sizeof(unsigned int))) = (uint64_t)addr;
     //*((unsigned int*)(r + c * 6* sizeof(char)+sizeof(unsigned int))) = (uint32_t) (uint64_t)addr;
     // *((uint16_t*)(r + c * 6* sizeof(char) + 2*sizeof(unsigned int))) = (uint16_t) (((uint64_t)addr) >> 32);
