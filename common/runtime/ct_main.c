@@ -360,6 +360,12 @@ void* __ctBackgroundThreadWriter(void* d)
                     t->next = __ctFreeBuffers;
                     __ctFreeBuffers = t;
                     __ctCurrentBuffers --;
+#if DEBUG
+                    if (__ctCurrentBuffers < 2)
+                    {
+                        printf("%p\n", &t->data);
+                    }
+#endif
                 }
             }
             pthread_mutex_unlock(&__ctFreeBufferLock);
