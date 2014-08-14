@@ -45,6 +45,7 @@ namespace llvm {
         EXIT,
         COND_WAIT,
         COND_SIGNAL,
+        OMP_CALL,
         OMP_FORK,
         OMP_FOR_ITER,
         OMP_BARRIER,

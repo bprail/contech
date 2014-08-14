@@ -78,11 +78,12 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 23
+#define FUNCTIONS_INSTRUMENT_SIZE 25
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
                                            {STORE_AND_LEN("main"), MAIN},
+                                           {STORE_AND_LEN("MAIN__"), MAIN},
                                            {STORE_AND_LEN("pthread_create"), THREAD_CREATE},
                                            {STORE_AND_LEN("pthread_join"), THREAD_JOIN},
                                            {STORE_AND_LEN("parsec_barrier_wait"), BARRIER_WAIT},
@@ -103,6 +104,7 @@ namespace llvm {
                                            {STORE_AND_LEN("pthread_cond_wait"), COND_WAIT},
                                            {STORE_AND_LEN("pthread_cond_signal"), COND_SIGNAL},
                                            {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL},
+                                           {STORE_AND_LEN("GOMP_parallel_start"), OMP_CALL},
                                            {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
                                            {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER}};
@@ -171,6 +173,7 @@ namespace llvm {
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);
+        Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -1218,6 +1221,69 @@ cleanup:
                     //ci->setCalledFunction(createThreadActualFunction);
                 }
                 break;
+                case (OMP_CALL):
+                {
+                    // Simple case, push and pop the parent id
+                    // And Transform the arguments to the function call
+                    // The GOMP_parallel_start has a parallel_end routine, so the master thread
+                    //   returns immediately, so the PUSH / POP may be unnecessary
+                    Value* c1 = ConstantInt::get(int8Ty, 1);
+                    Value* cArgQB[] = {c1};
+                    debugLog("queueBufferFunction @" << __LINE__);
+                    /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
+                                                        "", ci);
+                                                        
+                    CallInst::Create(ompPushParentFunction, "", ci);
+                    ++I;
+                    CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
+                    I = nPopParent;
+                    
+                    // Change the function called to a wrapper routine
+                    Value* arg0 = ci->getArgOperand(0);
+                    Function* ompMicroTask = NULL;
+                    ConstantExpr* bci = NULL;
+                    if ((bci = dyn_cast<ConstantExpr>(arg0)) != NULL)
+                    {
+                        if (bci->isCast())
+                        {
+                            ompMicroTask = dyn_cast<Function>(bci->getOperand(0));
+                        }
+                    }
+                    else if ((ompMicroTask = dyn_cast<Function>(arg0)) != NULL)
+                    {
+                        // Cast success
+                        errs() << "OmpMicroTask - " << ompMicroTask;
+                    }
+                    else
+                    {
+                        errs() << *(arg0->getType());
+                        errs() << "Need new casting route for GOMP Parallel call\n";
+                    }
+                    ompMicroTaskFunctions.insert(ompMicroTask);
+                    // Alloca Type and store pid and arg into alloc'd space
+                    Type* strTy[] = {int32Ty, voidPtrTy};
+                    Type* t = StructType::create(strTy);
+                    Value* nArg = new AllocaInst(t, "Wrapper Struct", ci);
+                    // Add Store insts here
+                    Value* gepArgs[2] = {ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0)};
+                    Value* ppid = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
+                    Value* tNum = CallInst::Create(getThreadNumFunction, "", ci);
+                    Value* pid = new StoreInst(tNum, ppid, ci);
+                    gepArgs[1] = ConstantInt::get(int32Ty, 1);
+                    Value* parg = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
+                    new StoreInst(ci->getArgOperand(1), parg, ci);
+                    errs() << "Create uTWS\n";
+                    Function* wrapMicroTask = createMicroTaskWrapStruct(ompMicroTask, t, M);
+                    contechAddedFunctions.insert(wrapMicroTask);
+                    errs() << "Update args for call\n";
+                    ci->setArgOperand(0, new BitCastInst(wrapMicroTask, arg0->getType(), "", ci));
+                    errs() << "Update 2\n";
+                    ci->setArgOperand(1, new BitCastInst(nArg, voidPtrTy, "", ci));
+                    errs() << "Update complete\n";
+                                                              
+                    //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
+                }
+                break;
                 case (OMP_FORK):
                 {
                     // Simple case, push and pop the parent id
@@ -1424,6 +1490,53 @@ cleanup:
         
         return true;
     }
+
+// OpenMP is calling ompMicroTask with a void* struct
+//   Create a new routine that is invoked with a different struct that
+//   will invoke the original routine with the original parameter
+Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy, Module &M)
+{
+    FunctionType* baseFunType = ompMicroTask->getFunctionType();
+    Type* argTyAr[] = {voidPtrTy};
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+                                                 ArrayRef<Type*>(argTyAr, 1),
+                                                 false);
+    
+    Function* extFun = Function::Create(extFunType, 
+                                        ompMicroTask->getLinkage(),
+                                        Twine("__ct", ompMicroTask->getName()),
+                                        &M);
+                                        
+    BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
+    
+    Function::ArgumentListType& argList = extFun->getArgumentList();
+    
+    Value* addrI = new BitCastInst(argList.begin(), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
+    
+    // getElemPtr 0, 0 -> arg 0 of type*
+    
+    Value* args[2] = {ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0)};
+    Value* ppid = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
+    Value* pid = new LoadInst(ppid, "ParentId", soloBlock);
+    
+    // getElemPtr 0, 1 -> arg 1 of type*
+    args[1] = ConstantInt::get(int32Ty, 1);
+    Value* parg = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
+    Value* argP = new LoadInst(parg, "Arg", soloBlock);
+    Value* argV = new BitCastInst(argP, baseFunType->getParamType(0), "Cast to ArgTy", soloBlock);
+    
+    Value* cArg[] = {pid};
+    CallInst::Create(ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    Value* cArgCall[] = {argV};
+    CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgCall, 1), "", soloBlock);
+    CallInst::Create(ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    if (ompMicroTask->getReturnType() != voidTy)
+        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+    else
+        ReturnInst::Create(M.getContext(), soloBlock);
+    
+    return extFun;
+}
     
 Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 {
