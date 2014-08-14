@@ -12,6 +12,10 @@ TaskId Context::getCreator(ContextId cid)
 {
     TaskId tid;
     auto it = creatorMap.find(cid);
+    if (it == creatorMap.end())
+    {
+        fprintf(stderr, "Failed to find creator for %d in %d\n", (unsigned int) cid, (unsigned int)activeTask()->getContextId());
+    }
     assert(it != creatorMap.end());
     tid = it->second;
     creatorMap.erase(it);
@@ -129,8 +133,16 @@ Task* Context::createContinuation(task_type type, ct_tsc_t startTime, ct_tsc_t e
         createBasicBlockContinuation();
     }
     
-    assert(startTime >= currentTime &&
-           endTime >= startTime);
+    //assert(startTime >= currentTime &&
+    //       endTime >= startTime);
+    // With OpenMP, the runtime puts in create events on behalf of other contexts
+    //   this can result in reversed timestamps.  Stitch them up here.
+    if (startTime < currentTime)
+    {
+        ct_tsc_t delta = currentTime - startTime;
+        startTime += delta;
+        endTime += delta;
+    }
     currentTime = endTime;
     
     // Set the end time of the previous basic block task
