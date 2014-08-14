@@ -247,6 +247,7 @@ reset_middle:
         // Task create: Create and initialize child task/context
         else if (event->event_type == ct_event_task_create)
         {
+            if (DEBUG) {fprintf(stderr, "Create: %d -> %d\n", event->contech_id, event->tc.other_id);}
             // Approx skew is defined as 0 for the creator context
             if (event->tc.approx_skew == 0)
             {
