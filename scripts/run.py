@@ -6,7 +6,7 @@ import subprocess
 import shutil
 from util import *
 
-def main(parsec=False):
+def main(parsec=False, nas=False):
     
     # Find contech installation
     if os.environ.has_key("CONTECH_HOME"):
@@ -44,6 +44,13 @@ def main(parsec=False):
         else:
             print_error("Error: Could not find parsec installation. Set PARSEC_HOME to the root of your parsec directory.")
             exit(1)
+            
+    if nas:
+        if os.environ.has_key("NAS_HOME"):
+            NAS_HOME = os.environ["NAS_HOME"]
+        else:
+            print_error("Error: Could not find NAS installation. Set NAS_HOME to the root of your nas directory.")
+            exit(1)
     
     # Find output directory
     if os.environ.has_key("CONTECH_OUTDIR"): 
@@ -62,8 +69,13 @@ def main(parsec=False):
     # Parse commandline arguments
     if parsec:
         parser = argparse.ArgumentParser(description="Runs a parsec benchmark that has been compiled with contech, generating a task graph and optionally running backend tools.")
-        parser.add_argument("benchmark", help="The parsec bencmark to run.")
+        parser.add_argument("benchmark", help="The parsec benchmark to run.")
         parser.add_argument("-i", "--input", help="The input size to use.", default="test")
+        parser.add_argument("-n", "--numthreads", help="The number of threads to run.", default="4")
+    elif nas:
+        parser = argparse.ArgumentParser(description="Runs a nas benchmark that has been compiled with contech, generating a task graph and optionally running backend tools.")
+        parser.add_argument("benchmark", help="The parsec benchmark to run.")
+        parser.add_argument("-i", "--input", help="The input size to use.", default="S")
         parser.add_argument("-n", "--numthreads", help="The number of threads to run.", default="4")
     else:
         parser = argparse.ArgumentParser(description="Runs benchmark that has been compiled with contech, generating a task graph and optionally running backend tools.")
@@ -79,7 +91,7 @@ def main(parsec=False):
     args = parser.parse_args()
     
     name = os.path.basename(args.benchmark)
-    if parsec:
+    if parsec or nas:
         taskgraphBasename = "{}_{}_{}.taskgraph".format(name, args.numthreads, args.input)
     else:
         taskgraphBasename = "{}.taskgraph".format(name)
@@ -114,6 +126,15 @@ def main(parsec=False):
                        "-n", args.numthreads, 
                        "-i", args.input, 
                        "-s", '"/usr/bin/time"'])
+            elif nas:
+                os.environ["OMP_NUM_THREADS"] = args.numthreads
+                benchname = "{}.{}.x".format(name, args.input)
+                shutil.copy( os.path.join(NAS_HOME, "bin-contech/"+benchname), CONTECH_OUTDIR)
+                #Change path to CONTECH_OUTDIR
+                savedPath = os.getcwd()
+                os.chdir(CONTECH_OUTDIR)
+                pcall(["/usr/bin/time", os.path.join(CONTECH_OUTDIR, benchname)])
+                os.chdir(savedPath)
             else:
                 pcall([args.benchmark, args.args])
         
@@ -198,6 +219,12 @@ def main(parsec=False):
                 elif "memUse" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/MemUse/output", name + ".csv")
                     pcall([os.path.join(CONTECH_HOME, "backend/MemUse/memUse"), taskgraph, ">", output])
+                elif "harmony" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/Harmony/output", name + ".csv")
+                    pcall([os.path.join(CONTECH_HOME, "backend/Harmony/harmony"), taskgraph, ">", output])
+                elif "simpleCache" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/SimpleCache/output", name + ".csv")
+                    pcall([os.path.join(CONTECH_HOME, "backend/SimpleCache/scache"), taskgraph, ">", output])
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
@@ -212,6 +239,8 @@ def main(parsec=False):
         # Clean up
         os.remove(taskgraph)
         os.remove(tracefile)
+        if nas:
+            os.remove(os.path.join(CONTECH_OUTDIR, benchname))
         # Parsec temp files, we're not really sure where they are so just try to remove all of them
         if parsec:
             try: shutil.rmtree(os.path.join(CONTECH_OUTDIR, "pkgs")) 
