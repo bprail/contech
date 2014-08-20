@@ -553,14 +553,14 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     if (success != 0) return;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = start_t;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
-    *((int*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(int)]) = (ct_addr_t) addr;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
+    *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(int)]) = (ct_addr_t) addr;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int) + sizeof(unsigned long long);
+    __ctThreadLocalBuffer->pos = p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int) + sizeof(unsigned long long);
     #endif
 }
 
@@ -573,13 +573,13 @@ void __ctStoreThreadCreate(unsigned int ptc, long long skew, ct_tsc_t start)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_create /*<<24*/;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = rdtsc();
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = ptc;
-    *((long long*)&__ctThreadLocalBuffer->data[p + 3 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = skew;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = rdtsc();
+    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = ptc;
+    *((long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = skew;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += 3 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(long long);
+    __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(long long);
     #endif
 }
 
@@ -592,12 +592,12 @@ void __ctStoreMemoryEvent(bool isAlloc, unsigned long long size, void* a)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_memory/*<<24*/;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((char*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = isAlloc;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(char)]) = size;
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isAlloc;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = size;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
     #endif
 }
 
@@ -610,12 +610,12 @@ void __ctStoreBulkMemoryEvent(bool isWrite, unsigned long long size, void* a)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_bulk_memory_op/*<<24*/;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((char*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = isWrite;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(char)]) = size;
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isWrite;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = size;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
     #endif
 }
 
@@ -628,13 +628,13 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_barrier/*<<24*/;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((char*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = enter;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)+ sizeof(char)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char)]) = (ct_addr_t) a;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = enter;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char)]) = (ct_addr_t) a;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(ct_addr_t) + sizeof(char);
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(ct_addr_t) + sizeof(char);
     #endif
 }
 
@@ -652,13 +652,13 @@ void __ctStoreThreadJoinInternal(bool ie, unsigned int id, ct_tsc_t start)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_join/*<<24*/;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((char*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = ie;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)+ sizeof(char)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(char)+ 2*sizeof(ct_tsc_t)]) = id;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = ie;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
+    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)+ 2*sizeof(ct_tsc_t)]) = id;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += 3 * sizeof(unsigned int) + sizeof(bool)+ 2*sizeof(ct_tsc_t);
+    __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + sizeof(bool)+ 2*sizeof(ct_tsc_t);
     #endif
 }
 
@@ -672,11 +672,11 @@ void __ctStoreDelay(ct_tsc_t start_t)
     ct_tsc_t t = rdtsc();
 
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_delay;
-    *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int)]) = start_t;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
+    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     
-    __ctThreadLocalBuffer->pos += sizeof(unsigned int) * 2 + sizeof(ct_tsc_t) * 2;
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_tsc_t) * 2;
 }
 
 // Each thread maintains a map of pthread_t to ctid

@@ -12,7 +12,7 @@
 //#endif
 //#endif
 
-#define CONTECH_EVENT_VERSION 4
+#define CONTECH_EVENT_VERSION 5
 
 typedef unsigned long long ct_tsc_t;
 typedef unsigned long long ct_addr_t;

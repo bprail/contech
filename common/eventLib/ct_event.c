@@ -189,7 +189,8 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             npe->event_type != ct_event_buffer)
         {
             char buf[7];
-            fread_check(buf, sizeof(char), 7, fptr);
+            // As of 8/18/14, thread_id is removed from all events
+            fread_check(buf, sizeof(char), 3, fptr);
         }
     }
     
