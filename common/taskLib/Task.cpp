@@ -226,7 +226,8 @@ Task::memoryActionCollection Task::basicBlockActionCollection::iterator::getMemo
 {
     // Get an iterator that points to the next basic block
     iterator end = *this;
-    end++;
+    // Needs check?
+    if (end.it != end.parent->last) ++end;
     // Return a new collection of memory actions that starts with this block and ends at the next one
     return memoryActionCollection(it, end.it);
 }
@@ -298,11 +299,11 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     uncompPos += sizeof(ct_timestamp);
 
     // Read size and data for a vector
-    uint asize;
+    uint32_t asize;
     task->bbCount = 0;
     //ct_read(&asize, sizeof(uint), in);
-    memcpy(&asize, uncomp + uncompPos, sizeof(uint));
-    uncompPos += sizeof(uint);
+    memcpy(&asize, uncomp + uncompPos, sizeof(uint32_t));
+    uncompPos += sizeof(uint32_t);
     task->a.clear();
     task->a.reserve(asize);
     assert(task->a.capacity() >= asize);
@@ -317,10 +318,10 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     }
 
     // Read size and data for s vector
-    uint ssize;
+    uint32_t ssize;
     //ct_read(&ssize, sizeof(uint), in);
-    memcpy(&ssize, uncomp + uncompPos, sizeof(uint));
-    uncompPos += sizeof(uint);
+    memcpy(&ssize, uncomp + uncompPos, sizeof(uint32_t));
+    uncompPos += sizeof(uint32_t);
     task->s.reserve(ssize);
     for (uint i = 0; i < ssize; i++)
     {
@@ -332,10 +333,10 @@ Task* Task::readContechTaskUnlock(ct_file* in)
     }
 
     // Read size and data for p vector
-    uint psize;
+    uint32_t psize;
     //ct_read(&psize, sizeof(uint), in);
-    memcpy(&psize, uncomp + uncompPos, sizeof(uint));
-    uncompPos += sizeof(uint);
+    memcpy(&psize, uncomp + uncompPos, sizeof(uint32_t));
+    uncompPos += sizeof(uint32_t);
     task->p.clear();
     task->p.reserve(psize);
     for (uint i = 0; i < psize; i++)
