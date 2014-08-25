@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <iostream>
 #include <set>
+#include <stdio.h>
 
 using namespace std;
 using namespace contech;
@@ -52,7 +53,9 @@ int main(int argc, char const *argv[])
         switch(currentTask->getType())
         {
             case task_type_basic_blocks:
-                for (auto f = currentTask->getBasicBlockActions().begin(), e = currentTask->getBasicBlockActions().end(); f != e; f++)
+            {
+                auto bba = currentTask->getBasicBlockActions();
+                for (auto f = bba.begin(), e = bba.end(); f != e; f++)
                 {
                     BasicBlockAction bb = *f;
                     uniqueBlocks.insert((uint)bb.basic_block_id);
@@ -60,6 +63,7 @@ int main(int argc, char const *argv[])
                     basicBlocksInTask++;
 
                     uint memOpsInBlock = 0;
+                    // Note that memory actions include malloc, etc
                     for (MemoryAction mem : f.getMemoryActions())
                     {
                         totalMemOps++;
@@ -74,7 +78,7 @@ int main(int argc, char const *argv[])
                 maxMemOpsPerTask = max(maxMemOpsPerTask, memOpsInTask);
 
                 break;
-
+            }
             case task_type_sync:
                 syncCount++;
                 break;

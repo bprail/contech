@@ -264,12 +264,7 @@ namespace llvm {
         
         Type* argsII[] = {int32Ty, int32Ty};
         funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsII, 2), false);
-        
-        Type* argsME[] = {int8Ty, int64Ty, voidPtrTy};
-        funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
-        storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
-        storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI8I64VoidPtrTy);
-        
+       
         Type* argsQB[] = {int8Ty};
         funVoidI8Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsQB, 1), false);
         queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
@@ -298,6 +293,12 @@ namespace llvm {
             pthreadTy = int32Ty;
             funVoidI64I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
         }
+        
+        Type* argsME[] = {int8Ty, pthreadTy, voidPtrTy};
+        funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
+        storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
+        storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI8I64VoidPtrTy);
+        
         
         storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
         Type* argsCTA[] = {pthreadTy->getPointerTo(), 
@@ -1022,7 +1023,7 @@ cleanup:
                         Value* cArg[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(0), ci};
                         debugLog("storeMemoryEventFunction @" << __LINE__);
                         CallInst* nStoreME = CallInst::Create(storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                            "", ++I);
+                                                            "", ++I);                                 
                         I = nStoreME;
                     }
                     break;
@@ -1039,7 +1040,7 @@ cleanup:
                 case (FREE):
                 {
                     Value* cz = ConstantInt::get(int8Ty, 0);
-                    Value* cz32 = ConstantInt::get(int64Ty, 0);
+                    Value* cz32 = ConstantInt::get(pthreadTy, 0);
                     Value* cArg[] = {cz, cz32, ci->getArgOperand(0)};
                     debugLog("storeMemoryEventFunction @" << __LINE__);
                     CallInst* nStoreME = CallInst::Create(storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),

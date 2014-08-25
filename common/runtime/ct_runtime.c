@@ -583,18 +583,19 @@ void __ctStoreThreadCreate(unsigned int ptc, long long skew, ct_tsc_t start)
     #endif
 }
 
-void __ctStoreMemoryEvent(bool isAlloc, unsigned long long size, void* a)
+void __ctStoreMemoryEvent(bool isAlloc, size_t size, void* a)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
     unsigned int p = __ctThreadLocalBuffer->pos;
+    uint64_t s = size;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_memory/*<<24*/;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isAlloc;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = size;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = s;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
     #ifdef POS_USED
     __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
