@@ -28,8 +28,9 @@ reset_middle:
     }
     else
     {
-        //in = stdin;
-        in = create_ct_file_from_handle(stdin);
+        fprintf(stderr, "Missing positional argument event trace\n");
+        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
+        return 1;
     }
     
     // Open output file
@@ -44,7 +45,9 @@ reset_middle:
     }
     else
     {
-        out = create_ct_file_from_handle(stdout);
+        fprintf(stderr, "Missing positional argument taskgraph\n");
+        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
+        return 1;
     }
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
@@ -521,6 +524,12 @@ reset_middle:
             }
 
         } 
+        
+        // Memcpy etc
+        else if (event->event_type == ct_event_bulk_memory_op)
+        {
+        
+        }
         // End switch block on event type
 
         // Free memory for the processed event
