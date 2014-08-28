@@ -41,6 +41,15 @@ static __inline__ uint64_t rdtsc(void)
   return(result);
 }
 
+#elif defined (__arm__)
+
+static __inline__ uint64_t rdtsc(void)
+{
+    uint64_t x;
+    __asm__ volatile ("MRC p15, 0, %0, c9, c13, 0\n\t":  "=r" (x)::);
+    return x;
+}
+
 #else
 
 #error "No tick counter is available!"

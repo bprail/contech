@@ -12,7 +12,7 @@
 #include <vector>
 #include <map>
 #include <algorithm>
-#include <inttypes.h>
+#include <cinttypes>
 
 using namespace std;
 namespace contech {
