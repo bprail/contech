@@ -23,7 +23,19 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Attributes.h"
+#if LLVM_VERSION_MINOR>=5
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/Dominators.h"
+#else
 #include "llvm/DebugInfo.h"
+#include "llvm/Support/InstIterator.h"
+#include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Support/DebugLoc.h"
+#include "llvm/Analysis/Dominators.h"
+#endif
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #include "llvm/Constants.h"
@@ -37,17 +49,18 @@
 #include "llvm/Attributes.h"
 #include "llvm/Analysis/DebugInfo.h"
 #define ALWAYS_INLINE (Attributes::AttrVal::AlwaysInline)
-#endif
-#endif
 #include "llvm/Support/InstIterator.h"
+#include "llvm/Support/GetElementPtrTypeIterator.h"
+#include "llvm/Support/DebugLoc.h"
+#include "llvm/Analysis/Dominators.h"
+#endif
+#endif
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Pass.h"
-#include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Analysis/PostDominators.h"
-#include "llvm/Analysis/Dominators.h"
-#include "llvm/Support/DebugLoc.h"
+
 #include <map>
 #include <set>
 #include <vector>
@@ -177,8 +190,11 @@ namespace llvm {
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+        #if LLVM_VERSION_MINOR>=5
+        #else
             AU.addRequired<DominatorTree>();
             AU.addRequired<PostDominatorTree>();
+        #endif
         }
     };
     ModulePass* createContechPass() { return new Contech(); }
@@ -278,28 +294,35 @@ namespace llvm {
         
         // This needs to be machine type here
         //
-        
+        #if LLVM_VERSION_MINOR>=5
+        // LLVM 3.5 removed module::getPointerSize()
+        //   Let's find malloc instead, which takes size_t and size_t is the size we need
+        auto mFunc = M.getFunction("malloc");
+        FunctionType* mFuncTy = mFunc->getFunctionType();
+        pthreadTy = mFuncTy->getParamType(0);
+        #else
         if (M.getPointerSize() == llvm::Module::Pointer64)
         {
-            Type* argsSTJ[] = {int64Ty, int64Ty};
             pthreadTy = int64Ty;
-            funVoidI64I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
         }
         else
         {
-            Type* argsSTJ[] = {int32Ty, int64Ty};
             pthreadTy = int32Ty;
-            funVoidI64I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
         }
+        #endif
+        
+        Type* argsSTJ[] = {pthreadTy, int64Ty};
+        funVoidI64I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
         
         Type* argsME[] = {int8Ty, pthreadTy, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
         storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
         storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI8I64VoidPtrTy);
         
-        
         storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
-        Type* argsCTA[] = {pthreadTy->getPointerTo(), 
+        
+        Type* pthreadTyPtr = pthreadTy->getPointerTo();
+        Type* argsCTA[] = {pthreadTyPtr, 
                            voidPtrTy, 
                            static_cast<Type *>(funVoidPtrVoidTy)->getPointerTo(),
                            voidPtrTy};
@@ -553,6 +576,8 @@ namespace llvm {
         
         if (ContechMarkFrontend == true) goto cleanup;
         
+        #if LLVM_VERSION_MINOR>=5
+        #else
         DominatorTree* dTree;
         // iterate over cfgInfoMap
         for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(), t; bi != bie; ++bi)
@@ -614,6 +639,8 @@ namespace llvm {
                 }
             }
         }
+        
+        #endif
         
 cleanup:     
         ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
