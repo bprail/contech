@@ -191,6 +191,10 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             char buf[7];
             // As of 8/18/14, thread_id is removed from all events
             fread_check(buf, sizeof(char), 3, fptr);
+            if (version < 5)
+            {
+                fread_check(buf, sizeof(char), 4, fptr);
+            }
         }
     }
     
