@@ -13,10 +13,13 @@ def launchBackend(backend):
     script = """
     cd /net/tinker/brailing/contech/scripts
     
-    ./run_parsec.py --cached {0} -n 16 -i simmedium --backend {1}
+    ./run{3}.py --cached {0} -n 16 -i {2} --backend {1}
 """
-    for b in util.Benchmarks.all:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend), resources=["nodes=1:ppn=4"]) 
+    bset = util.Benchmarks.all
+    for b in bset:
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=4"], queue="newpasta")
+    for b in util.Benchmarks.nas:
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "S", "_nas"), resources=["nodes=1:ppn=4"], queue="newpasta") 
     
 def buildLocal(benchmark):
     CONTECH_HOME = util.findContechInstall()
