@@ -1,0 +1,4 @@
+Comm2 - communication analysis tool that uses the CommTracker library to
+identify communication (e.g., reads after writes) between different basic
+blocks and different tasks in the task graph.
+
