@@ -212,6 +212,10 @@ reset_middle:
             {
                 activeContech.createBasicBlockContinuation();
                 
+                if (DEBUG) {fprintf(stderr, "%s -> %s via Basic Block\n", 
+                                            activeT->getTaskId().toString().c_str(),
+                                            activeContech.activeTask()->getTaskId().toString().c_str());}
+                
                 // Is the current active task a complete join?
                 if (activeT->getType() == task_type_join &&
                     activeContech.isCompleteJoin(activeT->getTaskId()))
@@ -400,6 +404,8 @@ reset_middle:
                         assert(rem == true);
                         
                         backgroundQueueTask(otherTask);
+                        if (parallelMiddle)
+                            updateContextTaskList(activeContech);
                     }
                 }
                 
@@ -429,6 +435,9 @@ reset_middle:
                     // Set the other task's continuation to the join
                     otherTask->addSuccessor(taskJoin->getTaskId());
                     taskJoin->addPredecessor(otherTask->getTaskId());
+                    
+                    if (parallelMiddle)
+                        updateContextTaskList(otherContext);
                     
                     // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
                     if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask->getTaskId(), startTime, endTime);
