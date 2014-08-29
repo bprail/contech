@@ -1,0 +1,5 @@
+Heltech - This backend mimics the behavior of the Valgrind backend, Helgrind.
+These analysis tools attempt to identify data races.  Heltech uses a Contech
+task graph to identify the last write to any virtual address and checks
+whether subsequent accesses have an ordering using the task dependencies.
+
