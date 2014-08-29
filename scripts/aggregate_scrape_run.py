@@ -75,6 +75,8 @@ def aggregate(root):
             except KeyError as e:
                 failed.add(name)
                 warn( "{}: missing {}".format(name, e))
+                for rd in r:
+                    warn(rd)
                 
         # This result came from a build
         else:
