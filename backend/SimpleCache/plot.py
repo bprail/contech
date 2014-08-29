@@ -37,7 +37,7 @@ def main(arg):
                 r = map(float, row)
                 avg.append(100.0*r[0])
                     
-        if (len(r) == 0):
+        if (len(avg) == 0):
             continue
         print len(avg)
         if (p <= 24):
