@@ -45,7 +45,9 @@ static __inline__ uint64_t rdtsc(void)
 
 static __inline__ uint64_t rdtsc(void)
 {
-    uint64_t x;
+    unsigned int x = 0;
+    // May not be enabled by kernel
+    //   Replace with C - clock() or C++ chrono?
     __asm__ volatile ("MRC p15, 0, %0, c9, c13, 0\n\t":  "=r" (x)::);
     return x;
 }
