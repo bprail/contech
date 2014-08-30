@@ -450,7 +450,7 @@ void __ctCheckBufferBySize(unsigned int numOps)
     #endif
 }
 
-void __ctCheckBufferSize(unsigned int p)
+__attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
 {
     #ifdef POS_USED
     // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
@@ -515,7 +515,7 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid)
     return r;
 }
 
-unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps)
+__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps)
 {
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int for id + event
@@ -602,13 +602,14 @@ void __ctStoreMemoryEvent(bool isAlloc, size_t size, void* a)
     #endif
 }
 
-void __ctStoreBulkMemoryEvent(bool isWrite, unsigned long long size, void* a)
+void __ctStoreBulkMemoryEvent(bool isWrite, size_t s, void* a)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
     unsigned int p = __ctThreadLocalBuffer->pos;
+    unsigned long long size = s;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_bulk_memory_op/*<<24*/;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
