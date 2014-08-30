@@ -10,6 +10,12 @@ from util import pcall
 
 def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     
+    # Hack to detect on ARM
+    if os.environ.has_key("USER"):
+        uname = os.environ["USER"]
+        if uname == "ubuntu":
+            ARM = True
+    
     # Set locations of clang, opt, and the contech pass
     if os.environ.has_key("CONTECH_HOME"):
         CONTECH_HOME = os.environ["CONTECH_HOME"]
@@ -34,7 +40,10 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             # Use the .o file so that LLVM does not optimize away the marker calls
             RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.o"
         else:
-            RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc " + CONTECH_HOME + "/common/runtime/ct_main.bc "
+            if ARM == True:
+                RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc " + CONTECH_HOME + "/common/runtime/ct_main.bc "
+            else:
+                RUNTIME = CONTECH_HOME + "/common/runtime/ct_runtime.bc " + CONTECH_HOME + "/common/runtime/ct_main.bc "
         
         if os.environ.has_key("CONTECH_STATE_FILE"):
             stateFile = os.environ["CONTECH_STATE_FILE"]
@@ -56,7 +65,10 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     # Name of the output file
     out=""
     # All remaining flags to be passed on to clang
-    CFLAGS="-flto --verbose -pthread"
+    if ARM == True:
+        CFLAGS="--verbose -pthread"
+    else:
+        CFLAGS="-flto --verbose -pthread"
 
     # Choose correct compiler
     if isCpp:
@@ -220,9 +232,15 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             hammerOptLevel = os.environ["HAMMER_OPT_LEVEL"]
             pcall([OPT, "-load=" + LLVMHAMMER, "-Hammer", A, "-o", B, "-HammerState", stateFile, "-HammerNailFile", hammerNailFile, "-HammerOptLevel", hammerOptLevel])
         else:
-            pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", A, "-o", B, "-ContechState", stateFile])
+            if ARM == True:
+                pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", A, "-o", newobj, "-ContechState", stateFile])
+            else:
+                pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", A, "-o", B, "-ContechState", stateFile])
         # Compile bitcode back to a .o file
-        pcall([CC, CFLAGS, "-c", "-o", newobj, B])
+        if ARM == True:
+            print ""
+        else:
+            pcall([CC, CFLAGS, "-c", "-o", newobj, B])
         # Add the generated object file to the list of things to link
         ofiles = ofiles + " " + newobj
         
@@ -242,10 +260,20 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                 shutil.copyfile(stateFile, "contech.bin")
                 # Note that we may have to create two .o, one for 32bit and one for 64bit
                 OBJCOPY = "objcopy"
-                pcall([OBJCOPY, "--input binary", "--output elf64-x86-64", "--binary-architecture i386", "contech.bin", "contech_state.o"])
                 
+                if ARM == True:
+                    pcall([OBJCOPY, "--input binary", "--output elf32-littlearm", "--binary-architecture arm", "contech.bin", "contech_state.o"])
+                else:
+                    pcall([OBJCOPY, "--input binary", "--output elf64-x86-64", "--binary-architecture i386", "contech.bin", "contech_state.o"])
+
                 # Compile final executable
-                pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-flto", "-lpthread", "contech_state.o"])
+                if ARM == True:
+                    pcall(["llvm-link", ofiles, RUNTIME, "-o", out + "_ct.bc"])
+                    pcall([OPT, "-always-inline", out + "_ct.bc", "-o", out + "_ct_inline.bc"])
+                    pcall([CC, CFLAGS, "-c -o", out + "_ct.o", out + "_ct_inline.bc"])
+                    pcall([CC, out + "_ct.o", CFLAGS, "-o", out, "-lpthread", "contech_state.o"])
+                else:
+                    pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-flto", "-lpthread", "contech_state.o"])
                         
         else:
             passThrough(CC)
