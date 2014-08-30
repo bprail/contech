@@ -35,6 +35,7 @@ namespace llvm {
         NONE,
         MAIN,
         MALLOC,
+        MALLOC2, // Calls like memalign(align, size)
         FREE,
         THREAD_CREATE,
         THREAD_JOIN,

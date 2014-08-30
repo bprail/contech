@@ -28,8 +28,9 @@ reset_middle:
     }
     else
     {
-        //in = stdin;
-        in = create_ct_file_from_handle(stdin);
+        fprintf(stderr, "Missing positional argument event trace\n");
+        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
+        return 1;
     }
     
     // Open output file
@@ -44,7 +45,9 @@ reset_middle:
     }
     else
     {
-        out = create_ct_file_from_handle(stdout);
+        fprintf(stderr, "Missing positional argument taskgraph\n");
+        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
+        return 1;
     }
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
@@ -208,6 +211,10 @@ reset_middle:
                 parallelMiddle)
             {
                 activeContech.createBasicBlockContinuation();
+                
+                if (DEBUG) {fprintf(stderr, "%s -> %s via Basic Block\n", 
+                                            activeT->getTaskId().toString().c_str(),
+                                            activeContech.activeTask()->getTaskId().toString().c_str());}
                 
                 // Is the current active task a complete join?
                 if (activeT->getType() == task_type_join &&
@@ -397,6 +404,8 @@ reset_middle:
                         assert(rem == true);
                         
                         backgroundQueueTask(otherTask);
+                        if (parallelMiddle)
+                            updateContextTaskList(activeContech);
                     }
                 }
                 
@@ -426,6 +435,9 @@ reset_middle:
                     // Set the other task's continuation to the join
                     otherTask->addSuccessor(taskJoin->getTaskId());
                     taskJoin->addPredecessor(otherTask->getTaskId());
+                    
+                    if (parallelMiddle)
+                        updateContextTaskList(otherContext);
                     
                     // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
                     if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask->getTaskId(), startTime, endTime);
@@ -521,6 +533,12 @@ reset_middle:
             }
 
         } 
+        
+        // Memcpy etc
+        else if (event->event_type == ct_event_bulk_memory_op)
+        {
+        
+        }
         // End switch block on event type
 
         // Free memory for the processed event

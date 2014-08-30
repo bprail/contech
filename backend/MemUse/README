@@ -1,0 +1,6 @@
+MemUse - Memory Usage Backend
+
+This backend analyzes the memory used in a taskgraph, specifically identifying
+quantity of heap versus stack space used.  It utilizes the malloc / free
+actions, as well as creates a map of virtual address space from the memory
+actions.

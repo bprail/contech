@@ -52,6 +52,26 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
     if (last != NULL)
     {
         cout << last->toString() << endl;
+        
+        if (last->getType() == task_type_join)
+        {
+            auto jc = tgt.joinCountMap.find(last->getTaskId());
+            if (jc == tgt.joinCountMap.end())
+            {
+                cout << "Join is not waiting on any tasks, should be queued.\n";
+            }
+            else
+            {
+                cout << "Waiting on: " << jc->second << " tasks to join" << endl;
+                for (TaskId s : last->getSuccessorTasks())
+                {
+                    if (tgt.joinMap.find(s.getContextId()) != tgt.joinMap.end())
+                    {
+                        cout << "\tWaiting on: " << s.toString() << endl;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -75,7 +95,8 @@ void updateContextTaskList(Context &c)
         while (t != c.activeTask() &&
                (( t->getType() == task_type_basic_blocks &&
                (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
-               (t->getType() == task_type_create)))
+               (t->getType() == task_type_create) ||
+               (t->getType() == task_type_join && c.isCompleteJoin(t->getTaskId()))))
               
         {
             c.tasks.pop_back();
@@ -95,8 +116,8 @@ void updateContextTaskList(Context &c)
         {
             c.tasks.pop_back();
             backgroundQueueTask(t);
-            t = c.tasks.back();
             if (c.tasks.empty()) return;
+            t = c.tasks.back();   
         }
     }
 }

@@ -48,6 +48,7 @@ Task* Context::getTask(TaskId tid)
         if (r->getTaskId() == tid) {return r;}
     }
     
+    // Is it safe that r is equal to the last element in the list?
     return r;
 }
 
@@ -100,8 +101,8 @@ bool Context::isCompleteJoin(TaskId tid)
 {
     auto it = joinCountMap.find(tid);
     
-    if (it == joinCountMap.end() ||
-        it->second > 0) return false;
+    if (it == joinCountMap.end()) return true;
+    if (it->second > 0) return false;
         
     joinCountMap.erase(it);
         
@@ -124,7 +125,7 @@ Task* Context::createBasicBlockContinuation()
     return continuation;
 }
 
-Task* Context::createContinuation(task_type type, ct_tsc_t startTime, ct_tsc_t endTime)
+Task* Context::createContinuation(task_type type, ct_tsc_t tStartTime, ct_tsc_t tEndTime)
 {
     assert(type != task_type_basic_blocks);
     //assert(activeTask()->getType() == task_type_basic_blocks);
@@ -133,25 +134,28 @@ Task* Context::createContinuation(task_type type, ct_tsc_t startTime, ct_tsc_t e
         createBasicBlockContinuation();
     }
     
+    // This context has not exited
+    assert(endTime == 0);
+    
     //assert(startTime >= currentTime &&
     //       endTime >= startTime);
     // With OpenMP, the runtime puts in create events on behalf of other contexts
     //   this can result in reversed timestamps.  Stitch them up here.
-    if (startTime < currentTime)
+    if (tStartTime < currentTime)
     {
-        ct_tsc_t delta = currentTime - startTime;
-        startTime += delta;
-        endTime += delta;
+        ct_tsc_t delta = currentTime - tStartTime;
+        tStartTime += delta;
+        tEndTime += delta;
     }
-    currentTime = endTime;
+    currentTime = tEndTime;
     
     // Set the end time of the previous basic block task
-    activeTask()->setEndTime(startTime);
+    activeTask()->setEndTime(tStartTime);
 
     // Create the continuation task
     Task* continuation = new Task(activeTask()->getTaskId().getNext(), type);
-    continuation->setStartTime(startTime);
-    continuation->setEndTime(endTime);
+    continuation->setStartTime(tStartTime);
+    continuation->setEndTime(tEndTime);
 
     // Set as continuation of the active task
     activeTask()->addSuccessor(continuation->getTaskId());
