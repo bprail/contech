@@ -188,6 +188,7 @@ namespace llvm {
         unsigned int getCriticalPathLen(BasicBlock& B);
         Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
+        Value* castSupport(Type*, Value*, Instruction*);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
         #if LLVM_VERSION_MINOR>=5
@@ -911,7 +912,7 @@ cleanup:
         else {
             llvm_bbid = ConstantInt::get(int32Ty, bbid);
             Value* argsBB[] = {llvm_bbid};
-            debugLog("storeBasicBlockFunction @" << __LINE__);
+            debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
             sbb = CallInst::Create(storeBasicBlockFunction, 
                                    ArrayRef<Value*>(argsBB, 1), 
                                    string("storeBlock") + to_string(bbid), 
@@ -944,7 +945,6 @@ cleanup:
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
-                    
                     new FenceInst(M.getContext(), Release, SingleThread, I);
                 }
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
@@ -1153,6 +1153,7 @@ cleanup:
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreCV = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "", I);
                     I = nStoreCV;
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick3 = CallInst::Create(getCurrentTickFunction, "tick3", ++I);                                    
                     Value* cArgMut[] = {bciMut, ConstantInt::get(int32Ty, 1), ConstantInt::get(int32Ty, 0), nGetTick3};
                     debugLog("storeSyncFunction @" << __LINE__);
@@ -1219,6 +1220,7 @@ cleanup:
                     debugLog("queueBufferFunction @" << __LINE__);
                     /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                         "", ci);
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     Value* cArg[] = {ci->getOperand(0), nGetTick};
                     debugLog("storeThreadJoinFunction @" << __LINE__);
@@ -1260,9 +1262,10 @@ cleanup:
                     debugLog("queueBufferFunction @" << __LINE__);
                     /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                         "", ci);
-                                                        
+                    debugLog("ompPushParentFunction @" << __LINE__);                                    
                     CallInst::Create(ompPushParentFunction, "", ci);
                     ++I;
+                    debugLog("ompPopParentFunction @" << __LINE__);
                     CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
                     I = nPopParent;
                     
@@ -1295,19 +1298,16 @@ cleanup:
                     // Add Store insts here
                     Value* gepArgs[2] = {ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0)};
                     Value* ppid = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
+                    debugLog("getThreadNumFunction @" << __LINE__);
                     Value* tNum = CallInst::Create(getThreadNumFunction, "", ci);
                     Value* pid = new StoreInst(tNum, ppid, ci);
                     gepArgs[1] = ConstantInt::get(int32Ty, 1);
                     Value* parg = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
                     new StoreInst(ci->getArgOperand(1), parg, ci);
-                    errs() << "Create uTWS\n";
                     Function* wrapMicroTask = createMicroTaskWrapStruct(ompMicroTask, t, M);
                     contechAddedFunctions.insert(wrapMicroTask);
-                    errs() << "Update args for call\n";
                     ci->setArgOperand(0, new BitCastInst(wrapMicroTask, arg0->getType(), "", ci));
-                    errs() << "Update 2\n";
                     ci->setArgOperand(1, new BitCastInst(nArg, voidPtrTy, "", ci));
-                    errs() << "Update complete\n";
                                                               
                     //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
                 }
@@ -1316,8 +1316,10 @@ cleanup:
                 {
                     // Simple case, push and pop the parent id
                     // And Transform the arguments to the function call
+                    debugLog("ompPushParentFunction @" << __LINE__);
                     CallInst::Create(ompPushParentFunction, "", ci);
                     ++I;
+                    debugLog("ompPopParentFunction @" << __LINE__);
                     CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
                     I = nPopParent;
                     
@@ -1378,9 +1380,11 @@ cleanup:
                 break;
                 case (OMP_FOR_ITER):
                 {
+                    debugLog("ompTaskJoinFunction @" << __LINE__);
                     CallInst::Create(ompTaskJoinFunction, "", ci);
                     ++I;
                     Value* cArg[] = {ci};
+                    debugLog("ompTaskCreateFunction @" << __LINE__);
                     CallInst* nCreate = CallInst::Create(ompTaskCreateFunction, ArrayRef<Value*>(cArg, 1), "", I);
                     I = nCreate;
                 }
@@ -1388,8 +1392,10 @@ cleanup:
                 case (OMP_BARRIER):
                 {
                     // OpenMP barriers use argument 1 for barrier ID
+                    debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     //IntToPtrInst* bci = new IntToPtrInst(ci->getArgOperand(1), voidPtrTy, "locktovoid", I);
+                    debugLog("ompGetParentFunction @" << __LINE__);
                     IntToPtrInst* bci = new IntToPtrInst(CallInst::Create(ompGetParentFunction, "", I), voidPtrTy, "locktovoid", I);
                     Value* c1 = ConstantInt::get(int8Ty, 1);
                     Value* cArgs[] = {c1, bci, nGetTick};
@@ -1418,17 +1424,25 @@ cleanup:
                     if (0 == __ctStrCmp(fn, "memcpy"))
                     {
                         Value* cArgL[] = {ConstantInt::get(int8Ty, 0), ci->getArgOperand(2), ci->getArgOperand(1)};
+                        debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                         CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgL, 3), "", I);
                         Value* cArgS[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(2), ci->getArgOperand(0)};
+                        debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                         CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
                     }
                     else if (0 == __ctStrCmp(fn, "llvm."))
                     {
                         if (0 == __ctStrCmp(fn + 5, "memcpy"))
                         {
-                            Value* cArgL[] = {ConstantInt::get(int8Ty, 0), ci->getArgOperand(2), ci->getArgOperand(1)};
+                            // LLVM.memcpy can take i32 or i64 for size of copy
+                            Value* castSize = castSupport(pthreadTy, ci->getArgOperand(2), I);
+                            Value* cArgL[] = {ConstantInt::get(int8Ty, 0), castSize, ci->getArgOperand(1)};
+                            debugLog("storeBulkMemoryOpFunction @" << __LINE__);
+                            errs() << *storeBulkMemoryOpFunction;
+                            errs() << *ci;
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgL, 3), "", I);
-                            Value* cArgS[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(2), ci->getArgOperand(0)};
+                            Value* cArgS[] = {ConstantInt::get(int8Ty, 1), castSize, ci->getArgOperand(0)};
+                            debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
                         }
                         else if (0 == __ctStrCmp(fn + 5, "dbg") ||
@@ -1515,6 +1529,8 @@ cleanup:
             cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
             
         }
+        
+        debugLog("Return from BBID: " << bbid);
         
         return true;
     }
@@ -1613,6 +1629,12 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
     delete [] cArgExt;
     
     return extFun;
+}
+    
+Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
+{
+    auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
+    return CastInst::Create(castOp, sourceValue, castType, "Cast to size_t", insertBefore);
 }
     
 char Contech::ID = 0;
