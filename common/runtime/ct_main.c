@@ -17,6 +17,7 @@
 #include <sched.h>
 
 void* (__ctBackgroundThreadWriter)(void*);
+void* (__ctBackgroundThreadDiscard)(void*);
 
 extern int ct_orig_main(int, char**);
 
@@ -394,6 +395,133 @@ void* __ctBackgroundThreadWriter(void* d)
             fflush(serialFile);
             fclose(serialFile);
 #endif
+            pthread_mutex_unlock(&__ctQueueBufferLock);
+            pthread_exit(NULL);            
+        }
+    } while (1);
+}
+
+//
+//  __ctBackgroundThreadDiscard()
+//    This routine is like the background thread writer, except it discards the buffers instead.
+//
+void* __ctBackgroundThreadDiscard(void* d)
+{
+    size_t totalWritten = 0;
+    pct_serial_buffer memLimitQueue = NULL;
+    pct_serial_buffer memLimitQueueTail = NULL;
+    unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
+    
+    // Main loop
+    //   Write queued buffer to disk until program terminates
+    pthread_mutex_lock(&__ctQueueBufferLock);
+    do {
+        // Check for queued buffer, i.e. is the program generating events
+        while (__ctQueuedBuffers == NULL)
+        {
+            pthread_cond_wait(&__ctQueueSignal, &__ctQueueBufferLock);
+        }
+        pthread_mutex_unlock(&__ctQueueBufferLock);
+    
+        // The thread writer will likely sit in this loop except when the memory limit is triggered
+        while (__ctQueuedBuffers != NULL)
+        {
+            // Write buffer to file
+            size_t tl = 0;
+            size_t wl = 0;
+            pct_serial_buffer qb = __ctQueuedBuffers;
+            
+            // **** DISCARD BUFFER in lieu of writing
+            
+            // "Free" buffer
+            // First move the queue pointer, as we implicitly held the first element
+            // Then switch locks and put this processed buffer onto the free list
+            pthread_mutex_lock(&__ctQueueBufferLock);
+            {
+                pct_serial_buffer t = __ctQueuedBuffers;
+                __ctQueuedBuffers = __ctQueuedBuffers->next;
+                if (__ctQueuedBuffers == NULL) __ctQueuedBufferTail = NULL;
+                pthread_mutex_unlock(&__ctQueueBufferLock);
+                
+                if (t->length < SERIAL_BUFFER_SIZE)
+                {
+                    free(t);
+                    // After the unlock is end of while loop, 
+                    //  so as the buffer was free() rather than put on the list
+                    //  we continue
+                    continue;
+                }
+                
+                // Switching locks, "t" is now only held locally
+                pthread_mutex_lock(&__ctFreeBufferLock);
+
+                // If this is the only free buffer, signal any waiting threads
+                // TODO: Can we avoid the cond_signal if buffer limits are not in place?
+                // TODO: OR not signal until queuedBuffers is NULL ?
+                //if (t->next == NULL) {pthread_cond_signal(&__ctFreeSignal);}
+                if (__ctCurrentBuffers == __ctMaxBuffers)
+                {
+                    if (__ctQueuedBuffers == NULL)
+                    {
+                        // memlimit end
+                        struct timeb tp;
+                        ftime(&tp);
+                        endLimitTime = tp.time*1000 + tp.millitm;
+                        totalLimitTime += (endLimitTime - startLimitTime);
+                        memLimitQueueTail->next = __ctFreeBuffers;
+                        __ctFreeBuffers = memLimitQueue;
+                        __ctCurrentBuffers = 0;
+                        memLimitQueue = NULL;
+                        memLimitQueueTail = NULL;
+                        pthread_cond_broadcast(&__ctFreeSignal);
+                    }
+                    else
+                    {
+                        if (memLimitQueueTail == NULL)
+                        {
+                            memLimitQueue = t;
+                            memLimitQueueTail = t;
+                            t->next = NULL;
+                            // memlimit start
+                            struct timeb tp;
+                            ftime(&tp);
+                            startLimitTime = tp.time*1000 + tp.millitm;
+                        }
+                        else
+                        {
+                            memLimitQueueTail->next = t;
+                            t->next = NULL;
+                            memLimitQueueTail = t;
+                        }
+                    }
+                }
+                else
+                {
+                    t->next = __ctFreeBuffers;
+                    __ctFreeBuffers = t;
+                    __ctCurrentBuffers --;
+                }
+            }
+            pthread_mutex_unlock(&__ctFreeBufferLock);
+        }
+        
+        // Exit condition is # of threads exited = # of threads
+        // N.B. Main is part of this count
+        pthread_mutex_lock(&__ctQueueBufferLock);
+        if (__ctThreadExitNumber == __ctThreadGlobalNumber && 
+            __ctQueuedBuffers == NULL) 
+        { 
+            // destroy mutex, cond variable
+            // TODO: free freedBuffers
+            {
+                struct timeb tp;
+                ftime(&tp);
+                printf("CT_COMP: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+                printf("CT_LIMIT: %llu.%03llu\n", totalLimitTime / 1000, totalLimitTime % 1000);
+            }
+            printf("Total Uncomp Written: %ld\n", totalWritten);
+            fflush(stdout);
+
             pthread_mutex_unlock(&__ctQueueBufferLock);
             pthread_exit(NULL);            
         }
