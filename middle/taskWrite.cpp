@@ -23,7 +23,7 @@ deque<Task*>* taskQueue;
 #define QUEUE_SIGNAL_THRESHOLD 16
 void backgroundQueueTask(Task* t)
 {
-    unsigned int qSize;
+    unsigned int qSize = 0;
     pthread_mutex_lock(&taskQueueLock);
     qSize = taskQueue->size();
     taskQueue->push_back(t);
