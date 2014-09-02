@@ -11,6 +11,7 @@ from util import pcall
 def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     
     # Hack to detect on ARM
+    ARM = False
     if os.environ.has_key("USER"):
         uname = os.environ["USER"]
         if uname == "ubuntu":
