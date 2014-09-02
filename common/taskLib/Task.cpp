@@ -13,7 +13,13 @@ Task::Task(TaskId taskId, task_type type)
 {
     this->taskId = taskId;
     this->type = type;
+    syncType = sync_type_unknown;
+    startTime = 0;
+    endTime = 0;
     bbCount = 0;
+    a.clear();
+    s.clear();
+    p.clear();
 }
 
 bool Task::operator==(const Task& rhs) const

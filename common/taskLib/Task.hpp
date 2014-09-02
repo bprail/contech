@@ -21,7 +21,7 @@ typedef uint32_t uint; // Assumed to be 32 bits
 typedef uint64_t uint64; // Assumed to be 64 bits
 typedef uint64 ct_timestamp;
 enum task_type { task_type_basic_blocks = 0, task_type_sync, task_type_barrier, task_type_create, task_type_join};
-enum sync_type { sync_type_lock = 0, sync_type_condition_variable, sync_type_user_defined};
+enum sync_type { sync_type_unknown = 0, sync_type_lock, sync_type_condition_variable, sync_type_user_defined};
 
 class TaskGraph;
 
