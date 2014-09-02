@@ -12,6 +12,8 @@ class Context
 
 public:
 
+    Context();
+
     Task* activeTask();
     Task* createBasicBlockContinuation();
     Task* createContinuation(task_type eventType, ct_tsc_t startTime, ct_tsc_t endTime);

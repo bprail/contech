@@ -2,6 +2,11 @@
 
 using namespace contech;
 
+Context::Context()
+{
+    tasks.clear();
+}
+
 // Returns the currently active task
 Task* Context::activeTask() { return this->tasks.front(); }
 
