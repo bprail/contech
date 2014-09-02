@@ -220,7 +220,7 @@ reset_middle:
                 if (activeT->getType() == task_type_join &&
                     activeContech.isCompleteJoin(activeT->getTaskId()))
                 {
-                    activeContech.removeTask(activeT);
+                    assert(activeContech.removeTask(activeT) == true);
                     backgroundQueueTask(activeT);
                 }
                 
@@ -379,7 +379,7 @@ reset_middle:
             {
                 Task* otherTask = NULL;
                 TaskId myId = activeContech.activeTask()->getTaskId();
-                Context otherContext = context[event->tj.other_id];
+                Context& otherContext = context[event->tj.other_id];
                 
                 activeContech.activeTask()->setEndTime(startTime);
                 activeContech.endTime = startTime;
@@ -415,7 +415,7 @@ reset_middle:
             } 
             else 
             {
-                Context otherContext = context[event->tj.other_id];
+                Context& otherContext = context[event->tj.other_id];
                 if (otherContext.endTime != 0)
                 {
                     // Create a join task
