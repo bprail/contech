@@ -6,7 +6,8 @@ import json
 
 
 def main():
-    launchBackend("memUse")
+    launchBackend("harmony")
+    launchBackend("parhist")
 
 def launchBackend(backend):
     CONTECH_HOME = util.findContechInstall()
@@ -19,7 +20,7 @@ def launchBackend(backend):
     for b in bset:
         util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=4"], queue="newpasta")
     for b in util.Benchmarks.nas:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "S", "_nas"), resources=["nodes=1:ppn=4"], queue="newpasta") 
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "A", "_nas"), resources=["nodes=1:ppn=4"], queue="newpasta") 
     
 def buildLocal(benchmark):
     CONTECH_HOME = util.findContechInstall()
