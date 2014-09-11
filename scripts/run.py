@@ -17,6 +17,7 @@ def main(parsec=False, nas=False):
         #PIN frontend
         PINPATH = os.path.join(CONTECH_HOME,"../pin/pin-2.13-62732-gcc.4.4.7-linux/")
         PINBIN = os.path.join(PINPATH,"pin")
+        #PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/buffer_linux.so")
         PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/contech_fe.so")
         
         # List of backend tools.
@@ -88,6 +89,7 @@ def main(parsec=False, nas=False):
     parser.add_argument("--traceOnly", help="Save the event trace and do not run any other steps", default=False, action='store_true')
     parser.add_argument("--pinFrontend",help="Whether to use the PIN frontend.",default=False, action='store_true')
     parser.add_argument("--discardTrace",help="Write trace to /dev/null",default=False, action='store_true')
+    parser.add_argument("-t", "--time", help="Time command", default="/usr/bin/time")
     args = parser.parse_args()
     
     name = os.path.basename(args.benchmark)
@@ -103,6 +105,7 @@ def main(parsec=False, nas=False):
         taskgraph = os.path.join(CONTECH_OUTDIR, taskgraphBasename)
         if args.discardTrace: tracefile = "/dev/null"
         os.environ["CONTECH_FE_FILE"] = tracefile
+        time = args.time
         
         with Timer(name):
             if args.pinFrontend and parsec:
@@ -114,7 +117,7 @@ def main(parsec=False, nas=False):
                        "-d", CONTECH_OUTDIR,
                        "-n", args.numthreads,
                        "-i", args.input,
-                       "-s", '"/usr/bin/time %(PINBIN)s -t %(PINTOOL)s --"' % locals() 
+                       "-s", '"%(time)s %(PINBIN)s -t %(PINTOOL)s --"' % locals() 
                        ])  
             elif parsec:
                 pcall([
@@ -125,16 +128,25 @@ def main(parsec=False, nas=False):
                        "-d", CONTECH_OUTDIR,
                        "-n", args.numthreads, 
                        "-i", args.input, 
-                       "-s", '"/usr/bin/time"'])
+                       "-s", '"%(time)s"' % locals()])
             elif nas:
                 os.environ["OMP_NUM_THREADS"] = args.numthreads
                 benchname = "{}.{}.x".format(name, args.input)
-                shutil.copy( os.path.join(NAS_HOME, "bin-contech/"+benchname), CONTECH_OUTDIR)
-                #Change path to CONTECH_OUTDIR
-                savedPath = os.getcwd()
-                os.chdir(CONTECH_OUTDIR)
-                pcall(["/usr/bin/time", os.path.join(CONTECH_OUTDIR, benchname)])
-                os.chdir(savedPath)
+                if args.pinFrontend:
+                    shutil.copy( os.path.join(NAS_HOME, "bin-llvm/"+benchname), CONTECH_OUTDIR)
+                    #Change path to CONTECH_OUTDIR
+                    savedPath = os.getcwd()
+                    os.chdir(CONTECH_OUTDIR)
+                    time = "{} -t {} -- ".format(PINBIN, PINTOOL)
+                    pcall([time, os.path.join(CONTECH_OUTDIR, benchname)])
+                    os.chdir(savedPath)
+                else:
+                    shutil.copy( os.path.join(NAS_HOME, "bin-contech/"+benchname), CONTECH_OUTDIR)
+                    #Change path to CONTECH_OUTDIR
+                    savedPath = os.getcwd()
+                    os.chdir(CONTECH_OUTDIR)
+                    pcall([time, os.path.join(CONTECH_OUTDIR, benchname)])
+                    os.chdir(savedPath)
             else:
                 pcall([args.benchmark, args.args])
         
@@ -146,7 +158,7 @@ def main(parsec=False, nas=False):
             if pcall([TRACEVALIDATOR, tracefile], returnCode = True):
                 print_error("Trace was corrupt, did not save")
             else:
-                shutil.copy(tracefile, permTrace)
+                #shutil.copy(tracefile, permTrace)
                 print_header("Trace saved to " + permTrace)
             os.remove(tracefile)
             exit(0)
