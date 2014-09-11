@@ -357,8 +357,9 @@ void* backgroundTaskWriter(void* v)
                     //t->setFileOffset(bytesWritten);
                     pos = ct_tell(out);
                     
-                    // Add the task to the index, note that the index is a priority queue based on timestamp
-                    //taskIndex.push(make_pair(startTime, make_pair(id, pos)));
+                    // TODO: Replace taskIndex with graph, then use the graph to
+                    //   determine the bfs order, this way tasks can be written out
+                    //   immediately
                     taskIndex.push( make_pair(id, pos));
                     bytesWritten += Task::writeContechTask(*t, out);
                     taskWriteCount += 1;
