@@ -41,7 +41,13 @@ TaskId getSequenceTask(vector<TaskId>& succ, ContextId selfId)
                 possible_succ = i;
             }
         }
+        else
+        {
+            //printf("%d\t", i.getContextId());
+        }
     }
+    
+    //printf("%d -> %s\n", selfId, possible_succ.toString().c_str());
     
     return possible_succ;
 }
@@ -257,6 +263,15 @@ int main(int argc, char const *argv[])
                 {
                     tempState->blocked = true;
                     nextRunningCount --;
+                    if (t->getContextId() != tempState->nextTaskId.getContextId()
+                        || tempState->nextTaskId == 0)
+                    {
+                        //fprintf(stderr, "Delete(%d) -- %s\n", __LINE__, t->getTaskId().toString().c_str());
+                        delete t;
+                        tempState->terminated = true;
+                        tempState->currentTask = NULL;
+                        continue;
+                    }
                 }
                 tempState->currentBB = f;
                 tempState->taskCurrTime = tempCurrent;
@@ -279,7 +294,9 @@ int main(int argc, char const *argv[])
             tempState->currentBBCol = currentTask->getBasicBlockActions();
             tempState->currentBB = tempState->currentBBCol.begin();
             tempState->currentTask = currentTask;
-            //tempState->nextTask = getTaskById(taskGraphIn, currentTask->getContinuationTaskId());
+            // If there is no continuation, then this task has terminated
+            tempState->nextTaskId = getSequenceTask((tempState->currentTask)->getSuccessorTasks(), 
+                                                    tempState->currentTask->getContextId());
             
             if (currentTask->getType() == task_type_basic_blocks)
             {
@@ -326,6 +343,13 @@ int main(int argc, char const *argv[])
                     continue;
                 }
                 
+                if (t->getContextId() != tempState->nextTaskId.getContextId())
+                {
+                    fprintf(stderr, "%s != %s @ %s\n", t->getTaskId().toString().c_str(),
+                                                  tempState->nextTaskId.toString().c_str(),
+                                                  ctui.toString().c_str());
+                }
+                
                 // Is the new task running or doing something synchronizing?
                 if (true/*ctui == tempState->nextTaskId*/)
                 {
@@ -345,13 +369,6 @@ int main(int argc, char const *argv[])
                 tempState->nextTaskId = getSequenceTask((tempState->currentTask)->getSuccessorTasks(), 
                                                         tempState->currentTask->getContextId());
                 
-                /*if (tempState->nextTask == NULL)
-                {
-                    delete t;
-                    tempState->terminated = true;
-                    if  (tBlock == false) runningThreads --;
-                    continue;
-                }*/
                 tempState->taskCurrTime = tempState->currentTask->getStartTime();
                 tempState->currentBBCol = tempState->currentTask->getBasicBlockActions();
                 tempState->currentBB = tempState->currentBBCol.begin();
