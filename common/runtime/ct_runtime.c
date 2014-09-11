@@ -164,6 +164,30 @@ void __ctAllocateLocalBuffer()
     #endif
 }
 
+void __parsec_bench_begin(int t)
+{
+    //__ctQueueBuffer(false);
+    //__ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
+    // Set threadlocal to initbuffer
+    //   flag that create / join need to be recorded
+}
+
+ void __parsec_roi_begin()
+ {
+    //__ctAllocateLocalBuffer();
+ }
+ 
+ void __parsec_roi_end()
+ {
+    // set threadlocal to initbuffer
+    //   flag that create / join need to be recorded
+ }
+ 
+ void __parsec_bench_end()
+ {
+    // all events now discarded
+ }
+
 void __ctCleanupThread(void* v)
 {
     // A thread has exited
@@ -178,7 +202,7 @@ void __ctCleanupThread(void* v)
     #ifdef CT_OVERHEAD_TRACK
     ct_tsc_t end = rdtsc();
     //__ctTotalThreadOverhead += (end - start);
-    printf("T(%d): %lld, %lld, %d\n", __ctThreadLocalNumber, 
+    printf("T(%d), %lld, %lld, %d\n", __ctThreadLocalNumber, 
                                 __ctTotalThreadOverhead, 
                                 __ctTotalTimeBetweenQueueBuffers,
                                 __ctTotalThreadBuffersQueued);
@@ -412,7 +436,7 @@ void __ctQueueBuffer(bool alloc)
     
     if (__ctLastQueueBuffer != 0)
     {
-        __ctTotalTimeBetweenQueueBuffers += (end - __ctLastQueueBuffer);
+        __ctTotalTimeBetweenQueueBuffers += (start - __ctLastQueueBuffer);
     }
     __ctLastQueueBuffer = end;
 #endif 
@@ -452,12 +476,12 @@ void __ctCheckBufferBySize(unsigned int numOps)
 
 __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
 {
-    #ifdef POS_USED
+    //#ifdef POS_USED
     // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
     //   4 for basic block, 32 for other event, then 6 for each memop
     if ((SERIAL_BUFFER_SIZE - 1024) < p)
         __ctQueueBuffer(true);
-    #endif
+   // #endif
 }
 
 void __ctCheckBufferSizeDebug(unsigned int bbid)
