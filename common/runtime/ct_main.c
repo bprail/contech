@@ -98,6 +98,7 @@ int main(int argc, char** argv)
     __ctThreadLocalBuffer = NULL;
     
     // Allocate a real CT buffer for the main thread, this replaces initBuffer
+    //   Use ROI code to reset if there is a ROI present
     __ctAllocateLocalBuffer();
 
     {
