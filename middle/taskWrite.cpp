@@ -180,6 +180,15 @@ unsigned long long getCurrentFreeMemory()
     return 0;
 }
 
+struct TaskWrapper
+{
+    TaskId      self;   // probably redundant in a map
+    int         p;      // number of predecessor tasks remaining
+    vector<TaskId> s;   // tasks that follow this task
+    ct_tsc_t    start;  // start time for this task
+    long        writePos; // where was the task written
+};
+
 void* backgroundTaskWriter(void* v)
 {
     ct_file* out = *(ct_file**)v;
@@ -187,6 +196,7 @@ void* backgroundTaskWriter(void* v)
     // Put all the tasks in a map so we can look them up by ID
     map<TaskId, pair<Task*, int> > tasks;
     map<TaskId, int> predDelayCount;
+    map<TaskId, TaskWrapper> writeTaskMap;
     uint64 taskCount = 0, taskWriteCount = 0;
     
     // Write out all tasks in breadth-first order, starting with task 0
@@ -308,7 +318,7 @@ void* backgroundTaskWriter(void* v)
         //   But it is also good to not run out of memory.
         //
         //if (!noMoreTasks) continue;
-        if (seqWritePhase == false && !noMoreTasks) 
+        if (false && seqWritePhase == false && !noMoreTasks) 
         {
             unsigned long long cmem = getCurrentFreeMemory();
             if (cmem > mem_size)
@@ -360,6 +370,17 @@ void* backgroundTaskWriter(void* v)
                     // TODO: Replace taskIndex with graph, then use the graph to
                     //   determine the bfs order, this way tasks can be written out
                     //   immediately
+                    {
+                        TaskWrapper tw;
+                        
+                        tw.self = id;
+                        tw.start = t->getStartTime();
+                        tw.p = t->getPredecessorTasks().size();
+                        tw.s = t->getSuccessorTasks();
+                        tw.writePos = pos;
+                    
+                        writeTaskMap[id] = tw;
+                    }
                     taskIndex.push( make_pair(id, pos));
                     bytesWritten += Task::writeContechTask(*t, out);
                     taskWriteCount += 1;
@@ -403,7 +424,42 @@ void* backgroundTaskWriter(void* v)
     printf("Writing index for %d at %lld\n", taskWriteCount, pos);
     size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
     //for (auto it = taskIndex.begin(), et = taskIndex.end(); it != et; ++it)
-    while (!taskIndex.empty())
+    priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskSort;
+    
+    {
+        TaskWrapper tw = writeTaskMap.find(0)->second;
+        taskSort.push(make_pair(tw.start, make_pair(tw.self, tw.writePos)));
+    }
+    
+    while (!taskSort.empty())
+    {
+        TaskId tid = taskSort.top().second.first;
+        uint64 offset = taskSort.top().second.second;
+        
+        ct_write(&tid, sizeof(TaskId), out);
+        ct_write(&offset, sizeof(uint64), out);
+        
+        taskSort.pop();
+        
+        auto twit = writeTaskMap.find(tid);
+        TaskWrapper tw = twit->second;
+        
+        for (TaskId succ : tw.s)
+        {
+            TaskWrapper &suTW = writeTaskMap.find(succ)->second;
+            
+            suTW.p--;
+            if (suTW.p == 0)
+            {
+                taskSort.push(make_pair(suTW.start, make_pair(suTW.self, suTW.writePos)));
+            }
+        }
+        
+        //  Can erase tid, but we don't need the memory, will it speed up?
+        writeTaskMap.erase(twit);
+    }
+    
+    /*while (!taskIndex.empty())
     {
         //TaskId tid = taskIndex.top().second.first;
         //unsigned long long offset = taskIndex.top().second.second;
@@ -414,7 +470,7 @@ void* backgroundTaskWriter(void* v)
         ct_write(&offset, sizeof(unsigned long long), out);
         
         taskIndex.pop();
-    }
+    }*/
     
     // Now write the position of the index
     ct_seek(out, 4);
