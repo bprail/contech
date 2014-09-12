@@ -137,7 +137,7 @@ def main(parsec=False, nas=False):
                     #Change path to CONTECH_OUTDIR
                     savedPath = os.getcwd()
                     os.chdir(CONTECH_OUTDIR)
-                    time = "{} -t {} -- ".format(PINBIN, PINTOOL)
+                    time = time + " {} -t {} -- ".format(PINBIN, PINTOOL)
                     pcall([time, os.path.join(CONTECH_OUTDIR, benchname)])
                     os.chdir(savedPath)
                 else:
