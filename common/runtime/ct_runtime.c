@@ -477,10 +477,13 @@ void __ctCheckBufferBySize(unsigned int numOps)
 __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
 {
     //#ifdef POS_USED
-    // TODO: Set contech pass to match this limit, memops < (X - 64) / 8
-    //   4 for basic block, 32 for other event, then 6 for each memop
+    // Contech LLVM pass knows this limit
+    //   It will call check by size if the basic block needs more than 1K to store its data
     if ((SERIAL_BUFFER_SIZE - 1024) < p)
         __ctQueueBuffer(true);
+    /* Adding a prefetch reduces the L1 D$ miss rate by 1 - 3%, but also increases overhead by 5 - 10%
+    else // TODO: test with , 1 to indicate write prefetch
+        __builtin_prefetch(((char*)__ctThreadLocalBuffer) + p + 1024);*/
    // #endif
 }
 
