@@ -194,33 +194,17 @@ void* backgroundTaskWriter(void* v)
     ct_file* out = *(ct_file**)v;
 
     // Put all the tasks in a map so we can look them up by ID
-    map<TaskId, pair<Task*, int> > tasks;
-    map<TaskId, int> predDelayCount;
+    map<TaskId, Task*> tasks;
     map<TaskId, TaskWrapper> writeTaskMap;
     uint64 taskCount = 0, taskWriteCount = 0;
     
     // Write out all tasks in breadth-first order, starting with task 0
     priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
     
-    //priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskIndex;
-    queue< pair<TaskId, uint64> > taskIndex;
-    
     uint64 bytesWritten = ct_tell(out);
     long pos;
     bool firstTime = true;
-    bool seqWritePhase = true;
-    struct timeb timest;
     unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
-    unsigned long long mem_size = 0;
-    
-    struct sysinfo t_info;
-            
-    if (0 == sysinfo(&t_info))
-    {
-        mem_size = (unsigned long long)t_info.freeram * (unsigned long long)t_info.mem_unit;
-        mem_size = (mem_size * 2) / 10;
-        printf("Flush tasks when free memory is below: %llu\n", mem_size);
-    }
     
     //
     // noMoreTasks is a flag from the foreground thread
@@ -261,154 +245,59 @@ void* backgroundTaskWriter(void* v)
                 TaskId tid = t->getTaskId();
                 int adjust = 0;
                 
-                // The predecessor of this task may have already been written out.
-                //   If so, then this task does not have to wait on it.
-                auto it = predDelayCount.find(tid);
-                if (it != predDelayCount.end())
-                {
-                    adjust = it->second;
-                    predDelayCount.erase(it);
-                }
-                
-                // Adjust the count of tasks preceding this one by already written tasks
-                adjust = t->getPredecessorTasks().size() - adjust;
-                
-                // If none, then this task is ready to be written out.
-                if (adjust == 0)
-                {
-                    workList.push(make_pair(t->getStartTime(), tid));
-                    tasks[tid] = make_pair(t, 0);
-                    firstTime = false;
-                    ftime(&timest);
-                    sec = timest.time;
-                    msec = timest.millitm;
-                }
-                else
-                {
-                    tasks[tid] = make_pair(t, adjust);
-                }
+                workList.push(make_pair(t->getStartTime(), tid));
+                tasks[tid] = t;
                 taskCount += 1;
+                if (tid == 0) firstTime = false;
             }
             delete taskChunk;
         }
         
         //
-        // If this is the first time, make sure that we received task 0:0 
+        // If this is the first time, we have not received task 0:0 
         //
         if (firstTime)
         {
-            if (tasks.find(0) == tasks.end()) continue;
-            workList.push(make_pair(tasks[0].first->getStartTime(), 0));
-            firstTime = false;
-        }
-        
-        // This is for debugging
-        bool printHead = false;
-        ftime(&timest);
-        if ((unsigned int)timest.time > (sec + 1)) printHead = true;
-        if (taskWriteCount > taskLastWriteCount)
-        {
-            sec = timest.time;
-            msec = timest.millitm;
-        }
-        
-        //
-        // It would be better if we could ensure the broadest set of tasks in the worklist,
-        //   so that the oldest BFS task is written.
-        //   But it is also good to not run out of memory.
-        //
-        //if (!noMoreTasks) continue;
-        if (false && seqWritePhase == false && !noMoreTasks) 
-        {
-            unsigned long long cmem = getCurrentFreeMemory();
-            if (cmem > mem_size)
-            {
-                continue;
-            }
-            if (!workList.empty())
-            {
-                printf("Continuing via memory threshold: %llu\tTaskWriteCount: %d\tTaskCount: %d\n", cmem, taskWriteCount, taskCount);
-            }
+            continue;
         }
         
         while (!workList.empty())
         {
             ct_timestamp startTime = workList.top().first;
             TaskId id = workList.top().second;
-            Task* t = tasks[id].first;
+            Task* t = tasks[id];
             
             assert(tasks.find(id) != tasks.end());
-            
-            //
-            // Background writing has reached the first non-zero context,
-            //   stop writing tasks until all tasks have been received.
-            //
-            if (seqWritePhase == true && t->getType() == task_type_create)
-            {
-                seqWritePhase = false;
-                break;
-            }
             
             workList.pop();
             
             // Task will be null if it has already been handled
-            if (t != NULL)
+            assert(t != NULL);
+            // Write out the task
+            pos = ct_tell(out);
+            
+            // TaskIndex is a graph, then use the graph to
+            //   determine the bfs order, this way tasks can be written out
+            //   immediately
             {
-                // Have all my predecessors have been written out?
-                bool ready = true;
-
-                if (!ready)
-                {
-                    break;
-                }
-                else
-                {
-                    // Write out the task
-                    //t->setFileOffset(bytesWritten);
-                    pos = ct_tell(out);
-                    
-                    // TODO: Replace taskIndex with graph, then use the graph to
-                    //   determine the bfs order, this way tasks can be written out
-                    //   immediately
-                    {
-                        TaskWrapper tw;
-                        
-                        tw.self = id;
-                        tw.start = t->getStartTime();
-                        tw.p = t->getPredecessorTasks().size();
-                        tw.s = t->getSuccessorTasks();
-                        tw.writePos = pos;
-                    
-                        writeTaskMap[id] = tw;
-                    }
-                    taskIndex.push( make_pair(id, pos));
-                    bytesWritten += Task::writeContechTask(*t, out);
-                    taskWriteCount += 1;
-                    
-                    // Add successors to the work list
-                    for (TaskId succ : t->getSuccessorTasks())
-                    {
-                        auto it = tasks.find(succ);
-                        
-                        // If the successor has not been received, then store that once its
-                        //   predecessors has already been written
-                        if (it == tasks.end())
-                        {
-                            predDelayCount[succ] ++;
-                            continue;
-                        }
-                        
-                        it->second.second --;
-                        if (it->second.second == 0)
-                            workList.push(make_pair(it->second.first->getStartTime(), succ));
-                    }
-                    
-                    // Delete the task
-                    delete t;
-                    //tasks[id].first = NULL;
-                    tasks.erase(id);
-                }
+                TaskWrapper tw;
+                
+                tw.self = id;
+                tw.start = t->getStartTime();
+                tw.p = t->getPredecessorTasks().size();
+                tw.s = t->getSuccessorTasks();
+                tw.writePos = pos;
+            
+                writeTaskMap[id] = tw;
             }
+            
+            bytesWritten += Task::writeContechTask(*t, out);
+            taskWriteCount += 1;
+                
+            // Delete the task
+            delete t;
+            //tasks[id].first = NULL;
+            tasks.erase(id);
         }
         taskLastWriteCount = taskWriteCount;
     }
@@ -423,7 +312,7 @@ void* backgroundTaskWriter(void* v)
     }
     printf("Writing index for %d at %lld\n", taskWriteCount, pos);
     size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
-    //for (auto it = taskIndex.begin(), et = taskIndex.end(); it != et; ++it)
+    
     priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskSort;
     
     {
@@ -431,6 +320,14 @@ void* backgroundTaskWriter(void* v)
         taskSort.push(make_pair(tw.start, make_pair(tw.self, tw.writePos)));
     }
     
+    //
+    // This reproduces the BFS algorithm that had been used for writing tasks
+    //   It is much faster to sort the tasks on just the graph information than
+    //   to indefinitely delay writing a task until the entire graph is available.
+    //
+    // taskSort is a priority queue, the top element is the oldest task that has all
+    //   its prior tasks in the index.
+    //
     while (!taskSort.empty())
     {
         TaskId tid = taskSort.top().second.first;
@@ -458,19 +355,6 @@ void* backgroundTaskWriter(void* v)
         //  Can erase tid, but we don't need the memory, will it speed up?
         writeTaskMap.erase(twit);
     }
-    
-    /*while (!taskIndex.empty())
-    {
-        //TaskId tid = taskIndex.top().second.first;
-        //unsigned long long offset = taskIndex.top().second.second;
-        TaskId tid = taskIndex.front().first;
-        unsigned long long offset = taskIndex.front().second;
-        
-        ct_write(&tid, sizeof(TaskId), out);
-        ct_write(&offset, sizeof(unsigned long long), out);
-        
-        taskIndex.pop();
-    }*/
     
     // Now write the position of the index
     ct_seek(out, 4);
