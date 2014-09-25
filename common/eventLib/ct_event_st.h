@@ -55,12 +55,15 @@ enum _ct_sync_type {
     ct_sync_unknown};
 typedef enum _ct_sync_type ct_sync_type;
 
+#define BBI_FLAG_CONTAIN_CALL 0x1
+
 //
 // Maps basic_block_ids to string identifiers
 //
 typedef struct _ct_basic_block_info
 {
     unsigned int basic_block_id, fun_name_len, file_name_len, num_mem_ops, line_num, num_ops, crit_path_len;
+    unsigned int flags;
     char* file_name;
     char* fun_name;
 } ct_basic_block_info, *pct_basic_block_info;

@@ -213,7 +213,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
                 fread_check(&npe->bb.basic_block_id, sizeof(char), 3, fptr);
                 if (npe->bb.basic_block_id >= bb_count)
                 {
-                    fprintf(stderr, "ERROR: BBid(%x) exceeds maximum in bb_info\n", npe->bb.basic_block_id);
+                    fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);
                     dumpAndTerminate(fptr);
                 }
                 
@@ -282,10 +282,13 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             fread_check(&id, sizeof(unsigned int), 1, fptr);
             if (id >= bb_count)
             {
-                fprintf(stderr, "ERROR: INFO for block %d exceeds number of unique basic blocks\n", id);
+                fprintf(stderr, "ERROR: INFO for block %d exceeds number of unique basic blocks (%d)\n", id, bb_count);
                 dumpAndTerminate(fptr);
             }
             npe->bbi.basic_block_id = id;
+            
+            fread_check(&line, sizeof(unsigned int), 1, fptr);
+            npe->bbi.flags = line;
             
             fread_check(&line, sizeof(unsigned int), 1, fptr);
             npe->bbi.line_num = line;
