@@ -674,6 +674,7 @@ cleanup:
                 //   Then runtime can directly pass the events to the event list
                 contechStateFile->write((char*)&evTy, sizeof(char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->containCall, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
@@ -800,6 +801,7 @@ cleanup:
         Instruction* aPhi = B.begin();
         bool getNextI = false;
         bool containCall = false, containQueueBuf = false;
+        bool hasUninstCall = false;
         bool containKeyCall = false;
         Value* posValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
@@ -904,6 +906,8 @@ cleanup:
         Constant* llvm_nops = NULL;
         CallInst* sbb;
         CallInst* sbbc = NULL;
+        unsigned int memOpPos = 0;
+        
         if (markOnly == true)
         {
             llvm_bbid = ConstantInt::get(int32Ty, bbid);
@@ -921,12 +925,46 @@ cleanup:
                                    aPhi);
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
+//#define TSC_IN_BB
+#ifdef TSC_IN_BB
+            Value* stTick = CallInst::Create(getCurrentTickFunction, "tick", aPhi);
+            
+            //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
+            pllvm_mem_op tMemOp = new llvm_mem_op;
+        
+            tMemOp->isWrite = true;
+            tMemOp->size = 7;
+            
+            Constant* cPos = ConstantInt::get(int32Ty, memOpPos);
+            Value* addrI = castSupport(voidPtrTy, stTick, aPhi);
+            Value* argsMO[] = {addrI, cPos, sbb};
+            debugLog("storeMemOpFunction @" << __LINE__);
+            CallInst* smo = CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", aPhi);
+            assert(smo != NULL);
+            smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+            
+            tMemOp->addr = NULL;
+            tMemOp->next = NULL;
+            
+            memOpPos ++;
+            memOpCount++;
+            if (bi->first_op == NULL) bi->first_op = tMemOp;
+            else
+            {
+                pllvm_mem_op t = bi->first_op;
+                while (t->next != NULL)
+                {
+                    t = t->next;
+                }
+                t->next = tMemOp;
+            }
+#endif
             
             // In LLVM 3.3+, switch to Monotonic and not Acquire
             new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
         }
 
-        unsigned int memOpPos = 0;
+        
         bool hasInstAllMemOps = false;
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
         
@@ -936,18 +974,24 @@ cleanup:
             {
                 llvm_nops = ConstantInt::get(int32Ty, memOpCount);
                 Value* argsBBc[] = {llvm_nops};
+                #ifdef TSC_IN_BB
+                if (memOpCount == 1)
+                #else
                 if (memOpCount == 0)
+                #endif
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", aPhi);
                     
                     new FenceInst(M.getContext(), Release, SingleThread, aPhi);
+                    iPt = aPhi;
                 }
                 else
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
                     new FenceInst(M.getContext(), Release, SingleThread, I);
+                    iPt = I;
                 }
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
                 bi->len = memOpCount;
@@ -1015,7 +1059,7 @@ cleanup:
                 
                 // call is indirect
                 // TODO: add dynamic check on function called
-                if (f == NULL) { continue; }
+                if (f == NULL) { hasUninstCall = true; continue; }
 
                 int status;
                 const char* fmn = f->getName().data();
@@ -1052,6 +1096,7 @@ cleanup:
                         CallInst* nStoreME = CallInst::Create(storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
                                                             "", ++I);                                 
                         I = nStoreME;
+                        hasUninstCall = true;
                     }
                     break;
                 case(MALLOC2):
@@ -1062,6 +1107,7 @@ cleanup:
                         CallInst* nStoreME = CallInst::Create(storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
                                                             "", ++I);
                         I = nStoreME;
+                        hasUninstCall = true;
                     }
                     break;
                 case (FREE):
@@ -1073,6 +1119,7 @@ cleanup:
                     CallInst* nStoreME = CallInst::Create(storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
                                                         "", ++I);
                     I = nStoreME;
+                    hasUninstCall = true;
                 }
                 break;
                 case (SYNC_ACQUIRE):
@@ -1105,6 +1152,7 @@ cleanup:
                     }
                     containingEvent = ct_event_sync;
                     iPt = nStoreSync;
+                    hasUninstCall = true;
                 }
                 break;
                 case (SYNC_RELEASE):
@@ -1133,6 +1181,7 @@ cleanup:
                     containingEvent = ct_event_sync;
                     iPt = ++I;
                     I = nStoreSync;
+                    hasUninstCall = true;
                 }
                 break;
                 case (COND_WAIT):
@@ -1174,6 +1223,7 @@ cleanup:
                     containingEvent = ct_event_sync;
                     iPt = ++I;
                     I = nStoreMut;
+                    hasUninstCall = true;
                 }
                 break;
                 case (COND_SIGNAL):
@@ -1193,6 +1243,7 @@ cleanup:
                     containingEvent = ct_event_sync;
                     iPt = ++I;
                     I = nStoreCV;
+                    hasUninstCall = true;
                 }
                 break;
                 case (BARRIER_WAIT):
@@ -1220,6 +1271,7 @@ cleanup:
                     containingEvent = ct_event_barrier;
                     containQueueBuf = true;
                     iPt = nStoreBarEn;
+                    hasUninstCall = true;
                 }
                 break;
                 case (THREAD_JOIN):
@@ -1243,6 +1295,7 @@ cleanup:
                     I = nStoreJ;
                     iPt = nGetTick;
                     containQueueBuf = true;
+                    hasUninstCall = true;
                 }
                 break;
                 //int pthread_create(pthread_t * thread, const pthread_attr_t * attr,
@@ -1260,6 +1313,7 @@ cleanup:
                     ci->replaceAllUsesWith(nThreadCreate);
                     ci->eraseFromParent();
                     I = nThreadCreate;
+                    hasUninstCall = true;
                     //ci->setCalledFunction(createThreadActualFunction);
                 }
                 break;
@@ -1320,7 +1374,7 @@ cleanup:
                     contechAddedFunctions.insert(wrapMicroTask);
                     ci->setArgOperand(0, new BitCastInst(wrapMicroTask, arg0->getType(), "", ci));
                     ci->setArgOperand(1, new BitCastInst(nArg, voidPtrTy, "", ci));
-                                                              
+                    hasUninstCall = true;                                          
                     //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
                 }
                 break;
@@ -1329,7 +1383,7 @@ cleanup:
                     // Simple case, push and pop the parent id
                     // And Transform the arguments to the function call
                     debugLog("ompPushParentFunction @" << __LINE__);
-                    CallInst::Create(ompPushParentFunction, "", ci);
+                    CallInst* nPushParent = CallInst::Create(ompPushParentFunction, "", ci);
                     ++I;
                     debugLog("ompPopParentFunction @" << __LINE__);
                     CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
@@ -1341,8 +1395,6 @@ cleanup:
                                                 ci->getArgOperand(1),
                                                 ConstantInt::get(int32Ty, 1),
                                                 "", ci));
-                    
-                    
                     
                     // Change the function called to a wrapper routine
                     Value* arg2 = ci->getArgOperand(2);
@@ -1364,8 +1416,6 @@ cleanup:
                     contechAddedFunctions.insert(wrapMicroTask);
                     ci->setArgOperand(2, ConstantExpr::getBitCast(wrapMicroTask, bci->getType()));
                                                               
-                    //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
-                    
                     // One cannot simply add an argument to an instruction
                     // Instead we have to copy the arguments over and create a new instruction
                     Value** cArg = new Value*[ci->getNumArgOperands() + 1];
@@ -1386,7 +1436,11 @@ cleanup:
                                                            ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
                                                            ci->getName(), ci);
                     ci->replaceAllUsesWith(nForkCall);
+                    // Erase is dangerous, e.g. iPt could point to ci
+                    if (iPt == ci)
+                        iPt = nPushParent;
                     ci->eraseFromParent();
+                    hasUninstCall = true;
                     delete [] cArg;
                 }
                 break;
@@ -1399,6 +1453,7 @@ cleanup:
                     debugLog("ompTaskCreateFunction @" << __LINE__);
                     CallInst* nCreate = CallInst::Create(ompTaskCreateFunction, ArrayRef<Value*>(cArg, 1), "", I);
                     I = nCreate;
+                    hasUninstCall = true;
                 }
                 break;
                 case (OMP_BARRIER):
@@ -1429,6 +1484,7 @@ cleanup:
                     containingEvent = ct_event_barrier;
                     containQueueBuf = true;
                     iPt = nStoreBarEn;
+                    hasUninstCall = true;
                 }
                 break;
                 default:
@@ -1441,6 +1497,7 @@ cleanup:
                         Value* cArgS[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(2), ci->getArgOperand(0)};
                         debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                         CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
+                        hasUninstCall = true;
                     }
                     else if (0 == __ctStrCmp(fn, "llvm."))
                     {
@@ -1450,12 +1507,11 @@ cleanup:
                             Value* castSize = castSupport(pthreadTy, ci->getArgOperand(2), I);
                             Value* cArgL[] = {ConstantInt::get(int8Ty, 0), castSize, ci->getArgOperand(1)};
                             debugLog("storeBulkMemoryOpFunction @" << __LINE__);
-                            errs() << *storeBulkMemoryOpFunction;
-                            errs() << *ci;
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgL, 3), "", I);
                             Value* cArgS[] = {ConstantInt::get(int8Ty, 1), castSize, ci->getArgOperand(0)};
                             debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
+                            hasUninstCall = true;
                         }
                         else if (0 == __ctStrCmp(fn + 5, "dbg") ||
                                  0 == __ctStrCmp(fn + 5, "lifetime"))
@@ -1467,12 +1523,12 @@ cleanup:
                             errs() << "Builtin - " << fn << "\n";
                         }
                     }
-                    else if (ci != sbb && ci != sbbc)
+                    else if (0 != __ctStrCmp(fn, "__ct"))
                     {
-                        // We added a storeBasicBlock to this basic block
-                        //  Ignore it as an insertion point
-                        iPt = ci;
+                        // The function called is not something added by the instrumentation
+                        //   and also not one that needs special treatment.
                         containCall = true;
+                        hasUninstCall = true;
                     }
                     else
                     {
@@ -1484,6 +1540,8 @@ cleanup:
                 }
             }
         }
+        
+        bi->containCall = hasUninstCall;
         
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
@@ -1504,6 +1562,8 @@ cleanup:
         //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
         else if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
         {
+            // Since calls terminate basic blocks
+            //   These blocks would have only 1 successor
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
             CallInst::Create(checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
