@@ -370,13 +370,6 @@ void* backgroundTaskWriter(void* v)
     if (taskQueue != NULL)
         printf("Tasks Left: %ld\n", taskQueue->size());
     printf("Tasks Remaining: %u\n", workList.size());
-    
-    auto it = tasks.begin();
-    if (it != tasks.end())
-    {
-        cout << it->second.first->toString();
-        printf("%d - %d\n", it->first, it->second.second);
-    }
         
     return NULL;
 }
