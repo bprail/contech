@@ -5,7 +5,7 @@ import sys
 # List of all parsec benchmarks 
 class Benchmarks:
     # List of all parsec benchmarks
-    parsecApps = ["blackscholes", "bodytrack", "ferret", "fluidanimate", "freqmine", "swaptions", "vips", "x264"] # Blacklist: facesim, raytrace
+    parsecApps = ["blackscholes", "bodytrack", "ferret", "fluidanimate", "freqmine", "swaptions", "x264"] # Blacklist: facesim, raytrace, vips
     parsecKernels = ["canneal", "dedup", "streamcluster"]
     # List of all splash2 benchmarks
     splash2Apps = ["barnes", "fmm", "ocean_cp", "ocean_ncp", "radiosity", "raytrace", "volrend", "water_nsquared", "water_spatial"]
