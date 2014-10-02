@@ -234,6 +234,11 @@ void* backgroundTaskWriter(void* v)
         {
             taskChunk = taskQueue;
             taskQueue = NULL;
+            {
+                struct timeb tp;
+                ftime(&tp);
+                printf("MIDDLE_DEQUE: %d.%03d\t%u\n", (unsigned int)tp.time, tp.millitm, taskWriteCount);
+            }
         }
         pthread_mutex_unlock(&taskQueueLock);
     
@@ -309,6 +314,11 @@ void* backgroundTaskWriter(void* v)
     {
         //int esav = errno;
         perror("Cannot identify index position");
+    }
+    {
+        struct timeb tp;
+        ftime(&tp);
+        printf("MIDDLE_TASK: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
     }
     printf("Writing index for %d at %lld\n", taskWriteCount, pos);
     size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);

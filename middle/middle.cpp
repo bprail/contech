@@ -633,7 +633,11 @@ reset_middle:
         noMoreTasks = true;
         pthread_cond_signal(&taskQueueCond);
         pthread_mutex_unlock(&taskQueueLock);
-        
+            {
+                struct timeb tp;
+                ftime(&tp);
+                printf("MIDDLE_QUEUE: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+            }
         pthread_join(backgroundT, (void**) &d);
     }
 
