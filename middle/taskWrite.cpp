@@ -193,13 +193,9 @@ void* backgroundTaskWriter(void* v)
 {
     ct_file* out = *(ct_file**)v;
 
-    // Put all the tasks in a map so we can look them up by ID
-    map<TaskId, Task*> tasks;
+    deque<Task*> writeTaskQueue;
     map<TaskId, TaskWrapper> writeTaskMap;
     uint64 taskCount = 0, taskWriteCount = 0;
-    
-    // Write out all tasks in breadth-first order, starting with task 0
-    priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
     
     uint64 bytesWritten = ct_tell(out);
     long pos;
@@ -213,7 +209,7 @@ void* backgroundTaskWriter(void* v)
     // When all of those are clear, everything has been written.
     //
     while (!noMoreTasks ||
-           (!workList.empty() || (taskQueue != NULL && !taskQueue->empty())))
+           (!writeTaskQueue.empty() || (taskQueue != NULL && !taskQueue->empty())))
     {
         deque<Task*>* taskChunk = NULL;
         
@@ -245,36 +241,18 @@ void* backgroundTaskWriter(void* v)
         // Have a chunk of tasks from the foreground
         if (taskChunk != NULL)
         {
-            for (Task* t : *taskChunk)
-            {
-                TaskId tid = t->getTaskId();
-                int adjust = 0;
-                
-                workList.push(make_pair(t->getStartTime(), tid));
-                tasks[tid] = t;
-                taskCount += 1;
-                if (tid == 0) firstTime = false;
-            }
+            writeTaskQueue.insert(writeTaskQueue.end(), taskChunk->begin(), taskChunk->end());
+            taskCount += taskChunk->size();
             delete taskChunk;
         }
         
-        //
-        // If this is the first time, we have not received task 0:0 
-        //
-        if (firstTime)
-        {
-            continue;
-        }
         
-        while (!workList.empty())
+        while (!writeTaskQueue.empty())
         {
-            ct_timestamp startTime = workList.top().first;
-            TaskId id = workList.top().second;
-            Task* t = tasks[id];
+            Task* t = writeTaskQueue.front();
+            TaskId id = t->getTaskId();
             
-            assert(tasks.find(id) != tasks.end());
-            
-            workList.pop();
+            writeTaskQueue.pop_front();
             
             // Task will be null if it has already been handled
             assert(t != NULL);
@@ -301,8 +279,6 @@ void* backgroundTaskWriter(void* v)
                 
             // Delete the task
             delete t;
-            //tasks[id].first = NULL;
-            tasks.erase(id);
         }
         taskLastWriteCount = taskWriteCount;
     }
@@ -379,7 +355,7 @@ void* backgroundTaskWriter(void* v)
     printf("Tasks Written: %ld\n", taskWriteCount);
     if (taskQueue != NULL)
         printf("Tasks Left: %ld\n", taskQueue->size());
-    printf("Tasks Remaining: %u\n", workList.size());
+    printf("Tasks Remaining: %u\n", writeTaskQueue.size());
         
     return NULL;
 }
