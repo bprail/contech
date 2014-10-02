@@ -3,6 +3,8 @@
 
 using namespace contech;
 
+void Backend::initBackend(TaskGraphInfo*) {}
+
 SimpleBackendWrapper::SimpleBackendWrapper(char* f, Backend* b) : backend(b)
 {
     tg = TaskGraph::initFromFile(f);
@@ -11,11 +13,17 @@ SimpleBackendWrapper::SimpleBackendWrapper(char* f, Backend* b) : backend(b)
 void SimpleBackendWrapper::runBackend()
 {
     Task* t = NULL;
+    
     while ((t = tg->getNextTask()) != NULL)
     {
         backend->updateBackend(t);
         delete t;
     }
+}
+
+void SimpleBackendWrapper::initBackend()
+{
+    backend->initBackend(tg->getTaskGraphInfo());
 }
 
 void SimpleBackendWrapper::completeRun(FILE* f)
