@@ -25,7 +25,7 @@ TaskGraph* TaskGraph::initFromFile(ct_file* f)
 TaskGraph::TaskGraph(ct_file* f)
 {
     uint version = 0;
-    unsigned long long taskIndexOffset = 0;
+    uint64 taskIndexOffset = 0;
     inputFile = f;
     
     ct_seek(f, 0);
@@ -44,7 +44,7 @@ TaskGraph::TaskGraph(ct_file* f)
     }
     
     // Next is the location of the taskIndex in the file
-    ct_read(&taskIndexOffset, sizeof(unsigned long long), f);
+    ct_read(&taskIndexOffset, sizeof(uint64), f);
     
     // Then comes the taskGraphInfo structure
     tgi = readTaskGraphInfo();
@@ -106,7 +106,7 @@ TaskGraphInfo* TaskGraph::getTaskGraphInfo()
     return tgi;
 }
 
-void TaskGraph::initTaskIndex(unsigned long long off)
+void TaskGraph::initTaskIndex(uint64 off)
 {
     if (0 != ct_seek(inputFile, off))
     {
@@ -122,16 +122,17 @@ void TaskGraph::initTaskIndex(unsigned long long off)
     for (uint i = 0; i < taskCount; i++)
     {
         TaskId tid;
-        unsigned long long pos;
+        uint64 pos;
         
         ct_read(&tid, sizeof(TaskId), inputFile);
-        ct_read(&pos, sizeof(unsigned long long), inputFile);
+        ct_read(&pos, sizeof(uint64), inputFile);
         
         //printf("%s at %llu\n", tid.toString().c_str(), pos);
         
         // We expect that the index comes after every task in the file
         assert(pos < off);
-        
+        // Every tid should only exist once in the index
+        assert(taskIdx.find(tid) == taskIdx.end());
         taskIdx[tid] = pos;
         taskOrder.push_back(pos);
     }

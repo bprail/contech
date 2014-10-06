@@ -38,7 +38,7 @@ private:
     
     // Privately, attempt to read a task graph info struct
     TaskGraphInfo* readTaskGraphInfo();
-    void initTaskIndex(unsigned long long);
+    void initTaskIndex(uint64);
     
     TaskGraph(ct_file*);
 
