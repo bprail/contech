@@ -91,12 +91,14 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 27
+#define FUNCTIONS_INSTRUMENT_SIZE 29
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
-                                           {STORE_AND_LEN("main"), MAIN},
-                                           {STORE_AND_LEN("MAIN__"), MAIN},
+                                            // If main has OpenMP regions, the derived functions
+                                            //    will begin with main or MAIN__
+                                           {STORE_AND_LEN("main\0"), MAIN},
+                                           {STORE_AND_LEN("MAIN__\0"), MAIN},
                                            {STORE_AND_LEN("pthread_create"), THREAD_CREATE},
                                            {STORE_AND_LEN("pthread_join"), THREAD_JOIN},
                                            {STORE_AND_LEN("parsec_barrier_wait"), BARRIER_WAIT},
@@ -120,6 +122,8 @@ namespace llvm {
                                            {STORE_AND_LEN("pthread_cond_signal"), COND_SIGNAL},
                                            {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL},
                                            {STORE_AND_LEN("GOMP_parallel_start"), OMP_CALL},
+                                           {STORE_AND_LEN("GOMP_atomic_start"), GLOBAL_SYNC_ACQUIRE},
+                                           {STORE_AND_LEN("GOMP_atomic_end"), GLOBAL_SYNC_RELEASE},
                                            {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
                                            {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER}};
@@ -1138,18 +1142,10 @@ cleanup:
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
+                    // ++I moves the insertion point to after the sync call
                     CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", ++I);
                     I = nStoreSync;
-                    if (false /*ContechMinimal == false*/)
-                    {
-                        cArg[0] = ConstantInt::get(int8Ty, 1);
-                        debugLog("queueBufferFunction @" << __LINE__);
-                        CallInst* nQueueBuf = CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
-                                                            "", ++I);
-                        I = nQueueBuf;
-                        containQueueBuf = true;
-                    }
                     containingEvent = ct_event_sync;
                     iPt = nStoreSync;
                     hasUninstCall = true;
@@ -1159,6 +1155,7 @@ cleanup:
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    // ++I moves the insertion point to after the sync call
                     BitCastInst* bci = new BitCastInst(ci->getArgOperand(0), voidPtrTy, "locktovoid", ++I);
                     Value* cArg[] = {bci, ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0), nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
@@ -1169,14 +1166,52 @@ cleanup:
                     {
                         errs() << "Failed to close storeBasicBlock before storeSync\n";
                     }
-                    if (false /*ContechMinimal == false*/)
+                    containingEvent = ct_event_sync;
+                    iPt = ++I;
+                    I = nStoreSync;
+                    hasUninstCall = true;
+                }
+                break;
+                case (GLOBAL_SYNC_ACQUIRE):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    Value* con1 = ConstantInt::get(int32Ty, 1);
+                     // If sync_acquire returns int, pass it, else pass 0 - success
+                    Value* retV;
+                    if (ci->getType() == int32Ty)
+                        retV = ci;
+                    else 
+                        retV = ConstantInt::get(int32Ty, 0);
+                    // ++I moves the insertion point to after the sync call
+                    Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
+                    Value* cArg[] = {cinst, // No argument, "NULL" is lock
+                                     con1, 
+                                     retV,
+                                     nGetTick};
+                    debugLog("storeSyncFunction @" << __LINE__);
+                    CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                        "", I); // Insert after sync call
+                    I = nStoreSync;
+                    containingEvent = ct_event_sync;
+                    iPt = nStoreSync;
+                    hasUninstCall = true;
+                }
+                break;
+                case (GLOBAL_SYNC_RELEASE):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    // ++I moves the insertion point to after the sync call
+                    Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
+                    Value* cArg[] = {cinst, ConstantInt::get(int32Ty, 0), ConstantInt::get(int32Ty, 0), nGetTick};
+                    debugLog("storeSyncFunction @" << __LINE__);
+                    CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                        "", I);
+                    I = nStoreSync;
+                    if (hasInstAllMemOps == false)
                     {
-                        cArg[0] = ConstantInt::get(int8Ty, 1);
-                        debugLog("queueBufferFunction @" << __LINE__);
-                        CallInst* nQueueBuf = CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
-                                                            "", ++I);
-                        I = nQueueBuf;
-                        containQueueBuf = true;
+                        errs() << "Failed to close storeBasicBlock before storeSync\n";
                     }
                     containingEvent = ct_event_sync;
                     iPt = ++I;
@@ -1706,7 +1741,7 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
-    return CastInst::Create(castOp, sourceValue, castType, "Cast to size_t", insertBefore);
+    return CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
 }
     
 char Contech::ID = 0;
