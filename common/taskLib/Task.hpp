@@ -99,6 +99,7 @@ public:
     //void setFileOffset(uint64 offset);
 
     string toString() const;
+    string toSummaryString() const;
 
     void appendTask(Task*, vector<Task*>*);
     static bool removeTask(Task* rem, vector<Task*>* p, vector<Task*>* s);

@@ -535,6 +535,31 @@ string Task::taskTypeToString(task_type taskType)
 }
 */
 
+string Task::toSummaryString() const {
+    ostringstream out;
+
+    out << "taskId:" << taskId << "\t";
+    out << "startTime:" << startTime << "\t";
+    out << "endTime:" << endTime << "\t";
+    out << "Type:" << type << endl;
+
+    out << "s:";
+    for (TaskId task : s)
+    {
+        out << task << ",";
+    }
+    out << endl;
+
+    out << "p:";
+    for (TaskId task : p)
+    {
+        out << task << ",";
+    }
+    out << endl;
+
+    return out.str();
+}
+
 string Task::toString() const {
     ostringstream out;
 
