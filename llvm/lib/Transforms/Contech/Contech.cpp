@@ -91,7 +91,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 29
+#define FUNCTIONS_INSTRUMENT_SIZE 30
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -122,6 +122,7 @@ namespace llvm {
                                            {STORE_AND_LEN("pthread_cond_signal"), COND_SIGNAL},
                                            {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL},
                                            {STORE_AND_LEN("GOMP_parallel_start"), OMP_CALL},
+                                           {STORE_AND_LEN("GOMP_parallel_end"), OMP_END},
                                            {STORE_AND_LEN("GOMP_atomic_start"), GLOBAL_SYNC_ACQUIRE},
                                            {STORE_AND_LEN("GOMP_atomic_end"), GLOBAL_SYNC_RELEASE},
                                            {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
@@ -164,6 +165,7 @@ namespace llvm {
         Constant* ompTaskJoinFunction;
         Constant* ompPushParentFunction;
         Constant* ompPopParentFunction;
+        Constant* ctPeekParentIdFunction;
         
         Constant* ompGetParentFunction;
         
@@ -263,6 +265,7 @@ namespace llvm {
         getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(int32Ty, false));
         getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(int64Ty, false));
         ompGetParentFunction = M.getOrInsertFunction("__kmpc_get_parent_taskid", FunctionType::get(int64Ty, false));
+        ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(int32Ty, false));
         
         Type* argsSSync[] = {voidPtrTy, int32Ty/*type*/, int32Ty/*retVal*/, int64Ty /*ct_tsc_t*/};
         funVoidVoidPtrI32I32I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSSync, 4), false);
@@ -929,6 +932,7 @@ cleanup:
                                    aPhi);
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
+
 //#define TSC_IN_BB
 #ifdef TSC_IN_BB
             Value* stTick = CallInst::Create(getCurrentTickFunction, "tick", aPhi);
@@ -972,7 +976,7 @@ cleanup:
         bool hasInstAllMemOps = false;
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
         
-            // After all of the known memOps have been insturmented, close out the basic
+            // After all of the known memOps have been instrumented, close out the basic
             //   block event based on the number of memOps
             if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
             {
@@ -1352,12 +1356,27 @@ cleanup:
                     //ci->setCalledFunction(createThreadActualFunction);
                 }
                 break;
+                case (OMP_END):
+                {
+                    // End of a parallel region, restore parent stack
+                    ++I;
+                    debugLog("ompPopParentFunction @" << __LINE__);
+                    // Also __ctOMPThreadJoin
+                    Value* parentId = CallInst::Create(ctPeekParentIdFunction, "", I);
+                    Value* cArg[] = {parentId};
+                    CallInst::Create(ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", I);
+                    CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", I);
+                    I = nPopParent;
+                    hasUninstCall = true;
+                }
+                break;
                 case (OMP_CALL):
                 {
                     // Simple case, push and pop the parent id
                     // And Transform the arguments to the function call
                     // The GOMP_parallel_start has a parallel_end routine, so the master thread
-                    //   returns immediately, so the PUSH / POP may be unnecessary
+                    //   returns immediately
+                    // Thus the pop parent should be delayed until the end routine executes
                     Value* c1 = ConstantInt::get(int8Ty, 1);
                     Value* cArgQB[] = {c1};
                     debugLog("queueBufferFunction @" << __LINE__);
@@ -1365,10 +1384,11 @@ cleanup:
                                                         "", ci);
                     debugLog("ompPushParentFunction @" << __LINE__);                                    
                     CallInst::Create(ompPushParentFunction, "", ci);
-                    ++I;
-                    debugLog("ompPopParentFunction @" << __LINE__);
-                    CallInst* nPopParent = CallInst::Create(ompPopParentFunction, "", &*I);
-                    I = nPopParent;
+                    
+                    // __ctOMPThreadCreate after entering the parallel region
+                    Value* parentId = CallInst::Create(ctPeekParentIdFunction, "", ++I);
+                    Value* cArg[] = {parentId};
+                    I = CallInst::Create(ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", I);
                     
                     // Change the function called to a wrapper routine
                     Value* arg0 = ci->getArgOperand(0);
