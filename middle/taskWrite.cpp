@@ -270,8 +270,9 @@ void* backgroundTaskWriter(void* v)
                 tw.p = t->getPredecessorTasks().size();
                 tw.s = t->getSuccessorTasks();
                 tw.writePos = pos;
-            
+                assert(writeTaskMap.find(id) == writeTaskMap.end());
                 writeTaskMap[id] = tw;
+                //printf("%s", t->toSummaryString().c_str());
             }
             
             bytesWritten += Task::writeContechTask(*t, out);
@@ -314,6 +315,7 @@ void* backgroundTaskWriter(void* v)
     // taskSort is a priority queue, the top element is the oldest task that has all
     //   its prior tasks in the index.
     //
+    unsigned int indexWriteCount = 0;
     while (!taskSort.empty())
     {
         TaskId tid = taskSort.top().second.first;
@@ -325,7 +327,10 @@ void* backgroundTaskWriter(void* v)
         taskSort.pop();
         
         auto twit = writeTaskMap.find(tid);
+        assert(twit != writeTaskMap.end());
         TaskWrapper tw = twit->second;
+        
+        assert(twit->first == tw.self);
         
         for (TaskId succ : tw.s)
         {
@@ -340,10 +345,16 @@ void* backgroundTaskWriter(void* v)
         
         //  Can erase tid, but we don't need the memory, will it speed up?
         writeTaskMap.erase(twit);
+        indexWriteCount ++;
     }
+    printf("Wrote %u tasks to index\n", indexWriteCount);
+    // Failing this assert indicates that the graph either has cycles or is disjoint
+    //   Both case are bad
+    assert(indexWriteCount == taskWriteCount);
     
     // Now write the position of the index
     ct_seek(out, 4);
+    // With ftell, we use long, rather than the uint64 type which we track positions
     ct_write(&pos, sizeof(pos), out);
     
     //
