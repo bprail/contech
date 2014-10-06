@@ -905,6 +905,11 @@ void __ctOMPPopParent()
     __ctThreadLocalNumber = __ctPopIdStack(&__ctParentIdStack);
 }
 
+unsigned int __ctPeekParent()
+{
+    return __ctPeekIdStack(&__ctParentIdStack);
+}
+
 void __ctPushIdStack(pcontech_id_stack *head, unsigned int id)
 {
     pcontech_id_stack elem = malloc(sizeof(contech_id_stack));
