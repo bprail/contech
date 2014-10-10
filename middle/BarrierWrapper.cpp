@@ -10,12 +10,13 @@ BarrierWrapper::BarrierWrapper()
     exitBarrierTask = NULL;
 }
 
-Task* BarrierWrapper::onEnter(Task& arrivingTask, ct_tsc_t arrivalTime)
+Task* BarrierWrapper::onEnter(Task& arrivingTask, ct_tsc_t arrivalTime, ct_addr_t addr)
 {
     // If this is the first entry to the barrier, create a new barrier task
     if (entryBarrierTask == NULL)
     {
         entryBarrierTask = new Task(arrivingTask.getTaskId().getNext(), task_type_barrier);
+        entryBarrierTask->recordMemOpAction(true, 8, addr);
     }
 
     // Start time of the barrier is the time when the latest task arrived

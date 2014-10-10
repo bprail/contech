@@ -471,7 +471,7 @@ reset_middle:
             if (event->bar.onEnter)
             {
                 // Look up the barrier task for this barrier and record arrival
-                Task* barrierTask = barrierList[event->bar.sync_addr].onEnter(*activeContech.activeTask(), startTime);
+                Task* barrierTask = barrierList[event->bar.sync_addr].onEnter(*activeContech.activeTask(), startTime, event->bar.sync_addr);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "arrived at barrier", barrierTask->getTaskId(), startTime, endTime);
             }
 
