@@ -28,13 +28,11 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
-#include "llvm/IR/Dominators.h"
 #else
 #include "llvm/DebugInfo.h"
 #include "llvm/Support/InstIterator.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/DebugLoc.h"
-#include "llvm/Analysis/Dominators.h"
 #endif
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
@@ -52,14 +50,12 @@
 #include "llvm/Support/InstIterator.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/DebugLoc.h"
-#include "llvm/Analysis/Dominators.h"
 #endif
 #endif
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Instrumentation.h"
-#include "llvm/Analysis/PostDominators.h"
 
 #include <map>
 #include <set>
@@ -199,11 +195,7 @@ namespace llvm {
         Value* castSupport(Type*, Value*, Instruction*);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-        #if LLVM_VERSION_MINOR>=5
-        #else
-            AU.addRequired<DominatorTree>();
-            AU.addRequired<PostDominatorTree>();
-        #endif
+        
         }
     };
     ModulePass* createContechPass() { return new Contech(); }
@@ -586,72 +578,6 @@ namespace llvm {
         
         if (ContechMarkFrontend == true) goto cleanup;
         
-        #if LLVM_VERSION_MINOR>=5
-        #else
-        DominatorTree* dTree;
-        // iterate over cfgInfoMap
-        for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(), t; bi != bie; ++bi)
-        {
-            // TODO: replace with a wrapper that operates on each tgts
-            // For each tgt, record its event type and the basic block number(s) that follow
-            // Also, check if the target has already been reached and that it dominates this block.
-            // If this block transitions to a block that dominates it, then there is a loop and the
-            // dominator is a good place to check the buffer size
-            t = bie;
-            if (bi->second->tgts[0] != NULL)
-            {
-                t = cfgInfoMap.find(bi->second->tgts[0]);
-            }
-            if (t == bie)
-            {
-                
-            }
-            else
-            {
-                dTree = &getAnalysis<DominatorTree>(*(bi->first->getParent()));
-                
-                
-                // T is the map entry for tgts[0]
-                if (t->second->hasCheckBuffer == 0)
-                {
-                    t->second->hasCheckBuffer = 1;
-                }
-                else if (t->second->hasCheckBuffer == 1 && dTree->dominates(bi->second->tgts[0], bi->first))
-                {
-                    //addCheckAfterPhi(bi->second->tgts[0]);
-                    t->second->hasCheckBuffer = 2;
-                }
-            }
-            
-            t = bie;
-            if (bi->second->tgts[1] != NULL)
-            {
-                t = cfgInfoMap.find(bi->second->tgts[1]);
-            }
-            if (t == bie)
-            {
-                
-            }
-            else
-            {
-                
-                
-                dTree = &getAnalysis<DominatorTree>(*(bi->first->getParent()));
-                // t is the map entry for tgts[1]
-                if (t->second->hasCheckBuffer == 0)
-                {
-                    t->second->hasCheckBuffer = 1;
-                }
-                else if (t->second->hasCheckBuffer == 1 && dTree->dominates(bi->second->tgts[1], bi->first))
-                {
-                    //addCheckAfterPhi(bi->second->tgts[1]);
-                    t->second->hasCheckBuffer = 2;
-                }
-            }
-        }
-        
-        #endif
-        
 cleanup:     
         ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
         //contechStateFile->seekp(0, ios_base::beg);
@@ -681,7 +607,9 @@ cleanup:
                 //   Then runtime can directly pass the events to the event list
                 contechStateFile->write((char*)&evTy, sizeof(char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
-                contechStateFile->write((char*)&bi->second->containCall, sizeof(unsigned int));
+                // This is the flags field, which is currently 0 or 1 for containing a call
+                unsigned int flags = bi->second->containCall;
+                contechStateFile->write((char*)&flags, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
