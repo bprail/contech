@@ -19,6 +19,9 @@
 void* (__ctBackgroundThreadWriter)(void*);
 void* (__ctBackgroundThreadDiscard)(void*);
 
+bool __ctIsROIEnabled = false;
+bool __ctIsROIActive = false;
+
 extern int ct_orig_main(int, char**);
 
 void __ctCleanupThreadMain(void* v)
@@ -92,6 +95,11 @@ int main(int argc, char** argv)
         {
             exit(1);
         }
+        
+        if (getenv("CONTECH_ROI_ENABLED"))
+        {
+            __ctIsROIEnabled = true;
+        }
     }
     
     __ctThreadInfoList = NULL;
@@ -110,6 +118,12 @@ int main(int argc, char** argv)
     // Invoke main, protected by pthread_cleanup handlers, so that main can exit cleanly with
     // its background thread
     __ctStoreThreadCreate(0, 0, rdtsc());
+    
+    if (__ctIsROIEnabled == true)
+    {
+        __ctQueueBuffer(false);
+    }
+    
     pthread_cleanup_push(__ctCleanupThreadMain, (void*)pt_temp);
     r = ct_orig_main(argc, argv);
     pthread_cleanup_pop(1);

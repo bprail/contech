@@ -174,13 +174,30 @@ void __parsec_bench_begin(int t)
 
  void __parsec_roi_begin()
  {
-    //__ctAllocateLocalBuffer();
+    if (__ctIsROIEnabled == true)
+    {
+        {
+            struct timeb tp;
+            ftime(&tp);
+            printf("CT_ROI_BEGIN: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+        }
+        __ctAllocateLocalBuffer();
+        __ctIsROIActive = true;
+    }
  }
  
  void __parsec_roi_end()
  {
-    // set threadlocal to initbuffer
-    //   flag that create / join need to be recorded
+    if (__ctIsROIEnabled == true)
+    {
+        __ctQueueBuffer(false);
+        __ctIsROIActive = false;
+        {
+            struct timeb tp;
+            ftime(&tp);
+            printf("CT_ROI_END: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+        }
+    }
  }
  
  void __parsec_bench_end()
@@ -196,6 +213,10 @@ void __ctCleanupThread(void* v)
     ct_tsc_t start = rdtsc();
     #endif
     __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    if (__ctIsROIEnabled == true && __ctIsROIActive == false)
+    {
+        __ctAllocateLocalBuffer();
+    }
     __ctStoreThreadJoinInternal(true, __ctThreadLocalNumber, rdtsc());
     __ctQueueBuffer(false);
     __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
@@ -306,6 +327,10 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     free(ptc);
     
     __ctStoreThreadCreate(p, skew, start);
+    if (__ctIsROIEnabled == true && __ctIsROIActive == false)
+    {
+        __ctQueueBuffer(false);
+    }
  
     g = __ctCleanupThread;
     pthread_cleanup_push(g, NULL);
@@ -427,6 +452,10 @@ void __ctQueueBuffer(bool alloc)
     else if (alloc)
     {
         __ctAllocateLocalBuffer();
+    }
+    else
+    {
+        __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
     }
     
 #ifdef CT_OVERHEAD_TRACK
@@ -786,6 +815,11 @@ void __ctOMPThreadCreate(unsigned int parent)
     
     __ctStoreThreadCreate(parent, 1, rdtsc());
     __ctPushIdStack(&__ctThreadIdStack, threadId);
+    
+    if (__ctIsROIEnabled == true && __ctIsROIActive == false)
+    {
+        __ctQueueBuffer(false);
+    }
 }
 
 // create event for thread and task
@@ -870,6 +904,11 @@ void __ctOMPThreadJoin(unsigned int parent)
         __ctOMPTaskJoin();
     }
     
+    if (__ctIsROIEnabled == true && __ctIsROIActive == false)
+    {
+        __ctAllocateLocalBuffer();
+    }
+    
     pcontech_join_stack elem = __ctJoinStack;
     while (elem != NULL)
     {
@@ -889,7 +928,14 @@ void __ctOMPThreadJoin(unsigned int parent)
     __ctThreadLocalNumber = parent;
     __ctThreadLocalBuffer->id = parent;
     __ctStoreThreadJoinInternal(false, threadId, rdtsc());
-    __ctQueueBuffer(true);  // Yes, this time we will be wasting space
+    if (__ctIsROIEnabled == true && __ctIsROIActive == false)
+    {
+        __ctQueueBuffer(false);
+    }
+    else
+    {
+        __ctQueueBuffer(true);  // Yes, this time we will be wasting space
+    }
 }
 
 // Push current ctid onto parent stack

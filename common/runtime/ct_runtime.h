@@ -105,6 +105,9 @@ typedef struct _ct_serial_buffer_sized
 
 extern ct_serial_buffer_sized initBuffer;
 
+extern bool __ctIsROIEnabled;
+extern bool __ctIsROIActive;
+
 extern __thread pct_serial_buffer __ctThreadLocalBuffer;
 extern __thread unsigned int __ctThreadLocalNumber; // no static
 extern __thread pcontech_thread_info __ctThreadInfoList;
