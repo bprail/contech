@@ -38,6 +38,7 @@
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #include "llvm/Constants.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Instructions.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/Type.h"
@@ -438,6 +439,11 @@ namespace llvm {
         tMemOp->isWrite = isWrite;
         tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
         
+        if (tMemOp->size > 4)
+        {
+            errs() << "MemOp of size: " << tMemOp->size << "\n";
+        }
+        
         //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
         //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
         Constant* cPos = ConstantInt::get(int32Ty, memOpPos);
@@ -774,7 +780,7 @@ cleanup:
         Value* posValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
         
-        //errs() << "BB: " << bbid << "\n";
+        errs() << "BB: " << bbid << "\n";
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
             MDNode *N;
