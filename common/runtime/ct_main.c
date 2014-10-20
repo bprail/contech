@@ -96,7 +96,7 @@ int main(int argc, char** argv)
             exit(1);
         }
         
-        if (getenv("CONTECH_ROI_ENABLED"))
+        if (getenv("CONTECH_ROI_ENABLE"))
         {
             __ctIsROIEnabled = true;
         }
