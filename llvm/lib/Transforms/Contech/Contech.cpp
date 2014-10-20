@@ -87,7 +87,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 30
+#define FUNCTIONS_INSTRUMENT_SIZE 31
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -102,6 +102,7 @@ namespace llvm {
                                            {STORE_AND_LEN("parsec_barrier"), BARRIER},
                                            {STORE_AND_LEN("pthread_barrier"), BARRIER},
                                            {STORE_AND_LEN("malloc"), MALLOC},
+                                           {STORE_AND_LEN("xmalloc"), MALLOC},
                                            {STORE_AND_LEN("valloc"), MALLOC},
                                            {STORE_AND_LEN("memalign"), MALLOC2},
                                            {STORE_AND_LEN("operator new"), MALLOC},
