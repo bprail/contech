@@ -15,6 +15,7 @@
 #else
 #if LLVM_VERSION_MINOR>=3
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Type.h"
@@ -168,6 +169,7 @@ namespace llvm {
         
         Constant* pthreadExitFunction;
         GlobalVariable* threadLocalNumber;
+        DataLayout* currentDataLayout;
         Type* int8Ty;
         Type* int32Ty;
         Type* voidTy;
@@ -224,6 +226,11 @@ namespace llvm {
         FunctionType* funI32I32Ty;
 
         LLVMContext &ctx = M.getContext();
+        #if LLVM_VERSION_MINOR>=5
+        currentDataLayout = M.getDataLayout();
+        #else
+        currentDataLayout = new DataLayout(&M);
+        #endif
         int8Ty = Type::getInt8Ty(ctx);
         int32Ty = Type::getInt32Ty(ctx);
         int64Ty = Type::getInt64Ty(ctx);
@@ -298,11 +305,19 @@ namespace llvm {
         // This needs to be machine type here
         //
         #if LLVM_VERSION_MINOR>=5
-        // LLVM 3.5 removed module::getPointerSize()
+        // LLVM 3.5 removed module::getPointerSize() -> DataLayout::getPointerSize()
         //   Let's find malloc instead, which takes size_t and size_t is the size we need
-        auto mFunc = M.getFunction("malloc");
-        FunctionType* mFuncTy = mFunc->getFunctionType();
-        pthreadTy = mFuncTy->getParamType(0);
+        //auto mFunc = M.getFunction("malloc");
+        //FunctionType* mFuncTy = mFunc->getFunctionType();
+        //pthreadTy = mFuncTy->getParamType(0);
+        if (currentDataLayout->getPointerSize() == llvm::Module::Pointer64)
+        {
+            pthreadTy = int64Ty;
+        }
+        else
+        {
+            pthreadTy = int32Ty;
+        }
         #else
         if (M.getPointerSize() == llvm::Module::Pointer64)
         {
@@ -656,7 +671,24 @@ cleanup:
         else if (t->isPtrOrPtrVectorTy()) { errs() << *t << " is pointer vector\n";}
         else if (t->isArrayTy()) { errs() << *t << " is array\n";}
         else if (t->isStructTy()) { errs() << *t << " is struct\n";}
-        errs() << "Failed get size - " << *t << "\n";
+        
+        // DataLayout::getStructLayout(StructType*)->getSizeInBytes()
+        StructType* st = dyn_cast<StructType>(t);
+        if (st == NULL)
+        {
+            errs() << "Failed get size - " << *t << "\n";
+            return 0;
+        }
+        auto stLayout = currentDataLayout->getStructLayout(st);
+        if (stLayout == NULL)
+        {
+            errs() << "Failed get size - " << *t << "\n";
+        }
+        else
+        {
+            return stLayout->getSizeInBytes();
+        }
+        
         return 0;
     }    
     
@@ -741,6 +773,8 @@ cleanup:
         bool containKeyCall = false;
         Value* posValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
+        
+        //errs() << "BB: " << bbid << "\n";
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
             MDNode *N;
