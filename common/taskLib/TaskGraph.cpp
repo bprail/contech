@@ -13,6 +13,14 @@ TaskGraph* TaskGraph::initFromFile(char* fname)
     else {return new TaskGraph(f);}
 }
 
+TaskGraph* TaskGraph::initFromFile(const char* fname)
+{
+    ct_file* f = create_ct_file_r(fname);
+    
+    if (f == NULL) { return NULL;}
+    else {return new TaskGraph(f);}
+}
+
 TaskGraph* TaskGraph::initFromFile(ct_file* f)
 {
     if (f == NULL) { return NULL;}

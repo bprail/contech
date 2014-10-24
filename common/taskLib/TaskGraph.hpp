@@ -44,6 +44,7 @@ private:
 
 public:
     static TaskGraph* initFromFile(char*);
+    static TaskGraph* initFromFile(const char*);
     static TaskGraph* initFromFile(ct_file*);
     
     Task* getNextTask();
