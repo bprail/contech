@@ -266,11 +266,12 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     pcall([OBJCOPY, "--input binary", "--output elf32-littlearm", "--binary-architecture arm", "contech.bin", "contech_state.o"])
                 else:
                     pcall([OBJCOPY, "--input binary", "--output elf64-x86-64", "--binary-architecture i386", "contech.bin", "contech_state.o"])
+                    #pcall([OBJCOPY, "--input binary", "--output elf32-i386", "--binary-architecture i386", "contech.bin", "contech_state.o"])
 
                 # Compile final executable
+                pcall(["llvm-link", ofiles, RUNTIME, "-o", out + "_ct.link.bc"])
                 if ARM == True:
-                    pcall(["llvm-link", ofiles, RUNTIME, "-o", out + "_ct.bc"])
-                    pcall([OPT, "-always-inline", out + "_ct.bc", "-o", out + "_ct_inline.bc"])
+                    pcall([OPT, "-always-inline", out + "_ct.link.bc", "-o", out + "_ct_inline.bc"])
                     pcall([CC, CFLAGS, "-c -o", out + "_ct.o", out + "_ct_inline.bc"])
                     pcall([CC, out + "_ct.o", CFLAGS, "-o", out, "-lpthread", "contech_state.o"])
                 else:
