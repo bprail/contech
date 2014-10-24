@@ -15,4 +15,4 @@ $(BITCODE): ct_runtime.c ct_main.c
 
 
 clean:
-	rm  $(BITCODE)
+	rm  $(BITCODE) $(OBJECTS)
