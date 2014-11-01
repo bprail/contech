@@ -109,7 +109,7 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
     return false;
 }
 
-void SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cache_stats_t* p_stats)
+bool SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cache_stats_t* p_stats)
 {
     bool split = false;
     unsigned int bbMissCount = 0;
@@ -160,7 +160,10 @@ void SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cac
         
         
         p_stats->miss_penalty += bbMissCount;
+        return false;
     }
+    
+    return true;
 }
 
 double SimpleCache::getMissRate()
@@ -168,46 +171,67 @@ double SimpleCache::getMissRate()
     return (double)(read_misses + write_misses) / (double)(accesses);
 }
 
-SimpleCacheBackend::SimpleCacheBackend(uint64_t c, uint64_t s) {
+SimpleCacheBackend::SimpleCacheBackend(uint64_t c, uint64_t s, int printMissLoc) {
     global_c = c;
     global_s = s;
     assert(global_c >= (global_s + global_b));
-    p_stats = new cache_stats_t;
     // zero out p_stats
+    p_stats = new cache_stats_t;
+    
+    if (printMissLoc == 1)
+        printMissLines = true;
+    else
+        printMissLines = false;
 }
 
 void SimpleCacheBackend::updateBackend(Task* currentTask)
 {
-    auto memOps = currentTask->getMemOps();
+    //auto memOps = currentTask->getMemOps();
     ContextId ctid = currentTask->getContextId();
     bool rw = false;
-    for (auto iReq = memOps.begin(), eReq = memOps.end(); iReq != eReq; ++iReq)
-    {
-        MemoryAction ma = *iReq;
-
-        char numOfBytes = (0x1 << ma.pow_size);
-        uint64_t address = ma.addr;
+    ctid = 0;
     
-        p_stats->accesses++;
-        
-        if (ma.type == action_type_mem_write)
+    uint64_t lastBBID = 0;
+    auto bbOps = currentTask->getBasicBlockActions();
+    for (auto iBBs = bbOps.begin(), eBBs = bbOps.end(); iBBs != eBBs; ++iBBs)
+    {
+        BasicBlockAction bba = *iBBs;
+        lastBBID = bba.basic_block_id;
+        auto memOps = iBBs.getMemOps();
+        unsigned int memOpPos = 0;
+        for (auto iReq = memOps.begin(), eReq = memOps.end(); iReq != eReq; ++iReq, memOpPos++)
         {
-            p_stats->writes++;
-            rw = true;
-        }
-        else
-        {
-            p_stats->reads++;
-            rw = false;
-        }
+            MemoryAction ma = *iReq;
+
+            char numOfBytes = (0x1 << ma.pow_size);
+            uint64_t address = ma.addr;
         
-        contextCacheState[ctid].updateCache(rw, numOfBytes, address, p_stats);
+            p_stats->accesses++;
+            
+            if (ma.type == action_type_mem_write)
+            {
+                p_stats->writes++;
+                rw = true;
+            }
+            else
+            {
+                p_stats->reads++;
+                rw = false;
+            }
+            
+            if (!contextCacheState[ctid].updateCache(rw, numOfBytes, address, p_stats))
+            {
+                basicBlockMisses[(lastBBID << 32) + memOpPos] ++;
+            }
+        }
     }
 }
 
 void SimpleCacheBackend::resetBackend()
 {
     contextCacheState.clear();
+    basicBlockMisses.clear();
+    // TODO: clear p_stats
 }
 
 void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
@@ -222,6 +246,17 @@ void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
         sum += mr;
     }
     
+    unsigned int maxMissCount = 0;
+    uint64_t maxBBMissor = 0;
+    for (auto it = basicBlockMisses.begin(), et = basicBlockMisses.end(); it != et; ++it)
+    {
+        if (it->second > maxMissCount)
+        {
+            maxMissCount = it->second;
+            maxBBMissor = it->first;
+        }
+    }
+    
     std::nth_element(missRates.begin(), missRates.begin() + (missRates.size() / 2), missRates.end());
     double median = *(missRates.begin() + (missRates.size() / 2));
     
@@ -229,4 +264,22 @@ void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
                                        *min_element(missRates.begin(), missRates.end()), 
                                        median,
                                        *max_element(missRates.begin(), missRates.end()));
+    if (printMissLines == false) return;
+    
+    if (maxMissCount > 0)
+    {
+        fprintf(f, "Max Misses, Percent Total Misses, BBID, MEMOP, Function, File:line\n");
+        for (auto it = basicBlockMisses.begin(), et = basicBlockMisses.end(); it != et; ++it)
+        {
+            unsigned int bbid = ((it->first) >> 32);
+            auto bbi = tgi->getBasicBlockInfo(bbid);
+            fprintf(f, "%u, %lf, %u, %u, %s, %s:%u\n", it->second, 
+                                        (((it->second) / (double)p_stats->misses) * 100.0),
+                                         bbid, 
+                                         (unsigned int)(it->first), 
+                                         bbi.functionName.c_str(), 
+                                         bbi.fileName.c_str(),
+                                         bbi.lineNumber);
+        }
+    }
 }

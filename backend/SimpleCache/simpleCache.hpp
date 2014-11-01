@@ -45,20 +45,22 @@ struct cache_line
 public:    
     SimpleCache();
     double getMissRate();
-    void updateCache(bool rw, char numOfBytes, uint64_t address, cache_stats_t* p_stats);
+    bool updateCache(bool rw, char numOfBytes, uint64_t address, cache_stats_t* p_stats);
 };
 
 class SimpleCacheBackend  : public contech::Backend
 {
     std::map <contech::ContextId, SimpleCache> contextCacheState;
+    std::map <uint64_t, unsigned int> basicBlockMisses;
     cache_stats_t* p_stats;
+    bool printMissLines;
 
 public:
     virtual void resetBackend();
     virtual void updateBackend(contech::Task*);
     virtual void completeBackend(FILE*, contech::TaskGraphInfo*);
     
-    SimpleCacheBackend(uint64_t c, uint64_t s);
+    SimpleCacheBackend(uint64_t c, uint64_t s, int printMissLoc);
 };
 
 #endif
