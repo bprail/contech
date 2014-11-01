@@ -23,6 +23,7 @@ def main(arg):
         exit()
     
     p = 1
+    fig = plt.figure(figsize=(7, 7))
     for file_in in arg[1:]:
         
         avg = []
@@ -40,8 +41,8 @@ def main(arg):
         if (len(avg) == 0):
             continue
         print len(avg)
-        if (p <= 24):
-            ax = plt.subplot(6,4, p)
+        if (p <= 30):
+            ax = plt.subplot(7,4, p)
             #ax = plt.subplot(2,2, p)
             plt.ylim(0,24)
             box = ax.get_position()
