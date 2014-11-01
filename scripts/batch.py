@@ -5,9 +5,11 @@ import glob
 import json
 
 
-def main():
-    launchBackend("harmony")
-    launchBackend("parhist")
+def main(arg):
+    if len(arg) == 1:
+        print "Usage: {0} <backends>\n".format(arg[0])
+    for a in arg[1:]:
+        launchBackend(a)
 
 def launchBackend(backend):
     CONTECH_HOME = util.findContechInstall()
@@ -17,10 +19,11 @@ def launchBackend(backend):
     ./run{3}.py --cached {0} -n 16 -i {2} --backend {1}
 """
     bset = util.Benchmarks.all
-    for b in bset:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=4"], queue="newpasta")
     for b in util.Benchmarks.nas:
         util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "A", "_nas"), resources=["nodes=1:ppn=4"], queue="newpasta") 
+    for b in bset:
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=4"], queue="newpasta")
+    
     
 def buildLocal(benchmark):
     CONTECH_HOME = util.findContechInstall()
