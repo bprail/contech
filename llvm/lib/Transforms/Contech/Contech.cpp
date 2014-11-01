@@ -1002,7 +1002,8 @@ cleanup:
             // <result> = load [volatile] <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>][, !invariant.load !<index>]
             // Load and store are identical except the cIsWrite is set accordingly.
             // 
-            if (LoadInst *li = dyn_cast<LoadInst>(&*I)){
+            if (LoadInst *li = dyn_cast<LoadInst>(&*I)) {
+                if (memOpPos >= memOpCount) continue;
                 pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
                 memOpPos ++;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
@@ -1018,6 +1019,7 @@ cleanup:
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) {
+                if (memOpPos >= memOpCount) continue;
                 pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
                 memOpPos ++;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
