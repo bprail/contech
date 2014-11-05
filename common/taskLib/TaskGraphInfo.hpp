@@ -19,6 +19,7 @@ using namespace std;
 namespace contech {
 
 #define BBI_FLAG_CONTAIN_CALL 0x1
+#define BBI_FLAG_CONTAIN_GLOBAL_ACCESS 0x10
 
 class BasicBlockInfo
 {
