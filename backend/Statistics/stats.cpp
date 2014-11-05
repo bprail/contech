@@ -24,6 +24,8 @@ int main(int argc, char const *argv[])
     uint64 totalTasks = 0;
     uint64 totalBasicBlocks = 0;
     uint64 totalMemOps = 0;
+    uint64 totalBlocksWithGlobals = 0;
+    uint64 totalBlocksWithCalls = 0;
 
     double averageBasicBlocksPerTask = 0;
     uint maxBasicBlocksPerTask = 0;
@@ -42,7 +44,10 @@ int main(int argc, char const *argv[])
     set<uint> uniqueBlocks;
 
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
+    
     if (tg == NULL) {}
+    
+    TaskGraphInfo* tgi = tg->getTaskGraphInfo();
 
     while(Task* currentTask = tg->readContechTask()){
 
@@ -59,6 +64,17 @@ int main(int argc, char const *argv[])
                 {
                     BasicBlockAction bb = *f;
                     uniqueBlocks.insert((uint)bb.basic_block_id);
+                    
+                    auto bbi = tgi->getBasicBlockInfo((uint)bb.basic_block_id);
+                    if (bbi.flags & BBI_FLAG_CONTAIN_CALL)
+                    {
+                        totalBlocksWithCalls++;
+                    }
+                    if (bbi.flags & BBI_FLAG_CONTAIN_GLOBAL_ACCESS)
+                    {
+                        totalBlocksWithGlobals++;
+                    }
+                    
                     totalBasicBlocks++;
                     basicBlocksInTask++;
 
@@ -115,6 +131,9 @@ int main(int argc, char const *argv[])
     printf("Unique Basic Blocks: %llu\n", uniqueBlocks.size());
     printf("Average Basic Blocks per Task: %f\n", averageBasicBlocksPerTask);
     printf("Max Basic Blocks per Task: %u\n", maxBasicBlocksPerTask);
+    printf("Total Basic Blocks: %llu\n", totalBasicBlocks);
+    printf("Blocks with Function Calls: %lf\n", (double)(totalBlocksWithCalls) / (double)(totalBasicBlocks));
+    printf("Blocks with Global Accesses: %lf\n", (double)(totalBlocksWithGlobals) / (double)(totalBasicBlocks));
     printf("\n");
     printf("Total MemOps: %llu\n", totalMemOps);
     printf("Average MemOps per Task: %f\n", averageMemOpsPerTask);
