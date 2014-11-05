@@ -23,6 +23,7 @@ def main(arg):
         exit()
     
     p = 1
+    fig = plt.figure(figsize=(7, 7))
     for harmony_in in arg[1:]:
         max_threads = 0
         max_value = 0
@@ -76,8 +77,8 @@ def main(arg):
             continue
         print "Max Threads: {0}\tMax Value: {1}\tMax Weight: {2}\tNonZero BBV: {3}".format(max_threads, max_value, max_weight, len(bbData))
         
-        if (p <= 24):
-            ax = plt.subplot(6,4, p)
+        if (p <= 30):
+            ax = plt.subplot(7,4, p)
             plt.xlim(1,max_threads+1)
             plt.ylim(0,len(bbData))
             ypos = 0
