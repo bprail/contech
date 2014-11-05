@@ -444,6 +444,15 @@ namespace llvm {
             errs() << "MemOp of size: " << tMemOp->size << "\n";
         }
         
+        if (GlobalValue* gv = dyn_cast<GlobalValue>(addr))
+        {
+            tMemOp->isGlobal = true;
+        }
+        else
+        {
+            tMemOp->isGlobal = false;
+        }
+        
         //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
         //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
         Constant* cPos = ConstantInt::get(int32Ty, memOpPos);
@@ -630,7 +639,7 @@ cleanup:
                 contechStateFile->write((char*)&evTy, sizeof(char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
                 // This is the flags field, which is currently 0 or 1 for containing a call
-                unsigned int flags = bi->second->containCall;
+                unsigned int flags = bi->second->containCall | (bi->second->containGlobalAccess << 1);
                 contechStateFile->write((char*)&flags, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
@@ -869,6 +878,7 @@ cleanup:
         }
         bi->id = bbid;
         bi->first_op = NULL;
+        bi->containGlobalAccess = false;
         bi->lineNum = lineNum;
         bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
@@ -1016,6 +1026,11 @@ cleanup:
                     }
                     t->next = tMemOp;
                 }
+                
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
+                }
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) {
@@ -1031,6 +1046,11 @@ cleanup:
                         t = t->next;
                     }
                     t->next = tMemOp;
+                }
+                
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
                 }
             }
             else if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
