@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import sys
 import util
 import glob
 import json
@@ -109,4 +110,4 @@ def statsRun(benchmark, n, input, option):
     
     
 if __name__ == "__main__":
-    main()
+    main(sys.argv)
