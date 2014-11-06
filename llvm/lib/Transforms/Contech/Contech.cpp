@@ -436,6 +436,8 @@ namespace llvm {
     {
         pllvm_mem_op tMemOp = new llvm_mem_op;
         
+        tMemOp->addr = NULL;
+        tMemOp->next = NULL;
         tMemOp->isWrite = isWrite;
         tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
         
@@ -447,10 +449,13 @@ namespace llvm {
         if (GlobalValue* gv = dyn_cast<GlobalValue>(addr))
         {
             tMemOp->isGlobal = true;
+            //errs() << "Is global - " << *addr << "\n";
+            //return tMemOp; // HACK!
         }
         else
         {
             tMemOp->isGlobal = false;
+            //errs() << "Is not global - " << *addr << "\n";
         }
         
         //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
@@ -462,9 +467,6 @@ namespace llvm {
         CallInst* smo = CallInst::Create(storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
         assert(smo != NULL);
         smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
-        
-        tMemOp->addr = NULL;
-        tMemOp->next = NULL;
         
         return tMemOp;
     }
@@ -639,7 +641,8 @@ cleanup:
                 contechStateFile->write((char*)&evTy, sizeof(char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
                 // This is the flags field, which is currently 0 or 1 for containing a call
-                unsigned int flags = bi->second->containCall | (bi->second->containGlobalAccess << 1);
+                unsigned int flags = ((unsigned int)bi->second->containCall) | 
+                                     ((unsigned int)bi->second->containGlobalAccess << 1);
                 contechStateFile->write((char*)&flags, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
@@ -789,7 +792,7 @@ cleanup:
         Value* posValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
         
-        errs() << "BB: " << bbid << "\n";
+        //errs() << "BB: " << bbid << "\n";
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
             MDNode *N;
@@ -1016,6 +1019,11 @@ cleanup:
                 if (memOpPos >= memOpCount) continue;
                 pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
                 memOpPos ++;
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
+                }
+                
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
                 {
@@ -1025,11 +1033,6 @@ cleanup:
                         t = t->next;
                     }
                     t->next = tMemOp;
-                }
-                
-                if (tMemOp->isGlobal)
-                {
-                    bi->containGlobalAccess = true;
                 }
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
@@ -1037,6 +1040,12 @@ cleanup:
                 if (memOpPos >= memOpCount) continue;
                 pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
                 memOpPos ++;
+                
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
+                }
+                
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
                 {
@@ -1046,11 +1055,6 @@ cleanup:
                         t = t->next;
                     }
                     t->next = tMemOp;
-                }
-                
-                if (tMemOp->isGlobal)
-                {
-                    bi->containGlobalAccess = true;
                 }
             }
             else if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
