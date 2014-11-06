@@ -66,11 +66,12 @@ int main(int argc, char const *argv[])
                     uniqueBlocks.insert((uint)bb.basic_block_id);
                     
                     auto bbi = tgi->getBasicBlockInfo((uint)bb.basic_block_id);
-                    if (bbi.flags & BBI_FLAG_CONTAIN_CALL)
+                    
+                    if (0 != (bbi.flags & BBI_FLAG_CONTAIN_CALL))
                     {
                         totalBlocksWithCalls++;
                     }
-                    if (bbi.flags & BBI_FLAG_CONTAIN_GLOBAL_ACCESS)
+                    if (0 != (bbi.flags & BBI_FLAG_CONTAIN_GLOBAL_ACCESS))
                     {
                         totalBlocksWithGlobals++;
                     }
@@ -133,7 +134,7 @@ int main(int argc, char const *argv[])
     printf("Max Basic Blocks per Task: %u\n", maxBasicBlocksPerTask);
     printf("Total Basic Blocks: %llu\n", totalBasicBlocks);
     printf("Blocks with Function Calls: %lf\n", (double)(totalBlocksWithCalls) / (double)(totalBasicBlocks));
-    printf("Blocks with Global Accesses: %lf\n", (double)(totalBlocksWithGlobals) / (double)(totalBasicBlocks));
+    printf("Blocks with Global Accesses: %lf (%llu)\n", (double)(totalBlocksWithGlobals) / (double)(totalBasicBlocks), totalBlocksWithGlobals);
     printf("\n");
     printf("Total MemOps: %llu\n", totalMemOps);
     printf("Average MemOps per Task: %f\n", averageMemOpsPerTask);
