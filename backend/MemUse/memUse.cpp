@@ -61,7 +61,12 @@ void BackendMemUse::updateBackend(contech::Task* t)
                     refCountPlus[addr] += 1;
                 }
                 sizeOfAlloc[addr] = allocSize;
-                sizeOfAllocNoErase[addr] = allocSize;
+                {
+                    track_stats ts;
+                    ts.size = allocSize;
+                    ts.hits = 0;
+                    sizeOfAllocNoErase[addr] = ts;
+                }
                 
                 if (seqAllocCurrent == 0)
                 {
@@ -83,7 +88,7 @@ void BackendMemUse::updateBackend(contech::Task* t)
                 
                 if (allocSize == 0)
                 {
-                    allocSize = sizeOfAllocNoErase[addr];
+                    allocSize = sizeOfAllocNoErase[addr].size;
                 }
                 
                 auto rfc = refCountPlus.find(addr);
@@ -128,6 +133,7 @@ void BackendMemUse::updateBackend(contech::Task* t)
                 if (addr >= elem->first && (addr + size) <= (elem->first + elem->second))
                 {
                     // HEAP
+                    sizeOfAllocNoErase[elem->first].hits++;
                 }
                 else
                 {
@@ -138,6 +144,7 @@ void BackendMemUse::updateBackend(contech::Task* t)
                         if (addr >= elem->first && (addr + size) <= (elem->first + elem->second))
                         {
                             // Known stack
+                            
                             continue;
                         }
                         
@@ -208,5 +215,9 @@ void BackendMemUse::completeBackend(FILE* f, contech::TaskGraphInfo*)
     for (auto it = sizeStats.begin(), et = sizeStats.end(); it != et; ++it)
     {
         fprintf(f, "%d, %d, %d\n", it->first, it->second.alloc_count, it->second.free_count);
+    }
+    for (auto it = sizeOfAllocNoErase.begin(), et = sizeOfAllocNoErase.end(); it != et; ++it)
+    {
+        fprintf(f, "%llx (%d, %d)\n", it->first, it->second.size, it->second.hits);
     }
 }
