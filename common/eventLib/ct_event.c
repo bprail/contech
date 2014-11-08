@@ -1,3 +1,4 @@
+#define SCAN_TRACE
 #include "ct_event.h"
 #include <stdlib.h>
 #include <sys/types.h>
@@ -422,12 +423,16 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             {
                 // Everything we've read so far, except this event (12B)
                 bufSum = sum - 12;
+                
             }
             else if ((sum - 12) != bufSum)
             {
                 fprintf(stderr, "Marker at %llu bytes, should be at 12 + %llu\n", sum, bufSum);
                 dumpAndTerminate(fptr);
             }
+            #ifdef SCAN_TRACE
+                fprintf(stderr, "ZERO: %llu\t NEG1: %llu\tBYTES: %llu\n", zeroBytes, negOneBytes, bufSum);
+            #endif
             bufSum += npe->buf.pos + 12;  // 12 for the buffer event
             lastBufPos = npe->buf.pos;
             {

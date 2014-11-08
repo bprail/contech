@@ -13,6 +13,11 @@ extern "C"
 #endif
 
 typedef struct _ct_file ct_file;
+
+#ifdef SCAN_TRACE
+extern unsigned long int zeroBytes;
+extern unsigned long int negOneBytes;
+#endif
     
 //default constructor, returns a pointer to a ct_file with a clean slate
 ct_file* create_ct_file_blank();
