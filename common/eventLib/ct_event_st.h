@@ -20,9 +20,11 @@ typedef unsigned long long ct_addr_t;
 typedef struct _ct_memory_op {
   union {
     struct {
+        // NB. Addr must come first so that the storing to data32[0] is completely stored into
+        //   the address field.
+        unsigned long long addr : 58;
         unsigned long long is_write : 1;
         unsigned long long pow_size : 3; // the size of the op is 2^pow_size
-        unsigned long long addr : 58;
     };
     unsigned long long data;
     unsigned int data32[2];
