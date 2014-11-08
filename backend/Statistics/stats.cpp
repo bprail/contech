@@ -49,7 +49,7 @@ int main(int argc, char const *argv[])
     
     TaskGraphInfo* tgi = tg->getTaskGraphInfo();
 
-    while(Task* currentTask = tg->readContechTask()){
+    while(Task* currentTask = tg->getNextTask()){
 
         totalTasks++;
         uint basicBlocksInTask = 0;
@@ -60,7 +60,7 @@ int main(int argc, char const *argv[])
             case task_type_basic_blocks:
             {
                 auto bba = currentTask->getBasicBlockActions();
-                for (auto f = bba.begin(), e = bba.end(); f != e; f++)
+                for (auto f = bba.begin(), e = bba.end(); f != e; ++f)
                 {
                     BasicBlockAction bb = *f;
                     uniqueBlocks.insert((uint)bb.basic_block_id);
