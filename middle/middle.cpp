@@ -147,6 +147,7 @@ reset_middle:
             case ct_event_task_join:
             case ct_event_basic_block:
             case ct_event_memory:
+            case ct_event_bulk_memory_op:
                 break;
             default:
                 deleteContechEvent(event);
@@ -538,7 +539,7 @@ reset_middle:
         // Memcpy etc
         else if (event->event_type == ct_event_bulk_memory_op)
         {
-        
+            activeContech.activeTask()->recordMemCpyAction(event->bm.size, event->bm.dst_addr, event->bm.src_addr);
         }
         // End switch block on event type
 
@@ -551,102 +552,37 @@ reset_middle:
     if (DEBUG) printf("Processed %llu events.\n", eventCount);
     // Write out all tasks that are ready to be written
     
-    if (parallelMiddle == false)
+    char* d = NULL;
+    
+    for (auto& p : context)
     {
-        
-        // Put all the tasks in a map so we can look them up by ID
-        map<TaskId, pair<Task*, int> > tasks;
-        uint64 taskCount = 0;
-        for (auto& p : context)
+        Context& c = p.second;
+        for (Task* t : c.tasks)
         {
-            Context& c = p.second;
-            for (Task* t : c.tasks)
-            {
-                tasks[t->getTaskId()] = make_pair(t, t->getPredecessorTasks().size());
-                taskCount += 1;
-            }
+            backgroundQueueTask(t);
         }
-
-        {
-            struct timeb tp;
-            ftime(&tp);
-            printf("MIDDLE_WRITE: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
-        }
-        
-        // Write out all tasks in breadth-first order, starting with task 0
-        priority_queue<pair<ct_tsc_t, TaskId>, vector<pair<ct_tsc_t, TaskId> >, first_compare > workList;
-        workList.push(make_pair(tasks[0].first->getStartTime(), 0));
-        uint64 bytesWritten = 0;
-        while (!workList.empty())
-        {
-            TaskId id = workList.top().second;
-            Task* t = tasks[id].first;
-            workList.pop();
-            // Task will be null if it has already been handled
-            if (t != NULL)
-            {
-                // Have all my predecessors have been written out?
-                bool ready = true;
-
-                if (!ready)
-                {
-                    // Push to the back of the list
-                    assert(0);
-                }
-                else
-                {
-                    // Write out the task
-                    //t->setFileOffset(bytesWritten);
-                    bytesWritten += Task::writeContechTask(*t, out);
-                    
-                    // Add successors to the work list
-                    for (TaskId succ : t->getSuccessorTasks())
-                    {
-                        tasks[succ].second --;
-                        if (tasks[succ].second == 0)
-                            workList.push(make_pair(tasks[succ].first->getStartTime(), succ));
-                    }
-                    
-                    // Delete the task
-                    delete t;
-                    tasks[id].first = NULL;
-                }
-            }
-        }
-
-        if (DEBUG) printf("Wrote %llu tasks to file.\n", taskCount);
     }
-    else
+    
+    pthread_mutex_lock(&taskQueueLock);
+    noMoreTasks = true;
+    pthread_cond_signal(&taskQueueCond);
+    pthread_mutex_unlock(&taskQueueLock);
     {
-        char* d = NULL;
-        
-        for (auto& p : context)
-        {
-            Context& c = p.second;
-            for (Task* t : c.tasks)
-            {
-                backgroundQueueTask(t);
-            }
-        }
-        
-        pthread_mutex_lock(&taskQueueLock);
-        noMoreTasks = true;
-        pthread_cond_signal(&taskQueueCond);
-        pthread_mutex_unlock(&taskQueueLock);
-            {
-                struct timeb tp;
-                ftime(&tp);
-                printf("MIDDLE_QUEUE: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
-            }
-        pthread_join(backgroundT, (void**) &d);
+        struct timeb tp;
+        ftime(&tp);
+        printf("MIDDLE_QUEUE: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
     }
-
-//    printf("Max Queued Event Count: %u\n", maxQueuedCount);
+    pthread_join(backgroundT, (void**) &d);
     
     {
         struct timeb tp;
         ftime(&tp);
         printf("MIDDLE_END: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
+    }
+    
+    if (DEBUG)
+    {
+        displayContechEventStats();
     }
     
     close_ct_file(out);
