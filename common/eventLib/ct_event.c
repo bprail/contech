@@ -1,4 +1,3 @@
-#define SCAN_TRACE
 #include "ct_event.h"
 #include <stdlib.h>
 #include <sys/types.h>
@@ -430,9 +429,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
                 fprintf(stderr, "Marker at %llu bytes, should be at 12 + %llu\n", sum, bufSum);
                 dumpAndTerminate(fptr);
             }
-            #ifdef SCAN_TRACE
-                fprintf(stderr, "ZERO: %llu\t NEG1: %llu\tBYTES: %llu\n", zeroBytes, negOneBytes, bufSum);
-            #endif
+            
             bufSum += npe->buf.pos + 12;  // 12 for the buffer event
             lastBufPos = npe->buf.pos;
             {
@@ -449,9 +446,9 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         
         case (ct_event_bulk_memory_op):
         {
-            fread_check(&npe->bm.isWrite, sizeof(bool), 1, fptr);
             fread_check(&npe->bm.size, sizeof(unsigned long long), 1, fptr);
-            fread_check(&npe->bm.alloc_addr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->bm.dst_addr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->bm.src_addr, sizeof(ct_addr_t), 1, fptr);
         }
         break;
         
@@ -476,7 +473,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             else
                 fprintf(stderr, "Event Version set: %d\tBasic Block table: %d\n", version, bb_count);
                 
-                
+            // setDebugScan();
             for (int i = 0; i < 512; i++) binInfo[i] = 0;
         }
         break;
@@ -486,6 +483,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
             assert(!isCompressed(fptr));
             fprintf(stderr, "ERROR: type %d not supported at %llu\n", npe->event_type, sum);
             fprintf(stderr, "\tPrevious event - %d with ID - %d\n", lastType, lastID);
+            dumpAndTerminate(fptr);
         }
         break;
     }
@@ -570,4 +568,11 @@ void displayContechEventDebugInfo()
     }
     //fprintf(stderr, "Last id - %d, type - %d\n", lastID, lastType);
     fflush(stderr);
+}
+
+void displayContechEventStats()
+{
+#ifdef SCAN_TRACE
+    fprintf(stderr, "ZERO: %llu\t NEG1: %llu\tBYTES: %llu\n", zeroBytes, negOneBytes, bufSum);
+#endif
 }

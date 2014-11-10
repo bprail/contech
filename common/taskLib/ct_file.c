@@ -3,8 +3,7 @@
 #include <stdio.h>
 #include <pthread.h>
 
-#define SCAN_TRACE
-#ifdef SCAN_TRACE
+char scanTraceFlag = 0;
 unsigned long int zeroBytes = 0;
 unsigned long int negOneBytes = 0;
 
@@ -17,8 +16,6 @@ void scanTrace(unsigned char* buf, int len)
         if (buf[i] == 0xff) negOneBytes++;
     }
 }
-
-#endif
 
 //Class to abstract file handles, compressed or uncompressed. 
 struct _ct_file
@@ -125,9 +122,10 @@ size_t ct_read(void * ptr, size_t size, ct_file* handle){
         read = fread(ptr,1,size,getUncompressedHandle(handle));
     }
     
-#ifdef SCAN_TRACE
-    scanTrace(ptr, size);
-#endif
+    if (scanTraceFlag != 0)
+    {
+        scanTrace(ptr, size);
+    }
     
     return read;
 }
@@ -198,4 +196,9 @@ int ct_lock(ct_file* handle)
 int ct_unlock(ct_file* handle)
 {
     return pthread_mutex_unlock(&handle->fileLock);
+}
+
+void setDebugScan()
+{
+    scanTraceFlag = 1;
 }

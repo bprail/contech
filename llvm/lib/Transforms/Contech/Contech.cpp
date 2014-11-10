@@ -217,6 +217,7 @@ namespace llvm {
         FunctionType* funVoidPtrVoidTy;
         FunctionType* funVoidVoidTy;
         FunctionType* funVoidI8I64VoidPtrTy;
+        FunctionType* funVoidI64VoidPtrVoidPtrTy;
         FunctionType* funVoidI8Ty;
         FunctionType* funVoidI32Ty;
         FunctionType* funVoidI32I32Ty;
@@ -336,7 +337,9 @@ namespace llvm {
         Type* argsME[] = {int8Ty, pthreadTy, voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsME, 3), false);
         storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
-        storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI8I64VoidPtrTy);
+        Type* argsBulkMem[] = {pthreadTy, voidPtrTy, voidPtrTy};
+        funVoidI64VoidPtrVoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
+        storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
         
         storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
         
@@ -1539,12 +1542,10 @@ cleanup:
                 break;
                 default:
                     // TODO: Function->isIntrinsic()
-                    if (0 == __ctStrCmp(fn, "memcpy"))
+                    if (0 == __ctStrCmp(fn, "memcpy")  ||
+                        0 == __ctStrCmp(fn, "memmove"))
                     {
-                        Value* cArgL[] = {ConstantInt::get(int8Ty, 0), ci->getArgOperand(2), ci->getArgOperand(1)};
-                        debugLog("storeBulkMemoryOpFunction @" << __LINE__);
-                        CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgL, 3), "", I);
-                        Value* cArgS[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(2), ci->getArgOperand(0)};
+                        Value* cArgS[] = {ci->getArgOperand(2), ci->getArgOperand(0), ci->getArgOperand(1)};
                         debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                         CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
                         hasUninstCall = true;
@@ -1555,10 +1556,7 @@ cleanup:
                         {
                             // LLVM.memcpy can take i32 or i64 for size of copy
                             Value* castSize = castSupport(pthreadTy, ci->getArgOperand(2), I);
-                            Value* cArgL[] = {ConstantInt::get(int8Ty, 0), castSize, ci->getArgOperand(1)};
-                            debugLog("storeBulkMemoryOpFunction @" << __LINE__);
-                            CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgL, 3), "", I);
-                            Value* cArgS[] = {ConstantInt::get(int8Ty, 1), castSize, ci->getArgOperand(0)};
+                            Value* cArgS[] = {castSize, ci->getArgOperand(0), ci->getArgOperand(1)};
                             debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
                             hasUninstCall = true;

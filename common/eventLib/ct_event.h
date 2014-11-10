@@ -8,6 +8,7 @@ pct_event createContechEvent(ct_file*);
 void deleteContechEvent(pct_event);
 void displayContechEventDebugInfo();
 void displayContechEventDiagInfo();
+void displayContechEventStats();
 void resetEventLib();
 
 #endif

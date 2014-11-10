@@ -123,9 +123,9 @@ typedef struct _ct_buffer_info
 
 typedef struct _ct_bulk_memory
 {
-    bool isWrite;
     unsigned long long size;
-    ct_addr_t alloc_addr;
+    ct_addr_t dst_addr;
+    ct_addr_t src_addr;
 } ct_bulk_memory, *pct_bulk_memory;
 
 typedef struct _ct_delay

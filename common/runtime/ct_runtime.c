@@ -658,7 +658,7 @@ void __ctStoreMemoryEvent(bool isAlloc, size_t size, void* a)
     #endif
 }
 
-void __ctStoreBulkMemoryEvent(bool isWrite, size_t s, void* a)
+void __ctStoreBulkMemoryEvent(size_t s, void* dst, void* src)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -669,11 +669,11 @@ void __ctStoreBulkMemoryEvent(bool isWrite, size_t s, void* a)
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_bulk_memory_op/*<<24*/;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
-    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isWrite;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = size;
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = size;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(unsigned long long)]) = (ct_addr_t) dst;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(unsigned long long) + sizeof(ct_addr_t)]) = (ct_addr_t) src;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_addr_t) + sizeof(unsigned long long) + sizeof(char);
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + 2 * sizeof(ct_addr_t) + sizeof(unsigned long long);
     #endif
 }
 
