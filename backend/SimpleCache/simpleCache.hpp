@@ -10,17 +10,10 @@ struct cache_stats_t {
     uint64_t accesses;
     uint64_t reads;
     uint64_t read_misses;
-    uint64_t read_misses_combined;
     uint64_t writes;
     uint64_t write_misses;
-    uint64_t write_misses_combined;
     uint64_t misses;
-    uint64_t hit_time;
-    uint64_t miss_penalty;
     double   miss_rate;
-    double   avg_access_time;
-    uint64_t storage_overhead;
-    double   storage_overhead_ratio;
 };
 
 class SimpleCache

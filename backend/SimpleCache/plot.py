@@ -44,7 +44,7 @@ def main(arg):
         if (p <= 30):
             ax = plt.subplot(7,4, p)
             #ax = plt.subplot(2,2, p)
-            plt.ylim(0,24)
+            #plt.ylim(0,24)
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width, box.height*0.8])
             plt.plot(range(10,10 + (len(avg))), avg)

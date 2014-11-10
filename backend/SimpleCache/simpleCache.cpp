@@ -22,6 +22,7 @@ SimpleCache::SimpleCache()
     read_misses = 0;
     write_misses = 0;
     accesses = 0;
+    //printf("Cache created: %d of %d\n", cacheBlocks.size(), 0x1 << global_s); 
 }
 
 void SimpleCache::printIndex(uint64_t idx)
@@ -36,15 +37,7 @@ void SimpleCache::printIndex(uint64_t idx)
 bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, uint64_t num, bool write)
 {
     deque<cache_line>::iterator oldest;
-    uint64_t tAccess = ~0x0, mAccess = 0;
-    
-    char subBlock = 0;
-    
-    assert(tag != 0);
-    
-    // Offset greater than first subblock's last byte offset
-    if (offset > ((0x1 << (global_b - 1)) - 1)) subBlock = 1;
-    subBlock = 0x1 << subBlock;
+    uint64_t tAccess = ~0x0;
     
     if (idx >= cacheBlocks.size()) idx -= cacheBlocks.size();
     assert(idx < cacheBlocks.size());
@@ -65,11 +58,6 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
             tAccess = it->lastAccess;
             oldest = it;
         }
-        // Is this the MRU block?
-        if (it->lastAccess > mAccess)
-        {
-            mAccess = it->lastAccess;
-        }
     }
     
     // The block is not in the cache
@@ -81,7 +69,6 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
         t.tag = tag;
         t.dirty = write;
         t.lastAccess = num;
-        t.valid_bits = subBlock;
         
         cacheBlocks[idx].push_back(t);
         return false;
@@ -93,6 +80,7 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
     if (global_r == LRU)
     {
         cacheBlocks[idx].erase(oldest);
+        assert(cacheBlocks[idx].size() < (0x1 << global_s));
     }
     
     {
@@ -101,7 +89,6 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
         t.tag = tag;
         t.dirty = write;
         t.lastAccess = num;
-        t.valid_bits = subBlock;
         
         cacheBlocks[idx].push_back(t);
     }
@@ -111,7 +98,6 @@ bool SimpleCache::updateCacheLine(uint64_t idx, uint64_t tag, uint64_t offset, u
 
 bool SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cache_stats_t* p_stats)
 {
-    bool split = false;
     unsigned int bbMissCount = 0;
     uint64_t cacheIdx = address >> global_b;
     uint64_t offset = address & ((0x1<<global_b) - 1);
@@ -126,7 +112,7 @@ bool SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cac
     assert (cacheIdx < cacheBlocks.size());
     accesses++;
     
-    if ((offset + size - 1) > ((0x1 << global_b) - 1))
+
     {
         bbMissCount += !updateCacheLine(cacheIdx, tag, offset, accessCount, write);
         
@@ -140,26 +126,14 @@ bool SimpleCache::updateCache(bool write, char numOfBytes, uint64_t address, cac
             idx++;
             sz -= (0x1 << global_b);
         }
-        split = true;
-        p_stats->hit_time += 2;
-    }
-    else
-    {
-        bbMissCount += !updateCacheLine(cacheIdx, tag, offset, accessCount, write);
-        p_stats->hit_time += 1;
     }
     
     if (bbMissCount > 0)
     {
-        if (write) {p_stats->write_misses_combined ++; write_misses++;
-           // printf("%d: %p (%d)\n", accessCount, address, size);
-        }
-        else {p_stats->read_misses_combined ++; read_misses++;}
+        if (write) {write_misses++;}
+        else {read_misses++;}
         p_stats->misses ++;
         
-        
-        
-        p_stats->miss_penalty += bbMissCount;
         return false;
     }
     
@@ -177,6 +151,8 @@ SimpleCacheBackend::SimpleCacheBackend(uint64_t c, uint64_t s, int printMissLoc)
     assert(global_c >= (global_s + global_b));
     // zero out p_stats
     p_stats = new cache_stats_t;
+    p_stats->accesses = 0;
+    p_stats->misses = 0;
     
     if (printMissLoc == 1)
         printMissLines = true;
@@ -197,32 +173,79 @@ void SimpleCacheBackend::updateBackend(Task* currentTask)
     {
         BasicBlockAction bba = *iBBs;
         lastBBID = bba.basic_block_id;
-        auto memOps = iBBs.getMemOps();
+        auto memOps = iBBs.getMemoryActions();
         unsigned int memOpPos = 0;
         for (auto iReq = memOps.begin(), eReq = memOps.end(); iReq != eReq; ++iReq, memOpPos++)
         {
             MemoryAction ma = *iReq;
 
+            if (ma.type == action_type_malloc || ma.type == action_type_free) {continue;}
+            if (ma.type == action_type_memcpy)
+            {
+                uint64_t dstAddress = ma.addr;
+                uint64_t srcAddress = 0;
+                uint64_t bytesToAccess = 0;
+                
+                ++iReq;
+                ma = *iReq;
+                if (ma.type == action_type_memcpy)
+                {
+                    srcAddress = ma.addr;
+                    ++iReq;
+                    ma = *iReq;
+                }
+                
+                assert(ma.type == action_type_size);
+                bytesToAccess = ma.addr;
+                
+                char accessSize = 0;
+                
+                do {
+                    accessSize = (bytesToAccess > 8)?8:bytesToAccess;
+                    bytesToAccess -= accessSize;
+                    if (srcAddress != 0)
+                    {
+                        contextCacheState[ctid].updateCache(false, accessSize, srcAddress, p_stats);
+                        srcAddress += accessSize;
+                        p_stats->accesses ++;
+                        p_stats->reads++;
+                    }
+                    
+                    contextCacheState[ctid].updateCache(true, accessSize, dstAddress, p_stats);
+                    dstAddress += accessSize;
+                    p_stats->accesses ++;
+                    p_stats->writes++;
+                } while (bytesToAccess > 0);
+                continue;
+            }
+            
             char numOfBytes = (0x1 << ma.pow_size);
             uint64_t address = ma.addr;
-        
-            p_stats->accesses++;
+            char accessBytes = 0;
             
-            if (ma.type == action_type_mem_write)
-            {
-                p_stats->writes++;
-                rw = true;
-            }
-            else
-            {
-                p_stats->reads++;
-                rw = false;
-            }
-            
-            if (!contextCacheState[ctid].updateCache(rw, numOfBytes, address, p_stats))
-            {
-                basicBlockMisses[(lastBBID << 32) + memOpPos] ++;
-            }
+            do {
+                // Reduce the memory accesses into 8 byte requests
+                accessBytes = (numOfBytes > 8)?8:numOfBytes;
+                numOfBytes -= accessBytes;
+                p_stats->accesses++;
+                
+                if (ma.type == action_type_mem_write)
+                {
+                    p_stats->writes++;
+                    rw = true;
+                }
+                else if (ma.type == action_type_mem_read)
+                {
+                    p_stats->reads++;
+                    rw = false;
+                }
+                
+                if (!contextCacheState[ctid].updateCache(rw, accessBytes, address, p_stats))
+                {
+                    basicBlockMisses[(lastBBID << 32) + memOpPos] ++;
+                }
+                address += accessBytes;
+            } while (numOfBytes > 0);
         }
     }
 }
@@ -260,10 +283,11 @@ void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
     std::nth_element(missRates.begin(), missRates.begin() + (missRates.size() / 2), missRates.end());
     double median = *(missRates.begin() + (missRates.size() / 2));
     
-    fprintf(f, "%lf, %lf, %lf, %lf\n", sum / (missRates.size()), 
+    fprintf(f, "%lf, %lf, %lf, %lf, %lf\n", sum / (missRates.size()), 
                                        *min_element(missRates.begin(), missRates.end()), 
                                        median,
-                                       *max_element(missRates.begin(), missRates.end()));
+                                       *max_element(missRates.begin(), missRates.end()),
+                                       (double)(p_stats->misses) / (double)(p_stats->accesses));
     if (printMissLines == false) return;
     
     if (maxMissCount > 0)
