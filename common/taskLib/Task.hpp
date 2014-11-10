@@ -78,6 +78,7 @@ public:
     void recordMemOpAction(bool is_write, short pow_size, uint64 addr);
     void recordMallocAction(uint64 addr, uint64 size);
     void recordFreeAction(uint64 addr);
+    void recordMemCpyAction(uint64 size, uint64 dst, uint64 src);
     void recordBasicBlockAction(uint id);
 
     // List of all successors to this task.

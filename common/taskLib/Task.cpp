@@ -169,6 +169,19 @@ void Task::recordFreeAction(uint64 addr)
     this->a.push_back(mem);
 }
 
+void Task::recordMemCpyAction(uint64 size, uint64 dst, uint64 src)
+{
+    MemoryAction mem;
+    mem.type = action_type_memcpy;
+    mem.addr = dst;
+    this->a.push_back(mem);
+    mem.addr = src;
+    this->a.push_back(mem);
+    mem.type = action_type_size;
+    mem.addr = size;
+    this->a.push_back(mem);
+}
+
 // Record that a basic block occurred in this task
 void Task::recordBasicBlockAction(uint id)
 {

@@ -19,7 +19,8 @@ enum action_type
     action_type_free = 3,
     action_type_malloc = 4,
     action_type_size = 5,
-    action_type_basicBlock = 6
+    action_type_basicBlock = 6,
+    action_type_memcpy = 7
     // If you add more action types, recheck the methods of Action to ensure no assumptions are broken
 };
 

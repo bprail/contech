@@ -62,6 +62,13 @@ std::string Action::toString() const
             break;
         }
 
+        case action_type_memcpy:
+        {
+            MemoryAction mem = *this;
+            out << " memcpy addr " << std::hex << mem.addr;
+            break;
+        }
+        
         default:
         {
             out << " UNKNOWN: " << data;
