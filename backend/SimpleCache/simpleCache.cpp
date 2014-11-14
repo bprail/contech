@@ -179,7 +179,22 @@ void SimpleCacheBackend::updateBackend(Task* currentTask)
         {
             MemoryAction ma = *iReq;
 
-            if (ma.type == action_type_malloc || ma.type == action_type_free) {continue;}
+            if (ma.type == action_type_malloc) 
+            {
+                uint64_t addr = ((MemoryAction)(*iReq)).addr;
+                ++iReq;
+                assert((*iReq).getType() == action_type_size);
+                uint32_t allocSize = ((MemoryAction)(*iReq)).addr;
+                
+                mallocStats ms;
+                ms.size = allocSize;
+                ms.bbid = lastBBID;
+                ms.misses = 0;
+                allocBlocks[addr] = ms;
+                
+                continue;
+            }
+            if (ma.type == action_type_free) {continue;}
             if (ma.type == action_type_memcpy)
             {
                 uint64_t dstAddress = ma.addr;
@@ -243,6 +258,17 @@ void SimpleCacheBackend::updateBackend(Task* currentTask)
                 if (!contextCacheState[ctid].updateCache(rw, accessBytes, address, p_stats))
                 {
                     basicBlockMisses[(lastBBID << 32) + memOpPos] ++;
+                    auto elem = allocBlocks.upper_bound(address);
+                    if (elem != allocBlocks.begin())
+                    {
+                        --elem;
+                            
+                        if (address >= elem->first && (address + accessBytes) <= (elem->first + elem->second.size))
+                        {
+                            // HEAP
+                            elem->second.misses++;
+                        }
+                    }
                 }
                 address += accessBytes;
             } while (numOfBytes > 0);
@@ -305,5 +331,13 @@ void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
                                          bbi.fileName.c_str(),
                                          bbi.lineNumber);
         }
+    }
+    fprintf(f, "Address, Size, BBID, Misses\n");
+    for (auto it = allocBlocks.begin(), et = allocBlocks.end(); it != et; ++it)
+    {
+        fprintf(f, "%llx, %u, %u, %lf\n", it->first, 
+                                           it->second.size, 
+                                           it->second.bbid, 
+                                           ((double)(it->second.misses)) / (double)(p_stats->misses)*100.0);
     }
 }

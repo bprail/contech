@@ -41,10 +41,18 @@ public:
     bool updateCache(bool rw, char numOfBytes, uint64_t address, cache_stats_t* p_stats);
 };
 
+struct mallocStats
+{
+    uint32_t bbid;
+    uint32_t size;
+    uint32_t misses;
+};
+
 class SimpleCacheBackend  : public contech::Backend
 {
     std::map <contech::ContextId, SimpleCache> contextCacheState;
     std::map <uint64_t, unsigned int> basicBlockMisses;
+    std::map <uint64_t, mallocStats> allocBlocks;
     cache_stats_t* p_stats;
     bool printMissLines;
 
