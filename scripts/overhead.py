@@ -13,7 +13,7 @@ def main():
     cd /net/tinker/brailing/contech/scripts
     
     ./build{3}.py {0}
-    ./run{3}.py --traceOnly --discardTrace {0} -n 16 -i {2} --time "{1}"
+    ./run{3}.py --traceOnly {0} -n 16 -i {2} --time "{1}"
 """
     bset = util.Benchmarks.all
     time = "/usr/bin/time"
