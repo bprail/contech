@@ -154,12 +154,6 @@ def main(parsec=False, nas=False):
         if args.discardTrace:
             exit(0)
         elif args.traceOnly:
-            permTrace = os.path.join(CONTECH_HOME, "traces/", name + ".contech.trace")
-            if pcall([TRACEVALIDATOR, tracefile], returnCode = True):
-                print_error("Trace was corrupt, did not save")
-            else:
-                #shutil.copy(tracefile, permTrace)
-                print_header("Trace saved to " + permTrace)
             os.remove(tracefile)
             exit(0)
              
