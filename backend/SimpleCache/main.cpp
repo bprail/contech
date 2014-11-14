@@ -21,7 +21,7 @@ int main(int argc, char** argv)
     }
     else
     {
-        for (int c = 10; c < 28; c++)
+        for (int c = 10; c <= 28; c++)
         {
             SimpleCacheBackend* bsc = new SimpleCacheBackend(c, 2, 0);
             contech::SimpleBackendWrapper* sbw = new contech::SimpleBackendWrapper(argv[1], bsc);
