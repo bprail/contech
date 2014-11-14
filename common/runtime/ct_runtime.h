@@ -93,6 +93,8 @@ void* __ctInitThread(void*);//pcontech_thread_create ptc
 void __ctCheckBufferSize(unsigned int);
 void __ctStoreDelay(ct_tsc_t start_t);
 
+void printQueueStats();
+
 void __ctAddThreadInfo(pthread_t *pt, unsigned int);
 unsigned int __ctLookupThreadInfo(pthread_t pt);
 
@@ -107,6 +109,10 @@ extern ct_serial_buffer_sized initBuffer;
 
 extern bool __ctIsROIEnabled;
 extern bool __ctIsROIActive;
+
+extern ct_tsc_t __ctTotalTimeBetweenQueueBuffers;
+extern ct_tsc_t __ctTotalThreadOverhead;
+extern unsigned int __ctTotalThreadBuffersQueued;
 
 extern __thread pct_serial_buffer __ctThreadLocalBuffer;
 extern __thread unsigned int __ctThreadLocalNumber; // no static

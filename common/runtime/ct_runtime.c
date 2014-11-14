@@ -47,10 +47,14 @@ __thread pcontech_id_stack __ctThreadIdStack = NULL;
 __thread pcontech_join_stack __ctJoinStack = NULL;
 
 #ifdef CT_OVERHEAD_TRACK
-__thread ct_tsc_t __ctTotalThreadOverhead = 0;
-__thread unsigned int __ctTotalThreadBuffersQueued = 0;
-__thread ct_tsc_t __ctLastQueueBuffer = 0;
-__thread ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
+// __thread ct_tsc_t __ctTotalThreadOverhead = 0;
+// __thread unsigned int __ctTotalThreadBuffersQueued = 0;
+// __thread ct_tsc_t __ctLastQueueBuffer = 0;
+// __thread ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
+ ct_tsc_t __ctTotalThreadOverhead = 0;
+ unsigned int __ctTotalThreadBuffersQueued = 0;
+ __thread ct_tsc_t __ctLastQueueBuffer = 0;
+ ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
 //__thread uint64_t __ctCurrentOverheadStart = 0;
 #endif
 
@@ -220,14 +224,6 @@ void __ctCleanupThread(void* v)
     __ctStoreThreadJoinInternal(true, __ctThreadLocalNumber, rdtsc());
     __ctQueueBuffer(false);
     __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
-    #ifdef CT_OVERHEAD_TRACK
-    ct_tsc_t end = rdtsc();
-    //__ctTotalThreadOverhead += (end - start);
-    printf("T(%d), %lld, %lld, %d\n", __ctThreadLocalNumber, 
-                                __ctTotalThreadOverhead, 
-                                __ctTotalTimeBetweenQueueBuffers,
-                                __ctTotalThreadBuffersQueued);
-    #endif
 }
 
 int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
@@ -460,12 +456,12 @@ void __ctQueueBuffer(bool alloc)
     
 #ifdef CT_OVERHEAD_TRACK
     end = rdtsc();
-    __ctTotalThreadOverhead += (end - start);
-    __ctTotalThreadBuffersQueued ++;
+    __sync_fetch_and_add(&__ctTotalThreadOverhead, (end - start));
+    __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
     
     if (__ctLastQueueBuffer != 0)
     {
-        __ctTotalTimeBetweenQueueBuffers += (start - __ctLastQueueBuffer);
+        __sync_fetch_and_add(&__ctTotalTimeBetweenQueueBuffers, (start - __ctLastQueueBuffer));
     }
     __ctLastQueueBuffer = end;
 #endif 
@@ -505,7 +501,7 @@ void __ctCheckBufferBySize(unsigned int numOps)
 
 __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
 {
-    //#ifdef POS_USED
+    #ifdef POS_USED
     // Contech LLVM pass knows this limit
     //   It will call check by size if the basic block needs more than 1K to store its data
     if ((SERIAL_BUFFER_SIZE - 1024) < p)
@@ -513,7 +509,7 @@ __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
     /* Adding a prefetch reduces the L1 D$ miss rate by 1 - 3%, but also increases overhead by 5 - 10%
     else // TODO: test with , 1 to indicate write prefetch
         __builtin_prefetch(((char*)__ctThreadLocalBuffer) + p + 1024);*/
-   // #endif
+    #endif
 }
 
 void __ctCheckBufferSizeDebug(unsigned int bbid)

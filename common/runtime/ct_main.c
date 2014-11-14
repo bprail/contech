@@ -24,6 +24,17 @@ bool __ctIsROIActive = false;
 
 extern int ct_orig_main(int, char**);
 
+//#define CT_OVERHEAD_TRACK
+void printQueueStats()
+{
+    #ifdef CT_OVERHEAD_TRACK
+    printf("T(0), %lld, %lld, %d\n",  
+                                __ctTotalThreadOverhead, 
+                                __ctTotalTimeBetweenQueueBuffers,
+                                __ctTotalThreadBuffersQueued);
+    #endif
+}
+
 void __ctCleanupThreadMain(void* v)
 {
     char* d = NULL;
@@ -45,6 +56,7 @@ void __ctCleanupThreadMain(void* v)
 #if DEBUG
     printf("%d =?= %d\n", __ctThreadGlobalNumber, __ctThreadExitNumber);
 #endif
+
     // Wait on background thread
     pthread_join((pthread_t) v, (void**)&d);
 }
@@ -402,6 +414,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 printf("CT_LIMIT: %llu.%03llu\n", totalLimitTime / 1000, totalLimitTime % 1000);
             }
             printf("Total Uncomp Written: %ld\n", totalWritten);
+            printQueueStats();
             fflush(stdout);
 #if EVENT_COMPRESS
             gzflush (serialFileComp, Z_FULL_FLUSH);
