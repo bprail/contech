@@ -78,7 +78,10 @@ def main(arg):
         print "Max Threads: {0}\tMax Value: {1}\tMax Weight: {2}\tNonZero BBV: {3}".format(max_threads, max_value, max_weight, len(bbData))
         
         if (p <= 30):
-            ax = plt.subplot(7,4, p)
+            if (len(arg) == 2):
+                ax = plt.subplot(1,1, p)
+            else:
+                ax = plt.subplot(7,4, p)
             plt.xlim(1,max_threads+1)
             plt.ylim(0,len(bbData))
             ypos = 0
@@ -137,8 +140,12 @@ def main(arg):
                     xpos += 1
                 ypos += 1
             #plt.hexbin(xset,yset,C=dset, bins='log',gridsize=(max_threads,len(bbData)))
-            plt.xticks(fontsize=5)
-            plt.yticks(fontsize=5)
+            if (len(arg) == 2):
+                plt.xticks(fontsize=12)
+                plt.yticks(fontsize=12)
+            else:
+                plt.xticks(fontsize=5)
+                plt.yticks(fontsize=5)
             plt.hist2d(xset,yset,weights=dset,cmap=matplotlib.cm.Blues,norm=colors.LogNorm(),range=np.array([(1, max_threads+1), (0, len(bbData))]),bins=[max_threads,len(bbData)])
             #plt.xlabel("Active Threads")
             #plt.ylabel("Basic Block ID")

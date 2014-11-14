@@ -42,15 +42,23 @@ def main(arg):
             continue
         print len(avg)
         if (p <= 30):
-            ax = plt.subplot(7,4, p)
+            if (len(arg) == 2):
+                ax = plt.subplot(1,1, p)
+            else:
+                ax = plt.subplot(7,4, p)
             #ax = plt.subplot(2,2, p)
             #plt.ylim(0,24)
             box = ax.get_position()
             ax.set_position([box.x0, box.y0, box.width, box.height*0.8])
             plt.plot(range(10,10 + (len(avg))), avg)
-            plt.xticks(fontsize=5)
-            plt.yticks(fontsize=5)
-            plt.rc('font', size=5)
+            if (len(arg) == 2):
+                plt.xticks(fontsize=12)
+                plt.yticks(fontsize=12)
+                plt.rc('font', size=12)
+            else:
+                plt.xticks(fontsize=5)
+                plt.yticks(fontsize=5)
+                plt.rc('font', size=5)
             harmony_l = file_in.split('/')
             file_in = harmony_l[-1]
             harmony_l = file_in.split('.')
