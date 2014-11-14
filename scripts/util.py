@@ -16,7 +16,8 @@ class Benchmarks:
     parsec = parsecApps + parsecKernels
     splash2 = splash2Apps + splash2Kernels
     all = parsec + splash2
-    nas = ["bt", "cg", "dc", "ep", "ft", "is", "lu", "mg", "sp"] #, "ua" <- does not terminate
+    #nas = ["bt", "cg", "dc", "ep", "ft", "is", "lu", "mg", "sp"] #, "ua" <- does not terminate
+    nas = ["cg", "ep", "ft", "is", "mg"]
 
 def print_header(text):
     print '\033[92m' + text + '\033[0m'
