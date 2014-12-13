@@ -29,6 +29,7 @@ void SimpleBackendWrapper::initBackend()
 void SimpleBackendWrapper::completeRun(FILE* f)
 {
     backend->completeBackend(f, tg->getTaskGraphInfo());
+    fflush(f);
 }
 
 SimpleBackendWrapper::~SimpleBackendWrapper()
