@@ -5,7 +5,7 @@ HEADERS = ct_event.h ct_event_st.h
 
 all: $(PROJECT)
 
-.c.o:
+.cpp.o:
 	g++ -c $(CFLAGS) $<
 
 $(PROJECT): $(OBJECTS)

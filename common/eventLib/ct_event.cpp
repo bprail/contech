@@ -3,63 +3,35 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <stdint.h>
-#include <stdarg.h>
 #include "../taskLib/ct_file.h"
 
-void dumpAndTerminate(ct_file *fptr);
+using namespace contech;
 
 //#define fread_check(x,y,z,a) do {if (z != (t = fread(x,y,z,a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate();} sum += (t * y);} while(0)
 // Use ct_file
 #define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate(a);} sum += (t);} while(0)
 
-// DEBUG information
-static unsigned long long sum = 0;
-static unsigned long long bufSum = 0;
-static unsigned int lastBufPos = 0;
-static unsigned int lastID = 0;
-static unsigned int lastBBID = 0;
-static unsigned int lastType = 0;
-
-typedef struct _ct_event_debug
+EventLib::EventLib()
 {
-    unsigned int sum, id, type;
-    unsigned int data0, data1;
-} ct_event_debug, *pct_event_debug;
-
-static ct_event_debug  ced[64];
-static unsigned int cedPos = 0;
-
-static unsigned int binInfo[1024];
-
-FILE* debug_file = NULL;
-
-// Per 9/17/13, event list will now contain a version event
-//   This will help with detecting compatablity issues
-static unsigned int version = 0;
-
-// In version 1, we get currentID from the header events, instead
-// of from the individual events
-static unsigned int currentID = ~0;
-
-// Interpret basic blocks using the following information
-static unsigned int bb_count = 0;
-
-typedef struct _internal_memory_op_info
-{
-    char isWrite, size;
-} internal_memory_op_info, *pinternal_memory_op_info;
-
-typedef struct _internal_basic_block_info
-{
-    unsigned int len;
-    pinternal_memory_op_info mem_op_info;
-} internal_basic_block_info, *pinternal_basic_block_info;
-
-static pinternal_basic_block_info bb_info_table = NULL;
+    sum = 0;
+    bufSum = 0;
+    lastBufPos = 0;
+    lastID = 0;
+    lastBBID = 0;
+    lastType = 0;
+    
+    cedPos = 0;
+    debug_file = NULL;
+    
+    version = 0;
+    currentID = ~0;
+    bb_count = 0;
+    
+    bb_info_table = NULL;
+}
 
 /* unpack: unpack packed items from buf, return length */
-int unpack(uint8_t *buf, char *fmt, ...)
+int EventLib::unpack(uint8_t *buf, char *fmt, ...)
 {
     va_list args;
     char *p;
@@ -112,7 +84,7 @@ int unpack(uint8_t *buf, char *fmt, ...)
      return bp - buf;
 }
 
-void resetEventLib()
+void EventLib::resetEventLib()
 {
     if (bb_info_table != NULL) 
     {
@@ -133,7 +105,7 @@ void resetEventLib()
 //
 // Deserialize a CT_EVENT from a FILE stream
 //
-pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
+pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
 {
     unsigned int t;
     pct_event npe;
@@ -459,6 +431,35 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
         }
         break;
         
+        case (ct_event_rank):
+        {
+            fread_check(&npe->rank.rank, sizeof(int), 1, fptr);
+        }
+        break;
+        
+        case (ct_event_mpi_transfer):
+        {
+            //mpixf
+            fread_check(&npe->mpixf.isSend, sizeof(char), 1, fptr);
+            fread_check(&npe->mpixf.isBlocking, sizeof(char), 1, fptr);
+            fread_check(&npe->mpixf.comm_rank, sizeof(int), 1, fptr);
+            fread_check(&npe->mpixf.tag, sizeof(int), 1, fptr);
+            fread_check(&npe->mpixf.buf_ptr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->mpixf.buf_size, sizeof(size_t), 1, fptr);
+            fread_check(&npe->mpixf.start_time, sizeof(ct_tsc_t), 1, fptr);
+            fread_check(&npe->mpixf.end_time, sizeof(ct_tsc_t), 1, fptr);
+            fread_check(&npe->mpixf.req_ptr, sizeof(ct_addr_t), 1, fptr);
+        }
+        break;
+        
+        case (ct_event_mpi_wait):
+        {
+            fread_check(&npe->mpiw.req_ptr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->mpiw.start_time, sizeof(ct_tsc_t), 1, fptr);
+            fread_check(&npe->mpiw.end_time, sizeof(ct_tsc_t), 1, fptr);
+        }
+        break;
+        
         case (ct_event_version):
         {
             // There should be only one version event in the list
@@ -520,7 +521,7 @@ pct_event createContechEvent(ct_file *fptr)//FILE* fptr)
     return npe;
 }
 
-void deleteContechEvent(pct_event e)
+void EventLib::deleteContechEvent(pct_event e)
 {
     if (e == NULL) return;
     if (e->event_type == ct_event_basic_block && e->bb.mem_op_array != NULL) free(e->bb.mem_op_array);
@@ -532,7 +533,7 @@ void deleteContechEvent(pct_event e)
     free(e);
 }
 
-void dumpAndTerminate(ct_file *fptr)
+void EventLib::dumpAndTerminate(ct_file *fptr)
 {
     FILE* fh = getUncompressedHandle(fptr);
     struct stat buf;
@@ -544,7 +545,7 @@ void dumpAndTerminate(ct_file *fptr)
     exit(1);
 }
 
-void displayContechEventDiagInfo()
+void EventLib::displayContechEventDiagInfo()
 {
     for (int i = 0; i < 1024; i++)
     {
@@ -553,7 +554,7 @@ void displayContechEventDiagInfo()
     fprintf(stderr, "\n");
 }
 
-void displayContechEventDebugInfo()
+void EventLib::displayContechEventDebugInfo()
 {
     int i;
     fprintf(stderr, "Consumed %llu bytes, in buffer of %d to %llu\n", sum, lastBufPos, bufSum);
@@ -570,7 +571,7 @@ void displayContechEventDebugInfo()
     fflush(stderr);
 }
 
-void displayContechEventStats()
+void EventLib::displayContechEventStats()
 {
 #ifdef SCAN_TRACE
     fprintf(stderr, "ZERO: %llu\t NEG1: %llu\tBYTES: %llu\n", zeroBytes, negOneBytes, bufSum);

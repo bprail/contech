@@ -12,7 +12,7 @@
 //#endif
 //#endif
 
-#define CONTECH_EVENT_VERSION 5
+#define CONTECH_EVENT_VERSION 6
 
 typedef unsigned long long ct_tsc_t;
 typedef unsigned long long ct_addr_t;
@@ -22,7 +22,8 @@ typedef struct _ct_memory_op {
     struct {
         // NB. Addr must come first so that the storing to data32[0] is completely stored into
         //   the address field.
-        unsigned long long addr : 58;
+        unsigned long long addr : 50;
+        unsigned long long rank : 8;
         unsigned long long is_write : 1;
         unsigned long long pow_size : 3; // the size of the op is 2^pow_size
     };
@@ -45,6 +46,9 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_bulk_memory_op,
     ct_event_version, // INTERNAL USE
     ct_event_delay,
+    ct_event_rank,
+    ct_event_mpi_transfer,
+    ct_event_mpi_wait,
     ct_event_memory_op = 128,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
@@ -134,6 +138,30 @@ typedef struct _ct_delay
     ct_tsc_t end_time;
 } ct_delay, *pct_delay;
 
+typedef struct _ct_rank
+{
+    unsigned int rank;
+} ct_rank, *pct_rank;
+
+typedef struct _ct_mpi_transfer
+{
+    bool isSend, isBlocking;
+    int comm_rank;
+    int tag;
+    ct_addr_t buf_ptr;
+    size_t buf_size;
+    ct_tsc_t start_time;
+    ct_tsc_t end_time;
+    ct_addr_t req_ptr; // Used when the request is non-blocking
+} ct_mpi_transfer, *pct_mpi_transfer;
+
+typedef struct _ct_mpi_wait
+{
+    ct_addr_t req_ptr;
+    ct_tsc_t start_time;
+    ct_tsc_t end_time;
+} ct_mpi_wait, *pct_mpi_wait;
+
 //
 // There are two ways to combine objects with common fields.
 //   1) Common fields in a single type that is the first field
@@ -157,6 +185,9 @@ typedef struct _ct_event {
         ct_buffer_info      buf;
         ct_bulk_memory      bm;
         ct_delay            dly;
+        ct_rank             rank;
+        ct_mpi_transfer     mpixf;
+        ct_mpi_wait         mpiw;
     };
 } ct_event, *pct_event;
 
