@@ -15,40 +15,46 @@ int main(int argc, char* argv[])
     ct_file* in;
     bool parallelMiddle = true;
     pthread_t backgroundT;
+    EventQ eventQ;
     
     // First attempt middle layer in parallel, if there is an error,
     //   then restart in serial mode.
     //   TODO: Implement restart / reset, or a flag for running serially.
 reset_middle:
-    if (argc > 1)
+    if (argc < 3)
     {
-        //in = fopen(argv[1], "rb");
-        in = create_ct_file_r(argv[1]);
-        assert(in != NULL && "Could not open input file");
-    }
-    else
-    {
-        fprintf(stderr, "Missing positional argument event trace\n");
-        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
+        fprintf(stderr, "Missing positional argument(s)\n");
+        fprintf(stderr, "%s <event trace>* <taskgraph> [-d]\n", argv[0]);
         return 1;
+    }
+    
+    // Print debug statements?
+    bool DEBUG = false;
+    if (!strcmp(argv[argc - 1], "-d"))
+    {        
+        DEBUG = true;
+        printf("Debug mode enabled.\n");
+    }
+    
+    int lastInPos = argc - 2;
+    int totalRanks = 0;
+    if (DEBUG == true) lastInPos--;
+    
+    for (int argPos = 1; argPos <= lastInPos; argPos++, totalRanks++)
+    {
+        in = create_ct_file_r(argv[argPos]);
+        assert(in != NULL && "Could not open input file");
+        eventQ.registerEventList(in);
     }
     
     // Open output file
     // Use command line argument or stdout
     //FILE* out;
     ct_file* out;
-    if (argc > 2)
-    {
-        //out = fopen(argv[2], "wb");
-        out = create_ct_file_w(argv[2],false);
-        assert(out != NULL && "Could not open output file");
-    }
-    else
-    {
-        fprintf(stderr, "Missing positional argument taskgraph\n");
-        fprintf(stderr, "%s <event trace> <taskgraph>\n", argv[0]);
-        return 1;
-    }
+    int outArgPos = argc - 1;
+    if (DEBUG == true) outArgPos--;
+    out = create_ct_file_w(argv[outArgPos],false);
+    assert(out != NULL && "Could not open output file");
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
     unsigned long long space = 0;
@@ -63,14 +69,6 @@ reset_middle:
     int r = pthread_create(&backgroundT, NULL, backgroundTaskWriter, &out);
     if (r != 0) parallelMiddle = false;
     
-    // Print debug statements?
-    bool DEBUG = false;
-    if (argc > 3)
-    {
-        if (!strcmp(argv[3], "-d")) DEBUG = true;
-        printf("Debug mode enabled.\n");
-    }
-    
     // Track the owners of sync primitives
     map<ct_addr_t, Task*> ownerList;
     
@@ -80,9 +78,22 @@ reset_middle:
     // Declare each context
     map<ContextId, Context> context;
 
+    // MPI Transfers src-rank -> dst rank -> tag -> task
+    map <int, map <int, map <int, Task*> > > mpiSendQ;
+    map <int, map <int, map <int, Task*> > > mpiRecvQ;
+    map <int, map <ct_addr_t, mpi_recv_req> > mpiReq;
+    
     // Context 0 is special, since it is uncreated
+    if (totalRanks > 1)
+    {
+        context[0].tasks.push_front(new Task(0, task_type_create));
+    }
+    else
+    {
+        context[0].tasks.push_front(new Task(0, task_type_basic_blocks));
+    }
     context[0].hasStarted = true;
-    context[0].tasks.push_front(new Task(0, task_type_basic_blocks));
+    
 
     // Count the number of events processed
     uint64 eventCount = 0;
@@ -95,19 +106,24 @@ reset_middle:
     
     // Scan through the file for the first real event
     bool seenFirstEvent = false;
+    int currentRank = 0;
     TaskGraphInfo *tgi = new TaskGraphInfo();
-    while (ct_event* event = createContechEvent(in))
+    while (ct_event* event = eventQ.getNextContechEvent(&currentRank))
     {
         if (event->contech_id == 0
         &&  event->event_type == ct_event_task_create
         &&  event->tc.other_id == 0)
         {
             // Use the timestamp of the first event in context 0 as t=0 in absolute time
-            context[0].timeOffset = event->tc.start_time;
+            context[(currentRank << 24) | 0].timeOffset = event->tc.start_time;
+            
+            // Since every instance should have identical bbinfo, the first create should be
+            //   rank 0, and then every other rank
+            assert(currentRank == 0);
             if (DEBUG) printf("Global offset is %llu\n", context[0].timeOffset);
             seenFirstEvent = true;
         }
-        else if (event->event_type == ct_event_basic_block_info)
+        else if (event->event_type == ct_event_basic_block_info && currentRank == 0)
         {
             string functionName, fileName;
             if (event->bbi.fun_name != NULL) functionName.assign(event->bbi.fun_name);
@@ -124,7 +140,7 @@ reset_middle:
                                      functionName,
                                      fileName);
         }
-        deleteContechEvent(event);
+        EventLib::deleteContechEvent(event);
         if (seenFirstEvent) break;
     }
     assert(seenFirstEvent);
@@ -133,7 +149,7 @@ reset_middle:
     delete tgi;
 
     // Main loop: Process the events from the file in order
-    while (ct_event* event = getNextContechEvent(in))
+    while (ct_event* event = eventQ.getNextContechEvent(&currentRank))
     {
         ++eventCount;
 
@@ -148,24 +164,26 @@ reset_middle:
             case ct_event_basic_block:
             case ct_event_memory:
             case ct_event_bulk_memory_op:
+            case ct_event_mpi_transfer:
+            case ct_event_mpi_wait:
                 break;
             default:
-                deleteContechEvent(event);
+                EventLib::deleteContechEvent(event);
                 continue;
         }
 
         // New context ids should only appear on task create events
         // Seeing an invalid context id is a good sign that the trace is corrupt
-        if (event->event_type != ct_event_task_create && !context.count(event->contech_id))
+        if (event->event_type != ct_event_task_create && !context.count((currentRank << 24) | event->contech_id))
         {
             cerr << "ERROR: Saw an event from a new context before seeing a create event for that context." << endl;
             cerr << "Either the trace is corrupt or the trace file is missing a create event for the new context. " << endl;
-            displayContechEventDebugInfo();
+            //displayContechEventDebugInfo();
             exit(1);
         }
         
         // The context in which this event occurred
-        Context& activeContech = context[event->contech_id];
+        Context& activeContech = context[(currentRank << 24) | event->contech_id];
 
         // Coalesce start/end times into a single field
         ct_tsc_t startTime, endTime;
@@ -187,6 +205,10 @@ reset_middle:
             case ct_event_task_join:
                 startTime = event->tj.start_time;
                 endTime = event->tj.end_time;
+                break;
+            case ct_event_mpi_transfer:
+                startTime = event->mpixf.start_time;
+                endTime = event->mpixf.end_time;
                 break;
             default:
                 hasTime = false;
@@ -249,7 +271,8 @@ reset_middle:
             for (uint i = 0; i < event->bb.len; i++)
             {
                 ct_memory_op memOp = event->bb.mem_op_array[i];
-                activeT->recordMemOpAction(memOp.is_write, memOp.pow_size, memOp.addr);
+                memOp.rank = currentRank;
+                activeT->recordMemOpAction(memOp.is_write, memOp.pow_size, memOp.data);
             }
         }
 
@@ -261,45 +284,62 @@ reset_middle:
             if (event->tc.approx_skew == 0)
             {
                 // Assign an ID for the new context
-                TaskId childTaskId(event->tc.other_id, 0);
-
-                // Make a "task create" task
-                //   N.B. This create task may be a combination of several create events.
-                Task* taskCreate;
-                if (activeContech.activeTask()->getType() != task_type_create)
-                {
-                    taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
-                }
-                else
-                {
-                    taskCreate = activeContech.activeTask();
-                    if (taskCreate->getStartTime() > startTime) taskCreate->setStartTime(startTime);
-                    if (taskCreate->getEndTime() < endTime) taskCreate->setEndTime(endTime);
-                }
-
-                // Assign the new task as a child
-                taskCreate->addSuccessor(childTaskId);
-                
-                // Add the information so that the created task knows its creator.
-                if (context[event->tc.other_id].hasStarted == true)
-                {
-                    Task* childTask = context[event->tc.other_id].getTask(childTaskId);
-                    assert (childTask != NULL);
-                    childTask->addPredecessor(taskCreate->getTaskId());
-                }
-                else
-                {
-                    activeContech.creatorMap[event->tc.other_id] = taskCreate->getTaskId();
-                }
-                
-                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "created", childTaskId, startTime, endTime);
+                TaskId childTaskId((currentRank << 24) | event->tc.other_id, 0);
             
+                // If other_id is 0, then this is the initial create,
+                //   It will need to link back to an original creator
+                if (event->tc.other_id == 0)
+                {
+                    Task* taskCreate;
+                    
+                    context[(currentRank << 24) | 0].hasStarted = true;
+                    context[(currentRank << 24) | 0].tasks.push_front(new Task(childTaskId, task_type_basic_blocks));
+                    context[(currentRank << 24) | 0].timeOffset = event->tc.start_time;
+                    taskCreate = context[0].activeTask();
+                    assert(taskCreate->getType() == task_type_create);
+                    taskCreate->addSuccessor(childTaskId);
+                    activeContech.activeTask()->addPredecessor(taskCreate->getTaskId());
+                }
+                else
+                {
+                    // Make a "task create" task
+                    //   N.B. This create task may be a combination of several create events.
+                    Task* taskCreate;
+                    
+                    if (activeContech.activeTask()->getType() != task_type_create)
+                    {
+                        taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
+                    }
+                    else
+                    {
+                        taskCreate = activeContech.activeTask();
+                        if (taskCreate->getStartTime() > startTime) taskCreate->setStartTime(startTime);
+                        if (taskCreate->getEndTime() < endTime) taskCreate->setEndTime(endTime);
+                    }
+
+                    // Assign the new task as a child
+                    taskCreate->addSuccessor(childTaskId);
+                    
+                    // Add the information so that the created task knows its creator.
+                    if (context[(currentRank << 24) | event->tc.other_id].hasStarted == true)
+                    {
+                        Task* childTask = context[(currentRank << 24) | event->tc.other_id].getTask(childTaskId);
+                        assert (childTask != NULL);
+                        childTask->addPredecessor(taskCreate->getTaskId());
+                    }
+                    else
+                    {
+                        activeContech.creatorMap[(currentRank << 24) | event->tc.other_id] = taskCreate->getTaskId();
+                    }
+                    
+                    if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "created", childTaskId, startTime, endTime);
+                }
             // If this context was not already running, then it was just created
             } else {
-                TaskId newContechTaskId(event->contech_id, 0);
+                TaskId newContechTaskId((currentRank << 24) | event->contech_id, 0);
 
                 // Compute time offset for new context
-                activeContech.timeOffset = context[event->tc.other_id].timeOffset + event->tc.approx_skew;
+                activeContech.timeOffset = context[(currentRank << 24) | event->tc.other_id].timeOffset + event->tc.approx_skew;
                 startTime = startTime - activeContech.timeOffset;
                 endTime = endTime - activeContech.timeOffset;
 
@@ -309,9 +349,9 @@ reset_middle:
                 activeContech.activeTask()->setStartTime(endTime);
 
                 // Record parent of this task
-                if (context[event->tc.other_id].hasStarted == true)
+                if (context[(currentRank << 24) | event->tc.other_id].hasStarted == true)
                 {
-                    TaskId creatorId = context[event->tc.other_id].getCreator(event->contech_id);
+                    TaskId creatorId = context[(currentRank << 24) | event->tc.other_id].getCreator((currentRank << 24) | event->contech_id);
                     if (creatorId != TaskId(0))
                     {
                         activeContech.activeTask()->addPredecessor(creatorId);
@@ -328,15 +368,19 @@ reset_middle:
         {
             // Create a sync task
             Task* sync = activeContech.createContinuation(task_type_sync, startTime, endTime);
+            ct_memory_op syncA;
+            syncA.data = 0;
+            syncA.addr = event->sy.sync_addr;
+            syncA.rank = currentRank;
             
             // Record the address in this sync task as an action
-            activeContech.activeTask()->recordMemOpAction(true, 8, event->sy.sync_addr);
+            activeContech.activeTask()->recordMemOpAction(true, 8, syncA.data);
 
             // Create a continuation
             activeContech.createBasicBlockContinuation();
             
             // Make the sync dependent on whoever accessed the sync primitive last         
-            auto it = ownerList.find(event->sy.sync_addr);
+            auto it = ownerList.find(syncA.data);
             if (it != ownerList.end() &&
                 event->sy.sync_type != ct_cond_wait&&
                 parallelMiddle)
@@ -358,7 +402,7 @@ reset_middle:
             // Make the sync task the new owner of the sync primitive
             if (event->sy.sync_type != ct_cond_wait) 
             {
-                ownerList[event->sy.sync_addr] = sync;
+                ownerList[syncA.data] = sync;
             }
                 
             if (event->sy.sync_type == ct_sync_release ||
@@ -381,7 +425,7 @@ reset_middle:
             {
                 Task* otherTask = NULL;
                 TaskId myId = activeContech.activeTask()->getTaskId();
-                Context& otherContext = context[event->tj.other_id];
+                Context& otherContext = context[(currentRank << 24) | event->tj.other_id];
                 
                 activeContech.activeTask()->setEndTime(startTime);
                 activeContech.endTime = startTime;
@@ -417,7 +461,7 @@ reset_middle:
             } 
             else 
             {
-                Context& otherContext = context[event->tj.other_id];
+                Context& otherContext = context[(currentRank << 24) | event->tj.other_id];
                 if (otherContext.endTime != 0)
                 {
                     // Create a join task
@@ -460,7 +504,7 @@ reset_middle:
                         if (taskJoin->getStartTime() > startTime) taskJoin->setStartTime(startTime);
                         if (taskJoin->getEndTime() < endTime) taskJoin->setEndTime(endTime);
                     }
-                    activeContech.getChildJoin(ContextId(event->tj.other_id), taskJoin);
+                    activeContech.getChildJoin(ContextId((currentRank << 24) | event->tj.other_id), taskJoin);
                 }
             }
         }
@@ -472,7 +516,11 @@ reset_middle:
             if (event->bar.onEnter)
             {
                 // Look up the barrier task for this barrier and record arrival
-                Task* barrierTask = barrierList[event->bar.sync_addr].onEnter(*activeContech.activeTask(), startTime, event->bar.sync_addr);
+                ct_memory_op barA;
+                barA.data = 0;
+                barA.addr = event->bar.sync_addr;
+                barA.rank = currentRank;
+                Task* barrierTask = barrierList[barA.data].onEnter(*activeContech.activeTask(), startTime, event->bar.sync_addr);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "arrived at barrier", barrierTask->getTaskId(), startTime, endTime);
             }
 
@@ -481,11 +529,15 @@ reset_middle:
             {
                 // Record my exit from the barrier, and get the associated barrier task
                 bool isFinished = false;
-                Task* barrierTask = barrierList[event->bar.sync_addr].onExit(endTime, &isFinished);
+                ct_memory_op barA;
+                barA.data = 0;
+                barA.addr = event->bar.sync_addr;
+                barA.rank = currentRank;
+                Task* barrierTask = barrierList[barA.data].onExit(endTime, &isFinished);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
 
                 // If I own the barrier, my continuation's ID has to come after it. Otherwise just use the next ID.
-                bool myBarrier = barrierTask->getContextId() == event->contech_id;
+                bool myBarrier = barrierTask->getContextId() == ((currentRank << 24) | event->contech_id);
 
                 Task* continuation;
                 if (myBarrier)
@@ -527,11 +579,15 @@ reset_middle:
         // Memory allocations
         else if (event->event_type == ct_event_memory)
         {
+            ct_memory_op memA;
+            memA.data = 0;
+            memA.addr = event->mem.alloc_addr;
+            memA.rank = currentRank;
             if (event->mem.isAllocate)
             {
-                activeContech.activeTask()->recordMallocAction(event->mem.alloc_addr, event->mem.size);
+                activeContech.activeTask()->recordMallocAction(memA.data, event->mem.size);
             } else {
-                activeContech.activeTask()->recordFreeAction(event->mem.alloc_addr);
+                activeContech.activeTask()->recordFreeAction(memA.data);
             }
 
         } 
@@ -539,16 +595,212 @@ reset_middle:
         // Memcpy etc
         else if (event->event_type == ct_event_bulk_memory_op)
         {
-            activeContech.activeTask()->recordMemCpyAction(event->bm.size, event->bm.dst_addr, event->bm.src_addr);
+            ct_memory_op srcA, dstA;
+            srcA.data = 0;
+            srcA.addr = event->bm.src_addr;
+            srcA.rank = currentRank;
+            dstA.data = 0;
+            dstA.addr = event->bm.dst_addr;
+            dstA.rank = currentRank;
+            activeContech.activeTask()->recordMemCpyAction(event->bm.size, dstA.data, srcA.data);
+        }
+        
+        else if (event->event_type == ct_event_mpi_transfer)
+        {
+            // MPI maps using a 3-tuple {src_rank, tag, datatype} -> {dst_rank, tag, datatype}
+            //   We have discarded datatype
+            
+            //  TODO: find why this assert fails
+            //assert(currentRank != event->mpixf.comm_rank);
+            
+            // Send: S -> R -> S*
+            //   S* is only present when send is blocking
+            if (event->mpixf.isSend == true)
+            {
+                Task* firstSend;
+                
+                activeContech.createContinuation(task_type_sync, startTime, endTime - 1);
+                firstSend = activeContech.activeTask();
+                firstSend->setSyncType(sync_type_mpi_transfer);
+                
+                if (event->mpixf.isBlocking == true)
+                {
+                    activeContech.createContinuation(task_type_sync, endTime - 1, endTime);
+                    activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
+                }
+                
+                // Test if Recv has already happened
+                auto recvIt = mpiRecvQ[event->mpixf.comm_rank][currentRank].find(event->mpixf.tag);
+                if (recvIt != mpiRecvQ[event->mpixf.comm_rank][currentRank].end())
+                {
+                    Task* recvTask = recvIt->second;
+                    Task* secSend = NULL;
+                    firstSend->addSuccessor(recvTask->getTaskId());
+                    recvTask->addPredecessor(firstSend->getTaskId());
+                    
+                    printf("Send - %d:%d <-> %d:%d\n", firstSend->getContextId(),
+                                                       firstSend->getSeqId(),
+                                                       recvTask->getContextId(),
+                                                       recvTask->getSeqId());
+                    
+                    if (event->mpixf.isBlocking == true)
+                    {
+                        secSend = activeContech.activeTask();
+                        //secSend->addPredecessor(recvTask->getTaskId());
+                        //recvTask->addSuccessor(secSend->getTaskId());
+                    }
+                    
+                    // remove tuple
+                    mpiRecvQ[event->mpixf.comm_rank][currentRank].erase(recvIt);
+                    
+                    //TODO: Background Queue the tasks
+                    bool rem = context[firstSend->getContextId()].removeTask(firstSend);
+                    assert(rem == true);
+                    backgroundQueueTask(firstSend);
+                    rem = context[recvTask->getContextId()].removeTask(recvTask);
+                    assert(rem == true);
+                    backgroundQueueTask(recvTask);
+                    activeContech.createBasicBlockContinuation();
+                    if (secSend != NULL)
+                    {
+                        rem = context[secSend->getContextId()].removeTask(secSend);
+                        assert(rem == true);
+                        backgroundQueueTask(secSend);
+                    }
+                }
+                else // Queue send info
+                {
+                    mpiSendQ[currentRank][event->mpixf.comm_rank][event->mpixf.tag] = firstSend;
+                    activeContech.createBasicBlockContinuation();
+                }
+            }
+            else
+            {
+                // Recv: -> R ->
+                //   Recv is nonblocking, then there should be a MPI_wait()
+                //   In this scenario, the task cannot be created until the wait completes
+
+                if (event->mpixf.isBlocking == false)
+                {
+                    struct mpi_recv_req mrr;
+                
+                    mrr.comm_rank = event->mpixf.comm_rank;
+                    mrr.tag = event->mpixf.tag;
+                    mrr.buf_ptr = event->mpixf.buf_ptr;
+                    mrr.buf_size = event->mpixf.buf_size;
+                
+                    mpiReq[currentRank][event->mpixf.req_ptr] = mrr;
+                }
+                else
+                {
+                    // Blocking recv
+                    //   Create a task to receive the data
+                    activeContech.createContinuation(task_type_sync, startTime, endTime);
+                    activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
+                    
+                    auto sendIt = mpiSendQ[event->mpixf.comm_rank][currentRank].find(event->mpixf.tag);
+                    if (sendIt != mpiSendQ[event->mpixf.comm_rank][currentRank].end())
+                    {
+                        Task* firstSend = sendIt->second;
+                        Task* recvT = activeContech.activeTask();
+                        
+                        recvT->addPredecessor(firstSend->getTaskId());
+                        firstSend->addSuccessor(recvT->getTaskId());
+                        printf("Recv - %d:%d <-> %d:%d\n", firstSend->getContextId(),
+                                                           firstSend->getSeqId(),
+                                                           recvT->getContextId(),
+                                                           recvT->getSeqId());
+                        
+                        // Remove tuple
+                        mpiSendQ[event->mpixf.comm_rank][currentRank].erase(sendIt);
+                        
+                        // TODO: Find second send task, if it exists
+                        
+                        activeContech.createBasicBlockContinuation();
+                        bool rem = context[firstSend->getContextId()].removeTask(firstSend);
+                        assert(rem == true);
+                        backgroundQueueTask(firstSend);
+                        rem = context[recvT->getContextId()].removeTask(recvT);
+                        assert(rem == true);
+                        backgroundQueueTask(recvT);
+                    }
+                    else
+                    {
+                        mpiRecvQ[currentRank][event->mpixf.comm_rank][event->mpixf.tag] = activeContech.activeTask();
+                        activeContech.createBasicBlockContinuation();
+                    }
+                    
+                    
+                    
+                    // scratch
+                    ct_memory_op srcA, dstA;
+                    srcA.data = 0;
+                    srcA.addr = event->bm.src_addr;
+                    srcA.rank = currentRank;
+                    dstA.data = 0;
+                    dstA.addr = event->bm.dst_addr;
+                    dstA.rank = currentRank;
+                    activeContech.activeTask()->recordMemCpyAction(event->bm.size, dstA.data, srcA.data);
+                }
+            }
+        }
+        
+        else if (event->event_type == ct_event_mpi_wait)
+        {
+            struct mpi_recv_req mrr;
+            
+            mrr = mpiReq[currentRank][event->mpiw.req_ptr];
+            
+            mpiReq[currentRank].erase(event->mpiw.req_ptr);
+            
+            // Copied from blocking receive path
+            //   In execution, the send must have already happened, but interleaved
+            //   traces may give a different order
+            activeContech.createContinuation(task_type_sync, startTime, endTime);
+            activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
+            
+            auto sendIt = mpiSendQ[event->mpixf.comm_rank][currentRank].find(event->mpixf.tag);
+            if (sendIt != mpiSendQ[event->mpixf.comm_rank][currentRank].end())
+            {
+                Task* firstSend = sendIt->second;
+                Task* recvT = activeContech.activeTask();
+                
+                recvT->addPredecessor(firstSend->getTaskId());
+                firstSend->addSuccessor(recvT->getTaskId());
+                printf("Recv - %d:%d <-> %d:%d\n", firstSend->getContextId(),
+                                                   firstSend->getSeqId(),
+                                                   recvT->getContextId(),
+                                                   recvT->getSeqId());
+                
+                // Remove tuple
+                mpiSendQ[event->mpixf.comm_rank][currentRank].erase(sendIt);
+                
+                // TODO: Find second send task, if it exists
+                
+                activeContech.createBasicBlockContinuation();
+                bool rem = context[firstSend->getContextId()].removeTask(firstSend);
+                assert(rem == true);
+                backgroundQueueTask(firstSend);
+                rem = context[recvT->getContextId()].removeTask(recvT);
+                assert(rem == true);
+                backgroundQueueTask(recvT);
+            }
+            else
+            {
+                mpiRecvQ[currentRank][event->mpixf.comm_rank][event->mpixf.tag] = activeContech.activeTask();
+                activeContech.createBasicBlockContinuation();
+            }
         }
         // End switch block on event type
 
         // Free memory for the processed event
-        deleteContechEvent(event);
+        EventLib::deleteContechEvent(event);
     }
-    close_ct_file(in);
+    //close_ct_file(in);
     //displayContechEventDiagInfo();
 
+    // TODO: for every context if endtime == 0, then join?
+    
     if (DEBUG) printf("Processed %llu events.\n", eventCount);
     // Write out all tasks that are ready to be written
     
@@ -582,7 +834,7 @@ reset_middle:
     
     if (DEBUG)
     {
-        displayContechEventStats();
+        //displayContechEventStats();
     }
     
     close_ct_file(out);

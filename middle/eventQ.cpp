@@ -7,21 +7,71 @@
 using namespace std;
 using namespace contech;
 
-unsigned int currentQueuedCount = 0;
-unsigned int maxQueuedCount = 0;
-
 void eventDebugPrint(TaskId first, string verb, TaskId second, ct_tsc_t start, ct_tsc_t end)
 {
     cerr << start << " - " << end << ": ";
     cerr << first << " " << verb << " " << second << endl;
 }
 
-unsigned long long ticketNum = 0;
-unsigned long long minQueuedTicket = 0;
-bool resetMinTicket = false;
-map <unsigned int, deque <pct_event> > queuedEvents;
-map <unsigned int, deque <pct_event> >::iterator eventQueueCurrent;
-pct_event getNextContechEvent(ct_file* inFile)
+EventQ::EventQ()
+{
+    currentTrace = traces.begin();
+}
+
+EventQ::~EventQ()
+{
+    for (auto it = traces.begin(), et = traces.end(); it != et; ++it)
+    {
+        close_ct_file((*it)->file);
+        delete *it;
+    }
+}
+
+void EventQ::registerEventList(ct_file* f)
+{
+    traces.push_back(new EventList(f));
+}
+
+pct_event EventQ::getNextContechEvent(int* rank)
+{
+    pct_event event = NULL;
+    *rank = -1;
+    
+    while (!traces.empty() && event == NULL)
+    {
+        event = (*currentTrace)->getNextContechEvent();
+        
+        if (event == NULL)
+        {
+            close_ct_file((*currentTrace)->file);
+            delete *currentTrace;
+            currentTrace = traces.erase(currentTrace);
+        }
+        else
+        {
+            *rank = (*currentTrace)->mpiRank;
+            ++currentTrace;
+        }
+        if (currentTrace == traces.end()) currentTrace = traces.begin();
+    }
+    
+    return event;
+}
+
+EventList::EventList(ct_file* f)
+{
+    file = f;
+    el = new EventLib;
+    currentQueuedCount = 0;
+    maxQueuedCount = 0;
+    ticketNum = 0;
+    minQueuedTicket = 0;
+    resetMinTicket = false;
+    mpiRank = 0;
+    eventQueueCurrent = queuedEvents.begin();
+}
+
+pct_event EventList::getNextContechEvent()
 {
     bool nextEvent = false;
     pct_event event = NULL;
@@ -40,7 +90,7 @@ pct_event getNextContechEvent(ct_file* inFile)
             auto t = eventQueueCurrent;
             ++eventQueueCurrent;
             queuedEvents.erase(t);
-            // While this loops, the main loop guarentees that there will be at least one
+            // While this loops, the main loop guarantees that there will be at least one
             //   queue with events.
             if (eventQueueCurrent == queuedEvents.end())
             {
@@ -55,8 +105,14 @@ pct_event getNextContechEvent(ct_file* inFile)
         //   event is clear to be returned.  If the event is a sync, then it is only
         //   clear when it is the next ticket number.
         //
-        if (event->event_type != ct_event_sync)
+        if (event->event_type == ct_event_rank)
         {
+            mpiRank = event->rank.rank;
+            EventLib::deleteContechEvent(event);
+        }
+        else if (event->event_type != ct_event_sync)
+        {
+        
             eventQueueCurrent->second.pop_front();
             currentQueuedCount--;
             return event;
@@ -106,7 +162,7 @@ pct_event getNextContechEvent(ct_file* inFile)
     //
     while (!nextEvent)
     {
-        event = createContechEvent(inFile);
+        event = el->createContechEvent(file);
         if (event == NULL) return NULL;
         if (queuedEvents.find(event->contech_id) != queuedEvents.end())
         {
@@ -138,7 +194,7 @@ pct_event getNextContechEvent(ct_file* inFile)
                 //   This should only happen a limited number of times
                 //   At most N-1, where N is the number of contexts and the next N-2 events
                 //   are all ticketed events that must be queued.
-                event = getNextContechEvent(inFile);
+                event = getNextContechEvent();
             }
             else {
                 //printf("Ticket:%llu %d\n", event->sy.ticketNum, queuedEvents.size());
@@ -146,6 +202,13 @@ pct_event getNextContechEvent(ct_file* inFile)
             }
             break;
         }
+        case ct_event_rank:
+        {
+            mpiRank = event->rank.rank;
+            EventLib::deleteContechEvent(event);
+            event = getNextContechEvent();
+        }
+        break;
         default:
             break;
     }
