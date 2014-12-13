@@ -33,7 +33,8 @@ struct MemoryAction
         struct {
             uint64_t type : 3;
             uint64_t pow_size : 3; // the size of the read or write is 2^pow_size
-            uint64_t addr : 58;
+            uint64_t rank : 8;
+            uint64_t addr : 50;
         };
         uint64_t data;
     };
