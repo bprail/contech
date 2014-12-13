@@ -271,9 +271,9 @@ uint Task::basicBlockActionCollection::size()
 }
 
 vector<TaskId>& Task::getSuccessorTasks() { return s; }
-void Task::addSuccessor(TaskId succ) { s.push_back(succ); }
+void Task::addSuccessor(TaskId succ) { assert(succ != taskId); s.push_back(succ); }
 vector<TaskId>& Task::getPredecessorTasks() { return p; }
-void Task::addPredecessor(TaskId pred) { p.push_back(pred); }
+void Task::addPredecessor(TaskId pred) { assert(pred != taskId); p.push_back(pred); }
 
 task_type Task::getType() const { return type; }
 void Task::setType(task_type e) { type = e; }
