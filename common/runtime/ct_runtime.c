@@ -733,6 +733,38 @@ void __ctStoreDelay(ct_tsc_t start_t)
     __ctThreadLocalBuffer->pos += sizeof(unsigned int) + sizeof(ct_tsc_t) * 2;
 }
 
+void __ctStoreMPITransfer(bool isSend, bool isBlocking, int count, int datatype, int comm_rank, int tag, void* buf, ct_tsc_t start_t, void* req)
+{
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    ct_tsc_t t = rdtsc();
+ 
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_mpi_transfer;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isSend;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = isBlocking;
+    *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)*2]) = comm_rank;
+    *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*2]) = tag;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2]) = (ct_addr_t) buf;
+    *((size_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t)]) = count * __ctGetSizeofMPIDatatype(datatype);
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)*2]) = (ct_addr_t) req;
+    
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t)*2 + sizeof(size_t) + sizeof(ct_tsc_t)*2;
+}
+
+void __ctStoreMPIWait(void* req, ct_tsc_t start_t)
+{
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    ct_tsc_t t = rdtsc();
+    
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_mpi_wait;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = (ct_addr_t) req;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(ct_addr_t) + sizeof(unsigned int)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;   
+    
+    __ctThreadLocalBuffer->pos = p + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)*2;
+}
+
 // Each thread maintains a map of pthread_t to ctid
 // Insert this pair into the map
 //   Currently the map is a linked list, as # of threads created by 1 thread stays low (<64)

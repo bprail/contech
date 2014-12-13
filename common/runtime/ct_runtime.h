@@ -93,6 +93,10 @@ void* __ctInitThread(void*);//pcontech_thread_create ptc
 void __ctCheckBufferSize(unsigned int);
 void __ctStoreDelay(ct_tsc_t start_t);
 
+int __ctIsMPIPresent();
+int __ctGetMPIRank();
+int __ctGetSizeofMPIDatatype(int datatype);
+
 void printQueueStats();
 
 void __ctAddThreadInfo(pthread_t *pt, unsigned int);

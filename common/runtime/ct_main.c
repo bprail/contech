@@ -67,7 +67,7 @@ int main(int argc, char** argv)
     int r;
     pthread_t pt_temp;
     char* d = NULL;
-
+    
     if (__ctThreadGlobalNumber == 0)
     {
         char* flimit = getenv("CONTECH_FE_LIMIT");
@@ -163,23 +163,41 @@ void* __ctBackgroundThreadWriter(void* d)
     pct_serial_buffer memLimitQueue = NULL;
     pct_serial_buffer memLimitQueueTail = NULL;
     unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
+    int mpiRank = __ctGetMPIRank();
+    int mpiPresent = __ctIsMPIPresent();
+    // TODO: Create MPI event
+    // TODO: Modify filename with MPI rank
+    // TODO: Only do the above when MPI is present
     
     if (fname == NULL)
     {
+        fname = "/tmp/contech_fe      ";
+        
 #if EVENT_COMPRESS
-        FILE* tempFileHandle = fopen( "/tmp/contech_fe", "wb");
+        FILE* tempFileHandle = fopen(fname, "wb");
         serialFileComp = gzdopen (fileno(tempFileHandle), "wb");
 #else
-        serialFile = fopen( "/tmp/contech_fe", "wb");
+        if (mpiPresent != 0)
+        {
+            char* fnameMPI = strdup(fname);
+            fnameMPI[15] = '.';
+            snprintf(fnameMPI + 16, 5, "%d", mpiRank);
+            serialFile = fopen(fnameMPI, "wb");
+            free(fnameMPI);
+        }
+        else
+        {
+            serialFile = fopen(fname, "wb");
+        }
 #endif
     }
     else
     {
 #if EVENT_COMPRESS
-        FILE* tempFileHandle = fopen( fname, "wb");
+        FILE* tempFileHandle = fopen(fname, "wb");
         serialFileComp = gzdopen (fileno(tempFileHandle), "wb");
 #else
-        serialFile = fopen( fname, "wb");
+        serialFile = fopen(fname, "wb");
 #endif
     }
 
@@ -213,6 +231,24 @@ void* __ctBackgroundThreadWriter(void* d)
         fwrite(bb_info, sizeof(unsigned int), 1, serialFile);
 #endif
         totalWritten += 4 * sizeof(unsigned int);
+        
+        {
+            size_t tl, wl;
+            unsigned int buf[2];
+            buf[0] = ct_event_rank;
+            buf[1] = mpiRank;
+            
+            tl = 0;
+            do
+            {
+                wl = fwrite(&buf + tl, sizeof(unsigned int), 2 - tl, serialFile);
+                //if (wl > 0)
+                // wl is 0 on error, so it is safe to still add
+                tl += wl;
+            } while  (tl < 2);
+            
+            totalWritten += 2 * sizeof(unsigned int);
+        }
         
         bb_info += 4; // skip the basic block count
         while (bb_info != _binary_contech_bin_end)
