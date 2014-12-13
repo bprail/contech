@@ -56,6 +56,11 @@ namespace llvm {
         OMP_END,
         GLOBAL_SYNC_ACQUIRE, // Syncs that have no explicit address
         GLOBAL_SYNC_RELEASE,
+        MPI_SEND_BLOCKING,
+        MPI_RECV_BLOCKING,
+        MPI_SEND_NONBLOCKING,
+        MPI_RECV_NONBLOCKING,
+        MPI_TRANSFER_WAIT,
         NUM_CONTECH_FUNCTION_TYPES
     } CONTECH_FUNCTION_TYPE;
     

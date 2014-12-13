@@ -89,7 +89,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 31
+#define FUNCTIONS_INSTRUMENT_SIZE 43
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -126,7 +126,19 @@ namespace llvm {
                                            {STORE_AND_LEN("GOMP_atomic_end"), GLOBAL_SYNC_RELEASE},
                                            {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
-                                           {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER}};
+                                           {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER},
+                                           {STORE_AND_LEN("MPI_Send"), MPI_SEND_BLOCKING},
+                                           {STORE_AND_LEN("mpi_send_"), MPI_SEND_BLOCKING},
+                                           {STORE_AND_LEN("MPI_Recv"), MPI_RECV_BLOCKING},
+                                           {STORE_AND_LEN("mpi_recv_"), MPI_RECV_BLOCKING},
+                                           {STORE_AND_LEN("MPI_Isend"), MPI_SEND_NONBLOCKING},
+                                           {STORE_AND_LEN("mpi_isend_"), MPI_SEND_NONBLOCKING},
+                                           {STORE_AND_LEN("MPI_Irecv"), MPI_RECV_NONBLOCKING},
+                                           {STORE_AND_LEN("mpi_irecv_"), MPI_RECV_NONBLOCKING},
+                                           {STORE_AND_LEN("MPI_Barrier"), BARRIER_WAIT},
+                                           {STORE_AND_LEN("mpi_barrier_"), BARRIER_WAIT},
+                                           {STORE_AND_LEN("MPI_Wait"), MPI_TRANSFER_WAIT},
+                                           {STORE_AND_LEN("mpi_wait_"), MPI_TRANSFER_WAIT}};
 
     //
     // Contech - First record every load or store in a program
@@ -158,6 +170,9 @@ namespace llvm {
         Constant* storeMemReadMarkFunction;
         Constant* storeMemWriteMarkFunction;
 
+        Constant* storeMPITransferFunction;
+        Constant* storeMPIWaitFunction;
+        
         Constant* ompThreadCreateFunction;
         Constant* ompThreadJoinFunction;
         Constant* ompTaskCreateFunction;
@@ -174,7 +189,7 @@ namespace llvm {
         Type* int8Ty;
         Type* int32Ty;
         Type* voidTy;
-        Type* voidPtrTy;
+        PointerType* voidPtrTy;
         Type* int64Ty;
         Type* pthreadTy;
         Type* threadArgsTy;  // needed when wrapping pthread_create
@@ -197,6 +212,7 @@ namespace llvm {
         Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         Value* castSupport(Type*, Value*, Instruction*);
+        void insertMPITransfer(bool, bool, Value*, CallInst*);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
         
@@ -220,12 +236,12 @@ namespace llvm {
         FunctionType* funVoidI64VoidPtrVoidPtrTy;
         FunctionType* funVoidI8Ty;
         FunctionType* funVoidI32Ty;
-        FunctionType* funVoidI32I32Ty;
         FunctionType* funVoidI8VoidPtrI64Ty;
         FunctionType* funVoidVoidPtrI32Ty;
         FunctionType* funVoidI64I64Ty;
-        FunctionType* funI8I32Ty;
+        FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
         FunctionType* funI32I32Ty;
+        FunctionType* funVoidVoidPtrI64Ty;
 
         LLVMContext &ctx = M.getContext();
         #if LLVM_VERSION_MINOR>=5
@@ -287,9 +303,6 @@ namespace llvm {
         
         funI32I32Ty = FunctionType::get(int32Ty, ArrayRef<Type*>(argsTC, 1), false);
         storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
-        
-        Type* argsII[] = {int32Ty, int32Ty};
-        funVoidI32I32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsII, 2), false);
        
         Type* argsQB[] = {int8Ty};
         funVoidI8Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsQB, 1), false);
@@ -303,6 +316,14 @@ namespace llvm {
         Type* argsATI[] = {voidPtrTy, int32Ty};
         funVoidVoidPtrI32Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsATI, 2), false);
         storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
+        
+        Type* argsSMPIXF[] = {int8Ty, int8Ty, int32Ty, int32Ty, int32Ty, int32Ty, voidPtrTy, int64Ty, voidPtrTy};
+        funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
+        storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
+        
+        Type* argsMPIW[] = {voidPtrTy, int64Ty};
+        funVoidVoidPtrI64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
+        storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
         
         // This needs to be machine type here
         //
@@ -472,6 +493,41 @@ namespace llvm {
         smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
         
         return tMemOp;
+    }
+    
+    void Contech::insertMPITransfer(bool isSend, bool isBlocking, Value* startTime, CallInst* ci)
+    {
+        Constant* cSend = ConstantInt::get(int8Ty, isSend);
+        Constant* cBlock = ConstantInt::get(int8Ty, isBlocking);
+        Value* reqArg = NULL;
+        
+        if (isBlocking == true)
+        {
+            reqArg = ConstantPointerNull::get(voidPtrTy);
+        }
+        else
+        {
+            reqArg = castSupport(voidPtrTy, ci->getArgOperand(6), ci);
+        }
+        
+        // Fortran sometimes passes with pointers instead of values
+        Value* argsMPIXF[] = {cSend, 
+                              cBlock, 
+                              new LoadInst(ci->getArgOperand(1), "", ci),  
+                              castSupport(int32Ty, ci->getArgOperand(2), ci), // datatype, constant
+                              new LoadInst(ci->getArgOperand(3), "", ci), 
+                              new LoadInst(ci->getArgOperand(4), "", ci), 
+                              castSupport(voidPtrTy, ci->getArgOperand(0), ci), 
+                              startTime,
+                              reqArg};
+        
+        errs() << "Adding MPI Transfer call\n";
+        
+        // Need to insert after ci...
+        CallInst* ciStore = CallInst::Create(storeMPITransferFunction, 
+                                             ArrayRef<Value*>(argsMPIXF, 9), 
+                                             "", ci);
+        ci->moveBefore(ciStore);
     }
     
     void Contech::internalAddAllocate(BasicBlock& B)
@@ -1065,7 +1121,16 @@ cleanup:
                 
                 // call is indirect
                 // TODO: add dynamic check on function called
-                if (f == NULL) { hasUninstCall = true; continue; }
+                if (f == NULL) 
+                { 
+                    Value* v = ci->getCalledValue();
+                    f = dyn_cast<Function>(v->stripPointerCasts());
+                    if (f == NULL)
+                    {
+                        hasUninstCall = true; 
+                        continue; 
+                    }
+                }
 
                 int status;
                 const char* fmn = f->getName().data();
@@ -1540,6 +1605,44 @@ cleanup:
                     hasUninstCall = true;
                 }
                 break;
+                case(MPI_SEND_BLOCKING):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    insertMPITransfer(true, true, nGetTick, ci);
+                }
+                break;
+                case(MPI_RECV_BLOCKING):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    insertMPITransfer(false, true, nGetTick, ci);
+                }
+                break;
+                case(MPI_SEND_NONBLOCKING):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    insertMPITransfer(true, false, nGetTick, ci);
+                }
+                break;
+                case(MPI_RECV_NONBLOCKING):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    insertMPITransfer(false, false, nGetTick, ci);
+                }
+                break;
+                case(MPI_TRANSFER_WAIT):
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
+                    Value* argWait[] = {castSupport(voidPtrTy, ci->getOperand(0), I), nGetTick};
+                    ++I;
+                    CallInst* storeWait = CallInst::Create(storeMPIWaitFunction, ArrayRef<Value*>(argWait, 2), "", I);
+                    I = storeWait;
+                }
+                break;
                 default:
                     // TODO: Function->isIntrinsic()
                     if (0 == __ctStrCmp(fn, "memcpy")  ||
@@ -1754,6 +1857,7 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
+    debugLog("CastInst @" << __LINE__);
     return CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
 }
     
