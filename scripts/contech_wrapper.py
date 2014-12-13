@@ -81,6 +81,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     compileOnly = False;
     depsOnly = False;
     dragon = False;
+    MPI = False;
     
     for arg in sys.argv[1:]:
 
@@ -142,7 +143,9 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         # Compile only
         elif "-c" == arg:
             compileOnly = True
-        
+        elif "-lmpi" == arg[0:5]:
+            MPI = True
+            CFLAGS = CFLAGS + " " + arg
         # Combine other args into CFLAGS
         else:
             CFLAGS = CFLAGS + " " + arg
@@ -268,6 +271,12 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     pcall([OBJCOPY, "--input binary", "--output elf64-x86-64", "--binary-architecture i386", "contech.bin", "contech_state.o"])
                     #pcall([OBJCOPY, "--input binary", "--output elf32-i386", "--binary-architecture i386", "contech.bin", "contech_state.o"])
 
+                # Does the binary use MPI?
+                if MPI == True:
+                    RUNTIME = RUNTIME + CONTECH_HOME + "/common/runtime/ct_mpi.bc "
+                else:
+                    RUNTIME = RUNTIME + CONTECH_HOME + "/common/runtime/ct_nompi.bc "
+                    
                 # Compile final executable
                 pcall(["llvm-link", ofiles, RUNTIME, "-o", out + "_ct.link.bc"])
                 if ARM == True:
