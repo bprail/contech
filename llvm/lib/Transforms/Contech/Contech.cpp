@@ -511,12 +511,28 @@ namespace llvm {
         }
         
         // Fortran sometimes passes with pointers instead of values
+        Value* countArg = NULL;
+        Value* destArg = NULL;
+        Value* tagArg = NULL;
+        if (ci->getArgOperand(1)->getType()->isPointerTy())
+        {
+            countArg = new LoadInst(ci->getArgOperand(1), "", ci);
+            destArg = new LoadInst(ci->getArgOperand(3), "", ci);
+            tagArg = new LoadInst(ci->getArgOperand(4), "", ci);
+        }
+        else
+        {
+            countArg = ci->getArgOperand(1);
+            destArg = ci->getArgOperand(3);
+            tagArg = ci->getArgOperand(4);
+        }
+        
         Value* argsMPIXF[] = {cSend, 
                               cBlock, 
-                              new LoadInst(ci->getArgOperand(1), "", ci),  
+                              countArg,  
                               castSupport(int32Ty, ci->getArgOperand(2), ci), // datatype, constant
-                              new LoadInst(ci->getArgOperand(3), "", ci), 
-                              new LoadInst(ci->getArgOperand(4), "", ci), 
+                              destArg, 
+                              tagArg, 
                               castSupport(voidPtrTy, ci->getArgOperand(0), ci), 
                               startTime,
                               reqArg};
@@ -1863,3 +1879,4 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
     
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
+
