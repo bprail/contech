@@ -738,6 +738,10 @@ void __ctStoreMPITransfer(bool isSend, bool isBlocking, int count, int datatype,
     unsigned int p = __ctThreadLocalBuffer->pos;
     ct_tsc_t t = rdtsc();
  
+    //printf("|%llx < %llx|\n", start_t, t);
+    //fflush(stdout);
+    assert((t - start_t) < 100000000 && t > start_t);
+    
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_mpi_transfer;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isSend;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = isBlocking;
@@ -745,9 +749,9 @@ void __ctStoreMPITransfer(bool isSend, bool isBlocking, int count, int datatype,
     *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*2]) = tag;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2]) = (ct_addr_t) buf;
     *((size_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t)]) = count * __ctGetSizeofMPIDatatype(datatype);
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int)]) = start_t;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
-    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)*2]) = (ct_addr_t) req;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(size_t)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(size_t) + sizeof(ct_tsc_t)]) = t;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t) + sizeof(size_t) + sizeof(ct_tsc_t)*2]) = (ct_addr_t) req;
     
     __ctThreadLocalBuffer->pos += sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t)*2 + sizeof(size_t) + sizeof(ct_tsc_t)*2;
 }
