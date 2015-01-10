@@ -7,6 +7,9 @@ import sys
 import subprocess
 import shutil
 from util import pcall
+import glob
+import tempfile
+import subprocess
 
 def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     
@@ -50,6 +53,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             stateFile = os.environ["CONTECH_STATE_FILE"]
         else:
             stateFile = CONTECH_HOME + "/scripts/output/contechStateFile.temp"
+
     else:        
         print ">Error: Could not find contech installation. Set CONTECH_HOME to the root of your contech directory."
         exit(1)
@@ -63,6 +67,8 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     cfile="" 
     # Names of the .o files to be linked
     ofiles=""
+    # .o files hiding in .a files to be linked
+    oFromAFiles=""
     # Name of the output file
     out=""
     # All remaining flags to be passed on to clang
@@ -146,6 +152,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         elif "-lmpi" == arg[0:5]:
             MPI = True
             CFLAGS = CFLAGS + " " + arg
+
         # Combine other args into CFLAGS
         else:
             CFLAGS = CFLAGS + " " + arg
@@ -278,7 +285,29 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     RUNTIME = RUNTIME + CONTECH_HOME + "/common/runtime/ct_nompi.bc "
                     
                 # Compile final executable
-                pcall(["llvm-link", ofiles, RUNTIME, "-o", out + "_ct.link.bc"])
+
+                # But first extract .o files hiding in .a libraries
+                TMPARDIR = tempfile.mkdtemp()
+                if os.path.isdir(TMPARDIR):
+                    pcall(["mkdir",  "-p", TMPARDIR])
+
+                    for flag in CFLAGS.split():
+                        if ".a" == flag[-2:]:
+                            aFilename = flag
+                            if not flag.find("/") == -1:
+                                aFilename = flag.split("/")[-1]
+                            pcall(["cp", flag, TMPARDIR])
+                            pcall(["cd", TMPARDIR, ";", "ar", "x", aFilename])
+                    oFromA = glob.glob(TMPARDIR + "/*.o")
+                    for f in oFromA:
+                        head = subprocess.Popen(["head", "-c", "3", f], stdout=subprocess.PIPE)
+                        oFromAType = head.stdout.read()
+                        if oFromAType.startswith("BC"):
+                            oFromAFiles = oFromAFiles + " " + f 
+
+                    pcall(["llvm-link", ofiles, RUNTIME, oFromAFiles, "-o", out + "_ct.link.bc"])
+                    pcall(["rm",  "-rf", TMPARDIR])
+
                 if ARM == True:
                     pcall([OPT, "-always-inline", out + "_ct.link.bc", "-o", out + "_ct_inline.bc"])
                     pcall([CC, CFLAGS, "-c -o", out + "_ct.o", out + "_ct_inline.bc"])
@@ -288,6 +317,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                         
         else:
             passThrough(CC)
+
 
 # Pass all args through to the compiler and don't do anything else
 def passThrough(CC):
