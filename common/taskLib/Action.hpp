@@ -31,10 +31,11 @@ struct MemoryAction
 {
     union {
         struct {
-            uint64_t type : 3;
-            uint64_t pow_size : 3; // the size of the read or write is 2^pow_size
+            uint64_t addr : 48;
+            uint64_t resrv : 2;
             uint64_t rank : 8;
-            uint64_t addr : 50;
+            uint64_t pow_size : 3; // the size of the read or write is 2^pow_size
+            uint64_t type : 3;
         };
         uint64_t data;
     };
@@ -49,8 +50,9 @@ struct BasicBlockAction
 {
     union {
         struct {
+            uint64_t basic_block_id : 32;
+            uint64_t reserv : 29;
             uint64_t type : 3;
-            uint64_t basic_block_id : 61;
         };
         uint64_t data;
     };
@@ -64,8 +66,8 @@ struct Action
 {
     union {
         struct {
-            uint64_t type : 3;
             uint64_t junk : 61;
+            uint64_t type : 3;
         };
         // Raw bits
         uint64_t data;
