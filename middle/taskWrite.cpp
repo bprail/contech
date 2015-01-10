@@ -323,7 +323,7 @@ void* backgroundTaskWriter(void* v)
         
         ct_write(&tid, sizeof(TaskId), out);
         ct_write(&offset, sizeof(uint64), out);
-        printf("%d:%d @ %llx\t", tid.getContextId(), tid.getSeqId(), offset);
+        //printf("%d:%d @ %llx\t", tid.getContextId(), tid.getSeqId(), offset);
         
         taskSort.pop();
         
@@ -337,7 +337,7 @@ void* backgroundTaskWriter(void* v)
         {
             TaskWrapper &suTW = writeTaskMap.find(succ)->second;
             
-            printf("%d:%d (%d)\t", succ.getContextId(), succ.getSeqId(), suTW.p);
+            //printf("%d:%d (%d)\t", succ.getContextId(), succ.getSeqId(), suTW.p);
             
             suTW.p--;
             if (suTW.p == 0)
@@ -345,7 +345,7 @@ void* backgroundTaskWriter(void* v)
                 taskSort.push(make_pair(suTW.start, make_pair(suTW.self, suTW.writePos)));
             }
         }
-        printf("\n");
+        //printf("\n");
         
         //  Can erase tid, but we don't need the memory, will it speed up?
         writeTaskMap.erase(twit);
