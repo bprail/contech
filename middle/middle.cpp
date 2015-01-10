@@ -218,9 +218,16 @@ reset_middle:
         // Apply timestamp offsets
         if (hasTime)
         {
+            // TODO: Why does NAS-is fail on this assert?
+            //assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
+            assert(startTime <= endTime);
+        
+        
             // Note that this does nothing if the context has just started. In this case we apply the offset right after it is calculated, later
             startTime = startTime - activeContech.timeOffset;
             endTime = endTime - activeContech.timeOffset;
+            
+            
         }
         
         // Basic blocks: Record basic block ID and memOp's
@@ -809,6 +816,9 @@ reset_middle:
     for (auto& p : context)
     {
         Context& c = p.second;
+        
+        //printf("%d\t%llx\t%llx\t%llx\n", p.first, c.timeOffset, c.startTime, c.endTime);
+        
         for (Task* t : c.tasks)
         {
             backgroundQueueTask(t);
