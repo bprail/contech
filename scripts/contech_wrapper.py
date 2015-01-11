@@ -297,7 +297,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                             if not flag.find("/") == -1:
                                 aFilename = flag.split("/")[-1]
                             pcall(["cp", flag, TMPARDIR])
-                            pcall(["cd", TMPARDIR, ";", "ar", "x", aFilename])
+                            pcall(["cd", TMPARDIR, ";", CONTECH_HOME + "/scripts/uniq_ar_x.sh", aFilename])
                     oFromA = glob.glob(TMPARDIR + "/*.o")
                     for f in oFromA:
                         head = subprocess.Popen(["head", "-c", "3", f], stdout=subprocess.PIPE)
