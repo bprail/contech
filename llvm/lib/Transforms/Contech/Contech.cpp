@@ -89,7 +89,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 43
+#define FUNCTIONS_INSTRUMENT_SIZE 46
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -123,10 +123,13 @@ namespace llvm {
                                            {STORE_AND_LEN("GOMP_parallel_start"), OMP_CALL},
                                            {STORE_AND_LEN("GOMP_parallel_end"), OMP_END},
                                            {STORE_AND_LEN("GOMP_atomic_start"), GLOBAL_SYNC_ACQUIRE},
+                                           {STORE_AND_LEN("__kmpc_single"), GLOBAL_SYNC_ACQUIRE},
                                            {STORE_AND_LEN("GOMP_atomic_end"), GLOBAL_SYNC_RELEASE},
+                                           {STORE_AND_LEN("__kmpc_end_single"), GLOBAL_SYNC_RELEASE},
                                            {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
                                            {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER},
+                                           {STORE_AND_LEN("__kmpc_cancel_barrier"), OMP_BARRIER},
                                            {STORE_AND_LEN("MPI_Send"), MPI_SEND_BLOCKING},
                                            {STORE_AND_LEN("mpi_send_"), MPI_SEND_BLOCKING},
                                            {STORE_AND_LEN("MPI_Recv"), MPI_RECV_BLOCKING},
