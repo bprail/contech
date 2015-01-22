@@ -596,13 +596,13 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
-    unsigned int p = __ctThreadLocalBuffer->pos;
-    ct_tsc_t t = rdtsc();
-    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
-    
     // Unix 0 is successful
     //   So non zeros indicate the sync event did not happen
     if (success != 0) return;
+    
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    ct_tsc_t t = rdtsc();
+    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
@@ -740,7 +740,15 @@ void __ctStoreMPITransfer(bool isSend, bool isBlocking, int count, int datatype,
  
     //printf("|%llx < %llx|\n", start_t, t);
     //fflush(stdout);
-    assert((t - start_t) < 100000000 && t > start_t);
+    if ((t - start_t) < 10000000000 && t > start_t)
+    {
+        ;
+    }
+    else
+    {
+        printf("|%llx < %llx|\n", start_t, t);
+        assert(0);
+    }
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_mpi_transfer;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isSend;
