@@ -33,9 +33,10 @@ int main(int argc, const char *argv[])
         exit(1);
     }
 
-    ct_file* taskGraphFile  = create_ct_file_r(argv[1]);
-    if(isClosed(taskGraphFile)){
-        cerr << "ERROR: Couldn't open input file" << endl;
+    ct_file* taskGraphFile = create_ct_file_r(argv[1]);
+    if(taskGraphFile == NULL){
+        perror("create_ct_file_r");
+        cerr << "ERROR: Couldn't open input file: " << argv[1] << endl;
         exit(1);
     }
 
