@@ -196,14 +196,16 @@ CommTracker* CommTracker::fromFile(ct_file* taskGraphIn)
         TaskId uid = currentTask->getTaskId();
 
         // Iterate through every basic block
-        for (auto f = currentTask->getBasicBlockActions().begin(), e = currentTask->getBasicBlockActions().end(); f != e; f++)
+        auto bbv = currentTask->getBasicBlockActions();
+        for (auto f = bbv.begin(), e = bbv.end(); f != e; f++)
         {
             BasicBlockAction a = *f;
             uint bbId = a.basic_block_id;
             tracker->countBlock(bbId);
             short pos = 0;
 
-            for (auto ff = f.getMemoryActions().begin(), ee = f.getMemoryActions().end(); ff != ee; ff++)
+            auto mmv = f.getMemoryActions();
+            for (auto ff = mmv.begin(), ee = mmv.end(); ff != ee; ff++)
             {
                 MemoryAction mem = *ff;
                 switch (mem.type)
