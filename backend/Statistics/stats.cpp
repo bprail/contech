@@ -26,6 +26,8 @@ int main(int argc, char const *argv[])
     uint64 totalMemOps = 0;
     uint64 totalBlocksWithGlobals = 0;
     uint64 totalBlocksWithCalls = 0;
+    uint64 totalBlocksInROI = 0;
+    bool inROI = false;
 
     double averageBasicBlocksPerTask = 0;
     uint maxBasicBlocksPerTask = 0;
@@ -54,6 +56,15 @@ int main(int argc, char const *argv[])
         totalTasks++;
         uint basicBlocksInTask = 0;
         uint memOpsInTask = 0;
+        
+        if (currentTask->getTaskId() == tg->getROIStart())
+        {
+            inROI = true;
+        }
+        else if (currentTask->getTaskId() == tg->getROIEnd())
+        {
+            inROI = false;
+        }
 
         switch(currentTask->getType())
         {
@@ -75,6 +86,8 @@ int main(int argc, char const *argv[])
                     {
                         totalBlocksWithGlobals++;
                     }
+                    
+                    if (inROI) totalBlocksInROI++;
                     
                     totalBasicBlocks++;
                     basicBlocksInTask++;
@@ -133,6 +146,7 @@ int main(int argc, char const *argv[])
     printf("Average Basic Blocks per Task: %f\n", averageBasicBlocksPerTask);
     printf("Max Basic Blocks per Task: %u\n", maxBasicBlocksPerTask);
     printf("Total Basic Blocks: %llu\n", totalBasicBlocks);
+    printf("Total Blocks in ROI: %llu\n", totalBlocksInROI);
     printf("Blocks with Function Calls: %lf\n", (double)(totalBlocksWithCalls) / (double)(totalBasicBlocks));
     printf("Blocks with Global Accesses: %lf (%llu)\n", (double)(totalBlocksWithGlobals) / (double)(totalBasicBlocks), totalBlocksWithGlobals);
     printf("\n");
