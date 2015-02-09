@@ -29,6 +29,7 @@ namespace llvm {
         ct_event_id ev; // if ev == ct_event_basic_block, then no sync in this block
         pllvm_mem_op first_op;
         std::string fnName;
+        std::string callFnName;
         //const char* fnName;
         const char* fileName;
         BasicBlock* tgts[2]; // basic blocks may branch into up to two other blocks

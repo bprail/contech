@@ -89,7 +89,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 46
+#define FUNCTIONS_INSTRUMENT_SIZE 48
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -108,9 +108,11 @@ namespace llvm {
                                            {STORE_AND_LEN("valloc"), MALLOC},
                                            {STORE_AND_LEN("memalign"), MALLOC2},
                                            {STORE_AND_LEN("operator new"), MALLOC},
+                                           {STORE_AND_LEN("mmap"), MALLOC2},
                                            // Splash2.raytrace has a free_rayinfo, so \0 added
                                            {STORE_AND_LEN("free\0"), FREE},
-                                           {STORE_AND_LEN("operator delete"),FREE},
+                                           {STORE_AND_LEN("operator delete"), FREE},
+                                           {STORE_AND_LEN("munmap"), FREE},
                                            {STORE_AND_LEN("exit"), EXIT},
                                            {STORE_AND_LEN("pthread_mutex_lock"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("pthread_mutex_trylock"), SYNC_ACQUIRE},
@@ -735,6 +737,11 @@ cleanup:
                 strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
+                
+                strLen = bi->second->callFnName.length();
+                contechStateFile->write((char*)&strLen, sizeof(int));
+                *contechStateFile << bi->second->callFnName;
+                
                 contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
                 
                 while (t != NULL)
@@ -1135,6 +1142,46 @@ cleanup:
                     t->next = tMemOp;
                 }
             }
+            else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(&*I))
+            {
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
+                Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                 // If sync_acquire returns int, pass it, else pass 0 - success
+                Value* retV = ConstantInt::get(int32Ty, 0);
+                // ++I moves the insertion point to after the xchg inst 
+                Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
+                Value* cArg[] = {xchgI->getPointerOperand(),
+                                 con1, 
+                                 retV,
+                                 nGetTick};
+                debugLog("storeSyncFunction @" << __LINE__);
+                CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                    "", I); // Insert after xchg inst
+                I = nStoreSync;
+                containingEvent = ct_event_sync;
+                iPt = nStoreSync;
+            }
+            else if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(&*I))
+            {
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
+                Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                 // If sync_acquire returns int, pass it, else pass 0 - success
+                Value* retV = ConstantInt::get(int32Ty, 0);
+                // ++I moves the insertion point to after the armw inst 
+                Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
+                Value* cArg[] = {armw->getPointerOperand(),
+                                 con1, 
+                                 retV,
+                                 nGetTick};
+                debugLog("storeSyncFunction @" << __LINE__);
+                CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                    "", I); // Insert after armw inst
+                I = nStoreSync;
+                containingEvent = ct_event_sync;
+                iPt = nStoreSync;
+            }
             else if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
                 Function *f = ci->getCalledFunction();
                 
@@ -1164,6 +1211,7 @@ cleanup:
                     iPt = ci;
                 }
                 
+                bi->callFnName.assign(fn);
                 CONTECH_FUNCTION_TYPE funTy = classifyFunctionName(fn);
                 //errs() << funTy << "\n";
                 switch(funTy)
@@ -1179,6 +1227,7 @@ cleanup:
                     }
                     break;
                 case(MALLOC):
+                {
                     if (!(ci->getCalledFunction()->getReturnType()->isVoidTy()))
                     {
                         Value* cArg[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(0), ci};
@@ -1188,8 +1237,10 @@ cleanup:
                         I = nStoreME;
                         hasUninstCall = true;
                     }
-                    break;
+                }
+                break;
                 case(MALLOC2):
+                {
                     if (!(ci->getCalledFunction()->getReturnType()->isVoidTy()))
                     {
                         Value* cArg[] = {ConstantInt::get(int8Ty, 1), ci->getArgOperand(1), ci};
@@ -1199,7 +1250,8 @@ cleanup:
                         I = nStoreME;
                         hasUninstCall = true;
                     }
-                    break;
+                }
+                break;
                 case (FREE):
                 {
                     Value* cz = ConstantInt::get(int8Ty, 0);
@@ -1679,6 +1731,17 @@ cleanup:
                             // LLVM.memcpy can take i32 or i64 for size of copy
                             Value* castSize = castSupport(pthreadTy, ci->getArgOperand(2), I);
                             Value* cArgS[] = {castSize, ci->getArgOperand(0), ci->getArgOperand(1)};
+                            debugLog("storeBulkMemoryOpFunction @" << __LINE__);
+                            CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
+                            hasUninstCall = true;
+                        }
+                        else if (0 == __ctStrCmp(fn + 5, "memset"))
+                        {
+                            // LLVM.memset can take i32 or i64 for size of copy
+                            Value* castSize = castSupport(pthreadTy, ci->getArgOperand(2), I);
+                            // TODO: verify this construction works
+                            Value* noSrcPtr = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), I);
+                            Value* cArgS[] = {castSize, ci->getArgOperand(0), noSrcPtr};
                             debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                             CallInst::Create(storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", I);
                             hasUninstCall = true;
