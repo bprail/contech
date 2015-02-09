@@ -13,13 +13,14 @@ void hbRaceDetector(ct_file* taskGraphIn);
 
 void addTaskToGraphMap(unordered_map<TaskId,vector<TaskId>>& graphMap, Task* t);
 bool hbPathExists(unordered_map<TaskId,vector<TaskId>>& graphMap, TaskId start, TaskId end);
-void reportRace(MemoryAction existingMop,MemoryAction newMop,TaskId existingCTID,TaskId newCTID,BasicBlockAction bb,int idx);
+void reportRace(MemoryAction existingMop,MemoryAction newMop,TaskId existingCTID,TaskId newCTID,BasicBlockAction bb,unsigned int, int idx, TaskGraphInfo*);
 
 //Simple container class to bind a memory action and an CTID
 class Heltech_memory_op {
 public:
-    Heltech_memory_op(MemoryAction mop,TaskId ctid);
+    Heltech_memory_op(MemoryAction mop,unsigned int, TaskId ctid);
     Heltech_memory_op();
     MemoryAction  mop;
+    unsigned int bbid;
     TaskId ctid;
 };

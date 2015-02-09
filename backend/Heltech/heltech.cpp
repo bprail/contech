@@ -152,6 +152,7 @@ void hbRaceDetector(ct_file* taskGraphIn)
     // Process the task graph
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
     if (tg == NULL) {}
+    TaskGraphInfo* tgi = tg->getTaskGraphInfo();
 
     while(Task* currentTask = tg->readContechTask()){
             
@@ -181,7 +182,7 @@ void hbRaceDetector(ct_file* taskGraphIn)
                         if (existingMop->mop.type == action_type_mem_write) continue;
                         if (newMop.type == action_type_mem_read) continue;
                         delete existingMop;
-                        lastAccess[newMop.addr] = new Heltech_memory_op(newMop,ctid);
+                        lastAccess[newMop.addr] = new Heltech_memory_op(newMop,bb.basic_block_id,ctid);
                         continue;
                     }
                     
@@ -203,7 +204,7 @@ void hbRaceDetector(ct_file* taskGraphIn)
                         
                         if (!pathExists) 
                         {
-                            reportRace(existingMop->mop,newMop,existingMop->ctid,ctid,bb,memOpIndex);
+                            reportRace(existingMop->mop,newMop,existingMop->ctid,ctid,bb,existingMop->bbid,memOpIndex, tgi);
                             raceAddresses.insert(newMop.addr);
                             basicBlocks.insert(bb.basic_block_id);
                         }
@@ -230,7 +231,7 @@ void hbRaceDetector(ct_file* taskGraphIn)
                 //
                 if (existingMop == NULL)
                 {
-                    lastAccess[newMop.addr] = new Heltech_memory_op(newMop,ctid);
+                    lastAccess[newMop.addr] = new Heltech_memory_op(newMop,bb.basic_block_id,ctid);
                 }
         
                 //handle frees by clearing out that memory location from the last access
@@ -266,7 +267,9 @@ void reportRace(MemoryAction existingMop,
                 TaskId existingCTID,
                 TaskId newCTID,
                 BasicBlockAction bb,
-                int idx)
+                unsigned int srcBBID,
+                int idx,
+                TaskGraphInfo* tgi)
 {
     
     //Increment the number of races found
@@ -286,13 +289,31 @@ void reportRace(MemoryAction existingMop,
         << existingCTID << ") and (" 
         << newCTID << ")\n" << endl;
     cerr << bb << endl;
+    {
+        auto bbi = tgi->getBasicBlockInfo(srcBBID);
+        fprintf(stderr, "%u, %s, %s:%u\n",
+                                         srcBBID, 
+                                         bbi.functionName.c_str(), 
+                                         bbi.fileName.c_str(),
+                                     bbi.lineNumber);
+    }
+    {
+        unsigned int bbid = bb.basic_block_id;
+        auto bbi = tgi->getBasicBlockInfo(bbid);
+        fprintf(stderr, "%u, %s, %s:%u\n",
+                                         bbid, 
+                                         bbi.functionName.c_str(), 
+                                         bbi.fileName.c_str(),
+                                     bbi.lineNumber);
+    }                             
     cerr << endl;
 }
 
 /**
  *Constructor for the Heltech_memory_op container
  */
-Heltech_memory_op::Heltech_memory_op(MemoryAction mop,TaskId ctid){
+Heltech_memory_op::Heltech_memory_op(MemoryAction mop,unsigned int b, TaskId ctid){
     this->mop = mop;
+    this->bbid = b;
     this->ctid = ctid;
 }
