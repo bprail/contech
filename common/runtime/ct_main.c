@@ -149,14 +149,9 @@ int main(int argc, char** argv)
 #endif
 
 
-#define EVENT_COMPRESS 0
 void* __ctBackgroundThreadWriter(void* d)
 {
-#if EVENT_COMPRESS
-    gzFile serialFileComp;
-#else
     FILE* serialFile;
-#endif
     char* fname = getenv("CONTECH_FE_FILE");
     unsigned int wpos = 0;
     size_t totalWritten = 0;
@@ -171,15 +166,9 @@ void* __ctBackgroundThreadWriter(void* d)
     
     if (fname == NULL)
     {
-        fname = "/tmp/contech_fe      ";
-        
-#if EVENT_COMPRESS
-        FILE* tempFileHandle = fopen(fname, "wb");
-        serialFileComp = gzdopen (fileno(tempFileHandle), "wb");
-#else
         if (mpiPresent != 0)
         {
-            char* fnameMPI = strdup(fname);
+            char* fnameMPI = strdup("/tmp/contech_fe      ");
             fnameMPI[15] = '.';
             snprintf(fnameMPI + 16, 5, "%d", mpiRank);
             serialFile = fopen(fnameMPI, "wb");
@@ -187,25 +176,15 @@ void* __ctBackgroundThreadWriter(void* d)
         }
         else
         {
-            serialFile = fopen(fname, "wb");
+            serialFile = fopen("/tmp/contech_fe", "wb");
         }
-#endif
     }
     else
     {
-#if EVENT_COMPRESS
-        FILE* tempFileHandle = fopen(fname, "wb");
-        serialFileComp = gzdopen (fileno(tempFileHandle), "wb");
-#else
         serialFile = fopen(fname, "wb");
-#endif
     }
 
-#if EVENT_COMPRESS
-    if (serialFileComp == NULL)
-#else
     if (serialFile == NULL)
-#endif
     {
         fprintf(stderr, "Failure to open front-end stream for writing.\n");
         if (fname == NULL) { fprintf(stderr, "\tCONTECH_FE_FILE unspecified\n");}
@@ -219,17 +198,10 @@ void* __ctBackgroundThreadWriter(void* d)
         unsigned int version = CONTECH_EVENT_VERSION;
         uint8_t* bb_info = _binary_contech_bin_start;
         
-#if EVENT_COMPRESS
-        gzwrite(serialFileComp, &id, sizeof(unsigned int));
-        gzwrite(serialFileComp, &ty, sizeof(unsigned int));
-        gzwrite(serialFileComp, &version, sizeof(unsigned int));
-        gzwrite(serialFileComp, bb_info, sizeof(unsigned int));
-#else
         fwrite(&id, sizeof(unsigned int), 1, serialFile); 
         fwrite(&ty, sizeof(unsigned int), 1, serialFile);
         fwrite(&version, sizeof(unsigned int), 1, serialFile);
         fwrite(bb_info, sizeof(unsigned int), 1, serialFile);
-#endif
         totalWritten += 4 * sizeof(unsigned int);
         
         {
@@ -288,11 +260,6 @@ void* __ctBackgroundThreadWriter(void* d)
                 buf[1] = __ctQueuedBuffers->id;
                 buf[2] = __ctQueuedBuffers->pos;
                 //fprintf(stderr, "%d, %llx, %d\n", __ctQueuedBuffers->id, totalWritten, __ctQueuedBuffers->pos);
-#if EVENT_COMPRESS
-                gzwrite (serialFileComp, &buf, sizeof(unsigned int));
-                gzwrite (serialFileComp, &__ctQueuedBuffers->id, sizeof(unsigned int));
-                gzwrite (serialFileComp, &__ctQueuedBuffers->pos, sizeof(unsigned int));
-#else
                 do
                 {
                     wl = fwrite(&buf + tl, sizeof(unsigned int), 3 - tl, serialFile);
@@ -300,7 +267,7 @@ void* __ctBackgroundThreadWriter(void* d)
                     // wl is 0 on error, so it is safe to still add
                     tl += wl;
                 } while  (tl < 3);
-#endif
+
                 totalWritten += 3 * sizeof(unsigned int);
                 
             }
@@ -320,20 +287,16 @@ void* __ctBackgroundThreadWriter(void* d)
             // Now write the bytes out of the buffer, until all have been written
             tl = 0;
             wl = 0;
+            if (qb->pos > SERIAL_BUFFER_SIZE)
+            {
+                fprintf(stderr, "Illegal buffer size - %d\n", qb->pos);
+            }
             while (tl < __ctQueuedBuffers->pos)
             {
-                if (qb->pos > SERIAL_BUFFER_SIZE)
-                {
-                    fprintf(stderr, "Illegal buffer size - %d\n", qb->pos);
-                }
-#if EVENT_COMPRESS
-                wl = gzwrite (serialFileComp, __ctQueuedBuffers->data + tl, (__ctQueuedBuffers->pos) - tl);
-#else
                 wl = fwrite(__ctQueuedBuffers->data + tl, 
                             sizeof(char), 
                             (__ctQueuedBuffers->pos) - tl, 
                             serialFile);
-#endif
                 // if (wl < 0)
                 // {
                 //     continue;
@@ -452,13 +415,10 @@ void* __ctBackgroundThreadWriter(void* d)
             printf("Total Uncomp Written: %ld\n", totalWritten);
             printQueueStats();
             fflush(stdout);
-#if EVENT_COMPRESS
-            gzflush (serialFileComp, Z_FULL_FLUSH);
-            gzclose(serialFileComp);
-#else
+            
             fflush(serialFile);
             fclose(serialFile);
-#endif
+            
             pthread_mutex_unlock(&__ctQueueBufferLock);
             pthread_exit(NULL);            
         }
