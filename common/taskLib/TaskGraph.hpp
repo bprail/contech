@@ -13,11 +13,12 @@
 #include <assert.h>
 #include <vector>
 #include <map>
+#include <set>
 #include <deque>
 #include <algorithm>
 #include <inttypes.h>
 
-#define TASK_GRAPH_VERSION 4314
+#define TASK_GRAPH_VERSION 4315
 
 using namespace std;
 namespace contech {
@@ -36,6 +37,11 @@ private:
     vector<uint64> taskOrder;
     vector<uint64>::iterator nextTask;
     
+    TaskId ROIStart;
+    TaskId ROIEnd;
+    
+    unsigned int numOfContexts;
+    
     // Privately, attempt to read a task graph info struct
     TaskGraphInfo* readTaskGraphInfo();
     void initTaskIndex(uint64);
@@ -50,10 +56,14 @@ public:
     Task* getNextTask();
     Task* getTaskById(TaskId id);
     unsigned int getNumberOfTasks();
+    unsigned int getNumberOfContexts();
     
     // These calls are deprecated and will be removed soon...
     Task* readContechTask();
     Task* getContechTask(TaskId);
+    
+    TaskId getROIStart();
+    TaskId getROIEnd();
     
     TaskGraphInfo* getTaskGraphInfo();
     ~TaskGraph();

@@ -53,6 +53,8 @@ TaskGraph::TaskGraph(ct_file* f)
     
     // Next is the location of the taskIndex in the file
     ct_read(&taskIndexOffset, sizeof(uint64), f);
+    ct_read(&ROIStart, sizeof(TaskId), f);
+    ct_read(&ROIEnd, sizeof(TaskId), f);
     
     // Then comes the taskGraphInfo structure
     tgi = readTaskGraphInfo();
@@ -127,6 +129,8 @@ void TaskGraph::initTaskIndex(uint64 off)
     ct_read(&taskCount, sizeof(uint64), inputFile);
     //printf("Tasks in index - %llu\n", taskCount);
     
+    set<ContextId> uniqContexts;
+    
     for (uint i = 0; i < taskCount; i++)
     {
         TaskId tid;
@@ -143,8 +147,10 @@ void TaskGraph::initTaskIndex(uint64 off)
         assert(taskIdx.find(tid) == taskIdx.end());
         taskIdx[tid] = pos;
         taskOrder.push_back(pos);
+        uniqContexts.insert(tid.getContextId());
     }
     nextTask = taskOrder.begin();
+    numOfContexts = uniqContexts.size();
 }
 
 TaskGraphInfo* TaskGraph::readTaskGraphInfo()
@@ -161,4 +167,19 @@ TaskGraphInfo* TaskGraph::readTaskGraphInfo()
 unsigned int TaskGraph::getNumberOfTasks()
 {
     return taskOrder.size();
+}
+
+unsigned int TaskGraph::getNumberOfContexts()
+{
+    return numOfContexts;
+}
+
+TaskId TaskGraph::getROIStart()
+{
+    return ROIStart;
+}
+
+TaskId TaskGraph::getROIEnd()
+{
+    return ROIEnd;
 }
