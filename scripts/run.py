@@ -231,6 +231,12 @@ def main(parsec=False, nas=False):
                 elif "simpleCache" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/SimpleCache/output", name + ".csv")
                     pcall([os.path.join(CONTECH_HOME, "backend/SimpleCache/scache"), taskgraph, ">", output])
+                elif "sCache" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/SCacheOrder/output", name + ".csv")
+                    pcall([os.path.join(CONTECH_HOME, "backend/SCacheOrder/scache"), taskgraph, ">", output])
+                elif "codeS" in backend:
+                    output = os.path.join(CONTECH_HOME, "backend/CodeSimilar/output", name + ".csv")
+                    pcall([os.path.join(CONTECH_HOME, "backend/CodeSimilar/codeS"), taskgraph, ">", output])
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
