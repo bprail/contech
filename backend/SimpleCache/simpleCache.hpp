@@ -8,12 +8,7 @@
 
 struct cache_stats_t {
     uint64_t accesses;
-    uint64_t reads;
-    uint64_t read_misses;
-    uint64_t writes;
-    uint64_t write_misses;
     uint64_t misses;
-    double   miss_rate;
 };
 
 class SimpleCache

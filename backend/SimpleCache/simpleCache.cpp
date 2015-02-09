@@ -223,13 +223,11 @@ void SimpleCacheBackend::updateBackend(Task* currentTask)
                         contextCacheState[ctid].updateCache(false, accessSize, srcAddress, p_stats);
                         srcAddress += accessSize;
                         p_stats->accesses ++;
-                        p_stats->reads++;
                     }
                     
                     contextCacheState[ctid].updateCache(true, accessSize, dstAddress, p_stats);
                     dstAddress += accessSize;
                     p_stats->accesses ++;
-                    p_stats->writes++;
                 } while (bytesToAccess > 0);
                 continue;
             }
@@ -246,12 +244,10 @@ void SimpleCacheBackend::updateBackend(Task* currentTask)
                 
                 if (ma.type == action_type_mem_write)
                 {
-                    p_stats->writes++;
                     rw = true;
                 }
                 else if (ma.type == action_type_mem_read)
                 {
-                    p_stats->reads++;
                     rw = false;
                 }
                 
@@ -323,21 +319,27 @@ void SimpleCacheBackend::completeBackend(FILE* f, contech::TaskGraphInfo* tgi)
         {
             unsigned int bbid = ((it->first) >> 32);
             auto bbi = tgi->getBasicBlockInfo(bbid);
-            fprintf(f, "%u, %lf, %u, %u, %s, %s:%u\n", it->second, 
-                                        (((it->second) / (double)p_stats->misses) * 100.0),
-                                         bbid, 
-                                         (unsigned int)(it->first), 
-                                         bbi.functionName.c_str(), 
-                                         bbi.fileName.c_str(),
+            if ((((it->second) / (double)p_stats->misses) * 100.0) > 1.0)
+            {
+                fprintf(f, "%u, %lf, %u, %u, %s, %s:%u\n", it->second, 
+                                            (((it->second) / (double)p_stats->misses) * 100.0),
+                                             bbid, 
+                                             (unsigned int)(it->first), 
+                                             bbi.functionName.c_str(), 
+                                             bbi.fileName.c_str(),
                                          bbi.lineNumber);
+            }
         }
     }
     fprintf(f, "Address, Size, BBID, Misses\n");
     for (auto it = allocBlocks.begin(), et = allocBlocks.end(); it != et; ++it)
     {
-        fprintf(f, "%llx, %u, %u, %lf\n", it->first, 
-                                           it->second.size, 
-                                           it->second.bbid, 
-                                           ((double)(it->second.misses)) / (double)(p_stats->misses)*100.0);
+        if (((double)(it->second.misses)) / (double)(p_stats->misses)*100.0 > 1.0)
+        {
+            fprintf(f, "%llx, %u, %u, %lf\n", it->first, 
+                                               it->second.size, 
+                                               it->second.bbid, 
+                                               ((double)(it->second.misses)) / (double)(p_stats->misses)*100.0);
+        }
     }
 }
