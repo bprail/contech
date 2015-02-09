@@ -158,7 +158,8 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         // Also storing thread_id then gives TYPE + [3], ID[4], so read [7]
         if (npe->event_type != ct_event_basic_block &&
             npe->event_type != ct_event_basic_block_info && 
-            npe->event_type != ct_event_buffer)
+            npe->event_type != ct_event_buffer &&
+            npe->event_type != ct_event_roi)
         {
             char buf[7];
             // As of 8/18/14, thread_id is removed from all events
@@ -310,6 +311,28 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             else
             {
                 npe->bbi.file_name = NULL;
+            }
+            
+            fread_check(&len, sizeof(unsigned int), 1, fptr);
+            npe->bbi.callFun_name_len = len;
+            if (len > 0)
+            {
+                tStr = (char*) malloc(sizeof(char) * (len + 1));
+                if (tStr == NULL)
+                {
+                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    free(npe->bbi.file_name);
+                    free(npe->bbi.fun_name);
+                    free(npe);
+                    return NULL;
+                }
+                tStr[len] = '\0';
+                fread_check(tStr, sizeof(char), len, fptr);
+                npe->bbi.callFun_name = tStr;
+            }
+            else
+            {
+                npe->bbi.callFun_name = NULL;
             }
             
             fread_check(&len, sizeof(unsigned int), 1, fptr);
@@ -476,6 +499,12 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 
             // setDebugScan();
             for (int i = 0; i < 512; i++) binInfo[i] = 0;
+        }
+        break;
+        
+        case (ct_event_roi):
+        {
+            // This event has no additional fields
         }
         break;
         
