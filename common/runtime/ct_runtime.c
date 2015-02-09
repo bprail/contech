@@ -176,8 +176,16 @@ void __parsec_bench_begin(int t)
     //   flag that create / join need to be recorded
 }
 
- void __parsec_roi_begin()
- {
+void __ctWriteROIEvent()
+{
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_roi;
+    __ctThreadLocalBuffer->pos += 1;
+}
+
+void __parsec_roi_begin()
+{
     if (__ctIsROIEnabled == true)
     {
         {
@@ -188,10 +196,14 @@ void __parsec_bench_begin(int t)
         __ctAllocateLocalBuffer();
         __ctIsROIActive = true;
     }
- }
+    else
+    {
+        __ctWriteROIEvent();
+    }
+}
  
- void __parsec_roi_end()
- {
+void __parsec_roi_end()
+{
     if (__ctIsROIEnabled == true)
     {
         __ctQueueBuffer(false);
@@ -202,12 +214,16 @@ void __parsec_bench_begin(int t)
             printf("CT_ROI_END: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
         }
     }
- }
+    else
+    {
+        __ctWriteROIEvent();
+    }
+}
  
- void __parsec_bench_end()
- {
+void __parsec_bench_end()
+{
     // all events now discarded
- }
+}
 
 void __ctCleanupThread(void* v)
 {
