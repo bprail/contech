@@ -16,6 +16,7 @@ int main(int argc, char* argv[])
     bool parallelMiddle = true;
     pthread_t backgroundT;
     EventQ eventQ;
+    bool roiEvent = false;
     
     // First attempt middle layer in parallel, if there is an error,
     //   then restart in serial mode.
@@ -61,7 +62,9 @@ reset_middle:
     
     // Init TaskGraphFile
     ct_write(&taskGraphVersion, sizeof(int), out);
-    ct_write(&space, sizeof(unsigned long long), out);
+    ct_write(&space, sizeof(unsigned long long), out); // Index
+    ct_write(&space, sizeof(unsigned long long), out); // ROI start
+    ct_write(&space, sizeof(unsigned long long), out); // ROI end
     
     pthread_mutex_init(&taskQueueLock, NULL);
     pthread_cond_init(&taskQueueCond, NULL);
@@ -125,9 +128,10 @@ reset_middle:
         }
         else if (event->event_type == ct_event_basic_block_info && currentRank == 0)
         {
-            string functionName, fileName;
+            string functionName, fileName, callFunName;
             if (event->bbi.fun_name != NULL) functionName.assign(event->bbi.fun_name);
             if (event->bbi.file_name != NULL) fileName.assign(event->bbi.file_name);
+            if (event->bbi.callFun_name != NULL) callFunName.assign(event->bbi.callFun_name);
             //printf("%d - %d at %d\t", event->bbi.basic_block_id, event->bbi.num_mem_ops, event->bbi.line_num);
             //printf("in %s() of %s\n", event->bbi.fun_name, event->bbi.file_name);
             //printf("%d <> %d\n", event->bbi.crit_path_len, event->bbi.num_ops);
@@ -138,7 +142,8 @@ reset_middle:
                                      event->bbi.num_ops,
                                      event->bbi.crit_path_len,
                                      functionName,
-                                     fileName);
+                                     fileName,
+                                     callFunName);
         }
         EventLib::deleteContechEvent(event);
         if (seenFirstEvent) break;
@@ -166,6 +171,7 @@ reset_middle:
             case ct_event_bulk_memory_op:
             case ct_event_mpi_transfer:
             case ct_event_mpi_wait:
+            case ct_event_roi:
                 break;
             default:
                 EventLib::deleteContechEvent(event);
@@ -600,6 +606,7 @@ reset_middle:
         } 
         
         // Memcpy etc
+        //  In the case of etc, src may be NULL
         else if (event->event_type == ct_event_bulk_memory_op)
         {
             ct_memory_op srcA, dstA;
@@ -796,6 +803,28 @@ reset_middle:
             {
                 mpiRecvQ[currentRank][event->mpixf.comm_rank][event->mpixf.tag] = activeContech.activeTask();
                 activeContech.createBasicBlockContinuation();
+            }
+        }
+        else if (event->event_type == ct_event_roi)
+        {
+            Task* activeT = activeContech.activeTask();
+            activeT->setEndTime(activeT->getStartTime() + activeT->getBBCount());
+            activeContech.createBasicBlockContinuation();
+            updateContextTaskList(activeContech);
+            
+            activeT = activeContech.activeTask();
+            TaskId tid = activeT->getTaskId();
+            if (roiEvent == false)
+            {
+                
+                setROIStart(tid);
+                printf("DEBUG - ROI Start - %llu\n", tid);
+                roiEvent = true;
+            }
+            else
+            {
+                setROIEnd(tid);
+                printf("DEBUG - ROI End - %llu\n", tid);
             }
         }
         // End switch block on event type

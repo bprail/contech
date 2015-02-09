@@ -13,6 +13,19 @@ pthread_mutex_t taskQueueLock;
 pthread_cond_t taskQueueCond;
 deque<Task*>* taskQueue;
 
+TaskId roiStart = 0;
+TaskId roiEnd = 0;
+
+void setROIStart(TaskId t)
+{
+    roiStart = t;
+}
+
+void setROIEnd(TaskId t)
+{
+    roiEnd = t;
+}
+
 //
 // Queue a task for the background thread to write out
 //
@@ -316,10 +329,13 @@ void* backgroundTaskWriter(void* v)
     //   its prior tasks in the index.
     //
     unsigned int indexWriteCount = 0;
+    TaskId lastTid = 0;
     while (!taskSort.empty())
     {
         TaskId tid = taskSort.top().second.first;
         uint64 offset = taskSort.top().second.second;
+        
+        lastTid = tid;
         
         ct_write(&tid, sizeof(TaskId), out);
         ct_write(&offset, sizeof(uint64), out);
@@ -358,8 +374,17 @@ void* backgroundTaskWriter(void* v)
     
     // Now write the position of the index
     ct_seek(out, 4);
+    
     // With ftell, we use long, rather than the uint64 type which we track positions
     ct_write(&pos, sizeof(pos), out);
+    
+    // Write the ROI start and end after index
+    ct_write(&roiStart, sizeof(TaskId), out);
+    if (roiEnd == 0)
+    {
+        roiEnd = lastTid;
+    }
+    ct_write(&roiEnd, sizeof(TaskId), out);
     
     //
     // Stats for the background thread.
