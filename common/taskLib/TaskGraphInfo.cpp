@@ -13,7 +13,7 @@ void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
         uint bbid = 0, flags = 0;
         uint lineNumber, numOfMemOps, numOps, critPathLen;
         char* f;
-        string function, file;
+        string function, file, callsFunction;
         
         ct_read(&bbid, sizeof(uint), in);
         ct_read(&flags, sizeof(uint), in);
@@ -42,7 +42,17 @@ void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
             free(f);
         }
         
-        addRawBasicBlockInfo(bbid, flags, lineNumber, numOfMemOps, numOps, critPathLen, function, file);
+        ct_read(&strLen, sizeof(uint), in);
+        if (strLen > 0)
+        {
+            f = (char*) malloc(sizeof(char) * (strLen + 1));
+            f[strLen] = '\0';
+            ct_read(f, sizeof(char) * strLen, in);
+            callsFunction.assign(f);
+            free(f);
+        }
+        
+        addRawBasicBlockInfo(bbid, flags, lineNumber, numOfMemOps, numOps, critPathLen, function, file, callsFunction);
     }
 }
 
@@ -51,7 +61,15 @@ TaskGraphInfo::TaskGraphInfo()
 
 }
 
-void TaskGraphInfo::addRawBasicBlockInfo(uint bbid, uint flags, uint lineNum, uint numMemOps, uint numOps, uint critPathLen, string function, string file)
+void TaskGraphInfo::addRawBasicBlockInfo(uint bbid, 
+                                         uint flags, 
+                                         uint lineNum, 
+                                         uint numMemOps, 
+                                         uint numOps, 
+                                         uint critPathLen, 
+                                         string function, 
+                                         string file,
+                                         string inokFun)
 {
     BasicBlockInfo bbi;
     
@@ -62,6 +80,7 @@ void TaskGraphInfo::addRawBasicBlockInfo(uint bbid, uint flags, uint lineNum, ui
     bbi.critPathLen = critPathLen;
     bbi.functionName = function;
     bbi.fileName = file;
+    bbi.callsFunction = inokFun;
     
     bbInfo[bbid] = bbi;
 }
@@ -88,6 +107,10 @@ void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
         strLen = it->second.fileName.length();
         ct_write(&strLen, sizeof(uint), out);
         ct_write(it->second.fileName.c_str(), sizeof(char) * strLen, out);
+        
+        strLen = it->second.callsFunction.length();
+        ct_write(&strLen, sizeof(uint), out);
+        ct_write(it->second.callsFunction.c_str(), sizeof(char) * strLen, out);
     }
 }
 
