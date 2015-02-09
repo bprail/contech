@@ -9,6 +9,13 @@
 
 #define SERIAL_BUFFER_SIZE (1024 * 1024)
 
+typedef struct _ct_write_buffer
+{
+    unsigned int length;
+    struct _ct_write_buffer* next;
+    char data[0];
+} ct_write_buffer, *pct_write_buffer;
+
 // Used to store serial data
 typedef struct _ct_serial_buffer
 {
