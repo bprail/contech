@@ -21,9 +21,9 @@ def launchBackend(backend):
 """
     bset = util.Benchmarks.all
     for b in util.Benchmarks.nas:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "A", "_nas"), resources=["nodes=1:ppn=4"], queue="newpasta") 
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "A", "_nas"), resources=["nodes=1:ppn=24"], queue="newpasta") 
     for b in bset:
-        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=4"], queue="newpasta")
+        util.quicksub(name="{}_{}".format(b, backend), code=script.format(b, backend, "simmedium", "_parsec"), resources=["nodes=1:ppn=24"], queue="newpasta")
     
     
 def buildLocal(benchmark):
