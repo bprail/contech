@@ -23,7 +23,9 @@ def main(arg):
         exit()
     
     p = 1
+    
     fig = plt.figure(figsize=(7, 7))
+    g_max_value = 0
     for harmony_in in arg[1:]:
         max_threads = 0
         max_value = 0
@@ -79,9 +81,9 @@ def main(arg):
         
         if (p <= 30):
             if (len(arg) == 2):
-                ax = plt.subplot(1,1, p)
+                ax = fig.add_subplot(1,1, p)
             else:
-                ax = plt.subplot(7,4, p)
+                ax = fig.add_subplot(7,4, p)
             plt.xlim(1,max_threads+1)
             plt.ylim(0,len(bbData))
             ypos = 0
@@ -105,7 +107,7 @@ def main(arg):
                     f = sorted(sumSort, key=lambda k:(sumSort[k], k))
                     for i in f:
                         r = bbData[i]
-                        xpos = 0
+                        xpos = -0.5
                         for d in r:
                             if (d == 0):
                                 xpos += 1
@@ -125,7 +127,7 @@ def main(arg):
             f = sorted(sumSort, key=lambda k:(sumSort[k], k))
             for i in f:
                 r = bbData[i]
-                xpos = 0
+                xpos = -0.5
                 for d in r:
                     if (d == 0):
                         xpos += 1
@@ -141,24 +143,47 @@ def main(arg):
                 ypos += 1
             #plt.hexbin(xset,yset,C=dset, bins='log',gridsize=(max_threads,len(bbData)))
             if (len(arg) == 2):
-                plt.xticks(fontsize=12)
-                plt.yticks(fontsize=12)
+                ticks = np.arange(1, max_threads, 2)
+                plt.xticks(ticks, fontsize=12)
+                plt.tick_params(axis='both', left='off', right='off', top='off', bottom='off')
             else:
                 plt.xticks(fontsize=5)
                 plt.yticks(fontsize=5)
-            plt.hist2d(xset,yset,weights=dset,cmap=matplotlib.cm.Blues,norm=colors.LogNorm(),range=np.array([(1, max_threads+1), (0, len(bbData))]),bins=[max_threads,len(bbData)])
-            #plt.xlabel("Active Threads")
-            #plt.ylabel("Basic Block ID")
-            #tickPositions = [a + .5 for a in range(1, max_threads+1)]
-            #plt.xticks(tickPositions, range(1, max_threads+1))
-            #plt.colorbar()
+            (discar1,discard2,discard3,tim) = plt.hist2d(xset,yset,weights=dset,cmap=matplotlib.cm.Blues,norm=colors.LogNorm(),range=np.array([(0, max_threads), (0, len(bbData))]),bins=[max_threads,len(bbData)])
+            if (max_value > g_max_value):
+                im = tim
+                g_max_value = max_value
+
             harmony_l = harmony_in.split('/')
             harmony_in = harmony_l[-1]
             harmony_l = harmony_in.split('.')
             harmony_in = harmony_l[-2]
-            plt.title(harmony_in, fontsize=5)
+            if (len(arg) == 2):
+                t = plt.title(harmony_in, fontsize=12, verticalalignment='bottom')
+            else:
+                t = plt.title(harmony_in, fontsize=5, verticalalignment='bottom')
+                (x,y) = t.get_position()
+                t.set_position((x, (y- 0.07)))
             p = p + 1
-#     plt.subplots_adjust(left=0.1, right =(0.1*max_threads))
+    plt.subplots_adjust(left=0.05, right = 0.9, top = 0.98, bottom = 0.05, wspace = 0.2, hspace = 0.27)
+    
+    if (len(arg) == 2):
+        fsize = 12
+        plt.subplots_adjust(left=0.1, right = 0.87, top = 0.90, bottom = 0.1, wspace = 0.2, hspace = 0.27)
+    else:
+        fsize = 7
+        plt.subplots_adjust(left=0.05, right = 0.9, top = 0.98, bottom = 0.05, wspace = 0.2, hspace = 0.27)
+    fig.text(0.5, 0.02, 'Active Thread Count', ha='center', va='center', fontsize=fsize)
+    fig.text(0.01, 0.5, 'Basic Block Vectors', ha='center', va='center', rotation='vertical', fontsize=fsize)
+
+    #fig.subplots_adjust(right=0.9)
+    if (len(arg) == 2):
+        cbar_ax = fig.add_axes([0.89, 0.15, 0.03, 0.7])
+    else:
+        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    cbar_ax.tick_params(labelsize=fsize)
+    cbar = fig.colorbar(im, cax=cbar_ax)
+    cbar.set_label('# of Executions', rotation=90, fontsize=fsize)
     plt.savefig( "temp.png")
     plt.savefig( "temp.pdf")
     
