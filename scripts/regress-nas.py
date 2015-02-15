@@ -7,6 +7,7 @@ import argparse
 import scrape_build
 import scrape_run
 import aggregate_scrape_run
+import time
 
 def main():
     parser = argparse.ArgumentParser(description=
@@ -36,11 +37,15 @@ def regressContech(inputs, numthreads, benchmarks):
         exit(1)
 
     # Rebuild benchmarks
+    # NAS must be built sequentially
+    compileJobIds = []
     for input in inputs:
-
-        compileJobIds = [compilationTimeCompare(b, input) for b in benchmarks]
-        util.waitForJobs(compileJobIds)
-        buildRoot = scrape_build.processAll([util.getFileNameForJob(j) for j in compileJobIds])
+        for b in benchmarks:
+            x = compilationTimeCompare(b, input)
+            compileJobIds.append(x)
+            util.waitForJobs(x)
+    time.sleep(1)    #Wait for files to be copied back
+    buildRoot = scrape_build.processAll([util.getFileNameForJob(j) for j in compileJobIds])
     
     # Run the benchmarks
     os.environ["TIME"] = '{"real":%e, "user":%U, "sys":%S, "mem":%M }'
