@@ -1166,13 +1166,14 @@ cleanup:
             {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
-                Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                Value* synType = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
                  // If sync_acquire returns int, pass it, else pass 0 - success
                 Value* retV = ConstantInt::get(int32Ty, 0);
                 // ++I moves the insertion point to after the armw inst 
-                Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
-                Value* cArg[] = {armw->getPointerOperand(),
-                                 con1, 
+                Value* cinst = castSupport(voidPtrTy, armw->getPointerOperand(), ++I);
+                
+                Value* cArg[] = {cinst,
+                                 synType, 
                                  retV,
                                  nGetTick};
                 debugLog("storeSyncFunction @" << __LINE__);
