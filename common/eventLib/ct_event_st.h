@@ -104,6 +104,7 @@ typedef struct _ct_barrier
     ct_tsc_t start_time;
     ct_tsc_t end_time;
     ct_addr_t sync_addr;
+    unsigned long long barrierNum;
 } ct_barrier, *pct_barrier;
 
 typedef struct _ct_task_create

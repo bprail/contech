@@ -391,6 +391,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             fread_check(&npe->bar.start_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->bar.end_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->bar.sync_addr, sizeof(ct_addr_t), 1, fptr);
+            fread_check(&npe->bar.barrierNum, sizeof(unsigned long long), 1, fptr);
         }
         break;
         

@@ -59,6 +59,7 @@ __thread pcontech_join_stack __ctJoinStack = NULL;
 #endif
 
 unsigned long long __ctGlobalOrderNumber = 0;
+unsigned long long __ctGlobalBarrierNumber = 0;
 unsigned int __ctThreadGlobalNumber = 0;
 unsigned int __ctThreadExitNumber = 0;
 unsigned int __ctMaxBuffers = -1;
@@ -702,14 +703,17 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     
     unsigned int p = __ctThreadLocalBuffer->pos;
     
+    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalBarrierNumber, 1);
+    
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_barrier/*<<24*/;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = enter;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char)]) = (ct_addr_t) a;
+    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char) + sizeof(ct_addr_t)]) = ordNum;
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(ct_addr_t) + sizeof(char);
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int) + 2*sizeof(ct_tsc_t) + sizeof(ct_addr_t) + sizeof(char) + sizeof(unsigned long long);
     #endif
 }
 
