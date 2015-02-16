@@ -20,10 +20,14 @@ TaskId Context::getCreator(ContextId cid)
     if (it == creatorMap.end())
     {
         fprintf(stderr, "Failed to find creator for %d in %d\n", (unsigned int) cid, (unsigned int)activeTask()->getContextId());
+        tid = activeTask()->getTaskId();
+        assert(it != creatorMap.end());
     }
-    assert(it != creatorMap.end());
-    tid = it->second;
-    creatorMap.erase(it);
+    else
+    {
+        tid = it->second;
+        creatorMap.erase(it);
+    }
     
     return tid;
 }
