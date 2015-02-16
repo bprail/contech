@@ -267,9 +267,12 @@ int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
     
     // Parent, store the create event before creating
     __ctStoreThreadCreate(child_ctid, 0, start);
-    __ctQueueBuffer(true);
+    //__ctQueueBuffer(true);
+    //printf("Parent creates %u, pos now %u. buf c %u\n", child_ctid, __ctThreadLocalBuffer->pos, __ctCurrentBuffers);
     
     ret = pthread_create(thread, attr, __ctInitThread, ptc);
+    
+   // printf("Created with ret %d\n", ret);
     
     if (ret != 0) 
     {
@@ -306,6 +309,8 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     a = ptc->arg;
     p = ptc->parent_ctid;
     start = rdtsc();
+    
+    //printf("Thread %u alive\n", ptc->child_ctid);
     
     // HACK -- REMOVE!!!
     #if 0
