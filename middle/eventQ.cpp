@@ -32,6 +32,17 @@ void EventQ::registerEventList(ct_file* f)
     traces.push_back(new EventList(f));
 }
 
+void EventQ::readyEvents(int rank, unsigned int context)
+{
+    for (auto it = traces.begin(), et = traces.end(); it != et; ++it)
+    {
+        if ((*it)->mpiRank == rank)
+        {
+            (*it)->readyEvents(context);
+        }
+    }
+}
+
 pct_event EventQ::getNextContechEvent(int* rank)
 {
     pct_event event = NULL;
@@ -71,6 +82,22 @@ EventList::EventList(ct_file* f)
     eventQueueCurrent = queuedEvents.begin();
 }
 
+void EventList::rescanMinTicket()
+{
+    for (auto it = queuedEvents.begin(), et = queuedEvents.end(); it != et; ++it)
+    {
+        pct_event event = it->second.front();
+        if (event->event_type == ct_event_sync)
+        {
+            printf("%u: on ticket %u\n", event->contech_id, event->sy.ticketNum);
+            if (event->sy.ticketNum < minQueuedTicket)
+            {
+                minQueuedTicket = event->sy.ticketNum;
+            }
+        }
+    }
+}
+
 pct_event EventList::getNextContechEvent()
 {
     bool nextEvent = false;
@@ -84,7 +111,7 @@ pct_event EventList::getNextContechEvent()
     while (!queuedEvents.empty())
     {
         // Fast check whether a queued event may be removed.
-        if (ticketNum < minQueuedTicket) break;
+        if (ticketNum < minQueuedTicket && resetMinTicket == false) break;
         if (eventQueueCurrent->second.empty())
         {
             auto t = eventQueueCurrent;
@@ -112,7 +139,6 @@ pct_event EventList::getNextContechEvent()
         }
         else if (event->event_type != ct_event_sync)
         {
-        
             eventQueueCurrent->second.pop_front();
             currentQueuedCount--;
             return event;
@@ -149,6 +175,7 @@ pct_event EventList::getNextContechEvent()
                     resetMinTicket = true;
                     minQueuedTicket = 0;
                 }
+                
                 eventQueueCurrent = queuedEvents.begin();
                 break;
             }
@@ -170,6 +197,18 @@ pct_event EventList::getNextContechEvent()
             currentQueuedCount++;
             if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
             continue;
+        }
+        else if (waitingEvents.find(event->contech_id) != waitingEvents.end())
+        {
+            if (waitingEvents[event->contech_id].front() == NULL)// if head is NULL, then clear queue
+            {
+                ;
+            }
+            else
+            {
+                waitingEvents[event->contech_id].push_back(event);
+                continue;
+            }
         }
         nextEvent = true;
     }
@@ -202,6 +241,24 @@ pct_event EventList::getNextContechEvent()
             }
             break;
         }
+        case ct_event_task_create:
+        {
+            // if approx_skew != 0, then this is the child (i.e. created context)
+            if (event->tc.approx_skew != 0)
+            {
+                if (waitingEvents.find(event->contech_id) != waitingEvents.end() &&
+                    waitingEvents[event->contech_id].front() == NULL)
+                {
+                    waitingEvents.erase(event->contech_id);
+                }
+                else
+                {
+                    waitingEvents[event->contech_id].push_back(event);
+                    event = getNextContechEvent();
+                }
+            }
+        }
+        break;
         case ct_event_rank:
         {
             mpiRank = event->rank.rank;
@@ -214,4 +271,23 @@ pct_event EventList::getNextContechEvent()
     }
 
     return event;
+}
+
+void EventList::readyEvents(unsigned int context)
+{
+    auto deq = waitingEvents.find(context);
+    
+    if (deq == waitingEvents.end())
+    {
+        // This case is when the creator is before the create
+        waitingEvents[context].push_back(NULL);
+    }
+    else
+    {
+        queuedEvents[context] = deq->second;
+        waitingEvents.erase(deq);
+        
+        // As the queues may go from empty to non-empty, the iterator needs to be initialized here
+        eventQueueCurrent = queuedEvents.begin();
+    }
 }
