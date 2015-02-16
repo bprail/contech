@@ -182,10 +182,10 @@ reset_middle:
         // Seeing an invalid context id is a good sign that the trace is corrupt
         if (event->event_type != ct_event_task_create && !context.count((currentRank << 24) | event->contech_id))
         {
-            cerr << "ERROR: Saw an event from a new context before seeing a create event for that context." << endl;
+            cerr << "ERROR: Saw an event " << event->event_type <<" from a new context " << event->contech_id << " before seeing a create event for that context." << endl;
             cerr << "Either the trace is corrupt or the trace file is missing a create event for the new context. " << endl;
             //displayContechEventDebugInfo();
-            exit(1);
+            assert(0);
         }
         
         // The context in which this event occurred
@@ -226,6 +226,12 @@ reset_middle:
         {
             // TODO: Why does NAS-is fail on this assert?
             //assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
+            if (endTime < startTime)
+            {
+                printf("Timestamps reordered on type (%d): %llu <= %llu\n", event->event_type,
+                                                                            startTime,
+                                                                            endTime);
+            }
             assert(startTime <= endTime);
         
         
@@ -332,6 +338,7 @@ reset_middle:
 
                     // Assign the new task as a child
                     taskCreate->addSuccessor(childTaskId);
+                    eventQ.readyEvents(currentRank, event->tc.other_id);
                     
                     // Add the information so that the created task knows its creator.
                     if (context[(currentRank << 24) | event->tc.other_id].hasStarted == true)
@@ -369,9 +376,10 @@ reset_middle:
                     {
                         activeContech.activeTask()->addPredecessor(creatorId);
                     }
+                    if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "started by", creatorId, startTime, endTime);
                 }
+                else if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "started by", TaskId(event->tc.other_id,0), startTime, endTime);
                 
-                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "started by", TaskId(event->tc.other_id,0), startTime, endTime);
                 if (DEBUG) cerr << activeContech.activeTask()->getContextId() << ": skew = " << event->tc.approx_skew << endl;
             }
         }
@@ -546,7 +554,7 @@ reset_middle:
                 barA.data = 0;
                 barA.addr = event->bar.sync_addr;
                 barA.rank = currentRank;
-                Task* barrierTask = barrierList[barA.data].onExit(endTime, &isFinished);
+                Task* barrierTask = barrierList[barA.data].onExit(activeContech.activeTask(), endTime, &isFinished);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
 
                 // If I own the barrier, my continuation's ID has to come after it. Otherwise just use the next ID.

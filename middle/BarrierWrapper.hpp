@@ -13,14 +13,12 @@ class BarrierWrapper
 public:
     BarrierWrapper();
     Task* onEnter(Task& arrivingTask, ct_tsc_t arrivalTime, ct_addr_t addr);
-    Task* onExit(ct_tsc_t exitTime, bool*);
+    Task* onExit(Task*, ct_tsc_t exitTime, bool*);
 private:
     unsigned int entryCount;
     unsigned int exitCount;
     Task* entryBarrierTask;
-    Task* exitBarrierTask;
-    list<Task*> predecessors;
-    list<Task*> successors;
+    list<Task*> exitBarrierTasks;
 };
 
 } // end namespace contech
