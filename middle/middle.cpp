@@ -555,7 +555,14 @@ reset_middle:
                 barA.addr = event->bar.sync_addr;
                 barA.rank = currentRank;
                 Task* barrierTask = barrierList[barA.data].onExit(activeContech.activeTask(), endTime, &isFinished);
-                if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
+                if (DEBUG) 
+                {
+                    eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
+                    if (isFinished == true)
+                    {
+                        printf("\tBarrier(%llx) finished\n", barA.data);
+                    }
+                }
 
                 // If I own the barrier, my continuation's ID has to come after it. Otherwise just use the next ID.
                 bool myBarrier = barrierTask->getContextId() == ((currentRank << 24) | event->contech_id);
