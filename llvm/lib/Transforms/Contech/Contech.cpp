@@ -1073,6 +1073,37 @@ cleanup:
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
                 bi->len = memOpCount;
                 hasInstAllMemOps = true;
+                
+                // Handle the delayed atomics now
+                for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
+                {
+                    Instruction* atomI = *it;
+                    Value* cinst = NULL;
+                    if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(atomI))
+                    {
+                        cinst = castSupport(voidPtrTy, armw->getPointerOperand(), atomI);
+                    }
+                    else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(atomI))
+                    {
+                        cinst = castSupport(voidPtrTy, xchgI->getPointerOperand(), atomI);
+                    }
+                    else
+                    {
+                        assert(cinst != NULL);
+                    }
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", atomI);
+                    Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                     // If sync_acquire returns int, pass it, else pass 0 - success
+                    Value* retV = ConstantInt::get(int32Ty, 0);
+                    Value* cArg[] = {cinst,
+                                     con1, 
+                                     retV,
+                                     nGetTick};
+                    debugLog("storeSyncFunction @" << __LINE__);
+                    CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                                "", iPt);    
+                }
             }
 
             // If this block is only being marked, then only memops are needed
@@ -1793,35 +1824,7 @@ cleanup:
         
         bi->containCall = hasUninstCall;
         
-        for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
-        {
-            Instruction* atomI = *it;
-            Value* cinst = NULL;
-            if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(atomI))
-            {
-                cinst = castSupport(voidPtrTy, armw->getPointerOperand(), atomI);
-            }
-            else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(atomI))
-            {
-                cinst = castSupport(voidPtrTy, xchgI->getPointerOperand(), atomI);
-            }
-            else
-            {
-                assert(cinst != NULL);
-            }
-            debugLog("getCurrentTickFunction @" << __LINE__);
-            CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", atomI);
-            Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
-             // If sync_acquire returns int, pass it, else pass 0 - success
-            Value* retV = ConstantInt::get(int32Ty, 0);
-            Value* cArg[] = {cinst,
-                             con1, 
-                             retV,
-                             nGetTick};
-            debugLog("storeSyncFunction @" << __LINE__);
-            CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
-                                                        "", iPt);    
-        }
+        
         
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
