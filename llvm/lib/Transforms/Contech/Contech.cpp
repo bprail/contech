@@ -877,6 +877,8 @@ cleanup:
         Value* posValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
         
+        vector<Instruction*> delayedAtomicInsts;
+        
         //errs() << "BB: " << bbid << "\n";
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
@@ -1144,44 +1146,58 @@ cleanup:
             }
             else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(&*I))
             {
-                debugLog("getCurrentTickFunction @" << __LINE__);
-                CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
-                Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
-                 // If sync_acquire returns int, pass it, else pass 0 - success
-                Value* retV = ConstantInt::get(int32Ty, 0);
-                // ++I moves the insertion point to after the xchg inst 
-                Value* cinst = castSupport(voidPtrTy, ConstantInt::get(int64Ty, 0), ++I);
-                Value* cArg[] = {xchgI->getPointerOperand(),
-                                 con1, 
-                                 retV,
-                                 nGetTick};
-                debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
-                                                    "", I); // Insert after xchg inst
-                I = nStoreSync;
-                containingEvent = ct_event_sync;
-                iPt = nStoreSync;
+                if (hasInstAllMemOps == true)
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
+                    Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                     // If sync_acquire returns int, pass it, else pass 0 - success
+                    Value* retV = ConstantInt::get(int32Ty, 0);
+                    // ++I moves the insertion point to after the xchg inst 
+                    Value* cinst = castSupport(voidPtrTy, xchgI->getPointerOperand(), ++I);
+                    Value* cArg[] = {cinst,
+                                     con1, 
+                                     retV,
+                                     nGetTick};
+                    debugLog("storeSyncFunction @" << __LINE__);
+                    CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                        "", I); // Insert after xchg inst
+                    I = nStoreSync;
+                    containingEvent = ct_event_sync;
+                    iPt = nStoreSync;
+                }
+                else
+                {
+                    delayedAtomicInsts.push_back(xchgI);
+                }
             }
             else if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(&*I))
             {
-                debugLog("getCurrentTickFunction @" << __LINE__);
-                CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
-                Value* synType = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
-                 // If sync_acquire returns int, pass it, else pass 0 - success
-                Value* retV = ConstantInt::get(int32Ty, 0);
-                // ++I moves the insertion point to after the armw inst 
-                Value* cinst = castSupport(voidPtrTy, armw->getPointerOperand(), ++I);
-                
-                Value* cArg[] = {cinst,
-                                 synType, 
-                                 retV,
-                                 nGetTick};
-                debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
-                                                    "", I); // Insert after armw inst
-                I = nStoreSync;
-                containingEvent = ct_event_sync;
-                iPt = nStoreSync;
+                if (hasInstAllMemOps == true)
+                {
+                    debugLog("getCurrentTickFunction @" << __LINE__);
+                    CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
+                    Value* synType = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                     // If sync_acquire returns int, pass it, else pass 0 - success
+                    Value* retV = ConstantInt::get(int32Ty, 0);
+                    // ++I moves the insertion point to after the armw inst 
+                    Value* cinst = castSupport(voidPtrTy, armw->getPointerOperand(), ++I);
+                    
+                    Value* cArg[] = {cinst,
+                                     synType, 
+                                     retV,
+                                     nGetTick};
+                    debugLog("storeSyncFunction @" << __LINE__);
+                    CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                        "", I); // Insert after armw inst
+                    I = nStoreSync;
+                    containingEvent = ct_event_sync;
+                    iPt = nStoreSync;
+                }
+                else
+                {
+                    delayedAtomicInsts.push_back(armw);
+                }
             }
             else if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
                 Function *f = ci->getCalledFunction();
@@ -1776,6 +1792,36 @@ cleanup:
         }
         
         bi->containCall = hasUninstCall;
+        
+        for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
+        {
+            Instruction* atomI = *it;
+            Value* cinst = NULL;
+            if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(atomI))
+            {
+                cinst = castSupport(voidPtrTy, armw->getPointerOperand(), atomI);
+            }
+            else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(atomI))
+            {
+                cinst = castSupport(voidPtrTy, xchgI->getPointerOperand(), atomI);
+            }
+            else
+            {
+                assert(cinst != NULL);
+            }
+            debugLog("getCurrentTickFunction @" << __LINE__);
+            CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", atomI);
+            Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+             // If sync_acquire returns int, pass it, else pass 0 - success
+            Value* retV = ConstantInt::get(int32Ty, 0);
+            Value* cArg[] = {cinst,
+                             con1, 
+                             retV,
+                             nGetTick};
+            debugLog("storeSyncFunction @" << __LINE__);
+            CallInst* nStoreSync = CallInst::Create(storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                                                        "", iPt);    
+        }
         
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
