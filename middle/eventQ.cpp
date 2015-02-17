@@ -75,6 +75,7 @@ EventList::EventList(ct_file* f)
     el = new EventLib;
     currentQueuedCount = 0;
     maxQueuedCount = 0;
+    barrierNum = 0;
     ticketNum = 0;
     minQueuedTicket = 0;
     resetMinTicket = false;
@@ -94,6 +95,19 @@ void EventList::rescanMinTicket()
             {
                 minQueuedTicket = event->sy.ticketNum;
             }
+        }
+    }
+}
+
+void EventList::barrierTicket()
+{
+    for (auto it = queuedEvents.begin(), et = queuedEvents.end(); it != et; ++it)
+    {
+        pct_event event = it->second.front();
+        if (event->event_type == ct_event_barrier)
+        {
+            printf("%u: on ticket %u\n", event->contech_id, event->bar.barrierNum);
+
         }
     }
 }
@@ -136,6 +150,35 @@ pct_event EventList::getNextContechEvent()
         {
             mpiRank = event->rank.rank;
             EventLib::deleteContechEvent(event);
+        }
+        else if (event->event_type == ct_event_barrier)
+        {
+            // Barriers have ordering numbers too
+            if (event->bar.barrierNum == barrierNum)
+            {
+                barrierNum++;
+                eventQueueCurrent->second.pop_front();
+                eventQueueCurrent = queuedEvents.begin();
+                currentQueuedCount--;
+                return event;
+            }
+            else
+            {
+                ++eventQueueCurrent;
+                if (eventQueueCurrent == queuedEvents.end())
+                {
+                    if (resetMinTicket == true)
+                    {
+                        resetMinTicket = false;
+                    }
+                    else
+                    {
+                        resetMinTicket = true;
+                    }
+                    eventQueueCurrent = queuedEvents.begin();
+                    break;
+                }
+            }
         }
         else if (event->event_type != ct_event_sync)
         {
@@ -241,6 +284,23 @@ pct_event EventList::getNextContechEvent()
             }
             break;
         }
+        case ct_event_barrier:
+        {
+            if (event->bar.barrierNum > barrierNum)
+            {
+                queuedEvents[event->contech_id].push_back(event);
+                eventQueueCurrent = queuedEvents.begin();
+                resetMinTicket = true;
+                currentQueuedCount++;
+                if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
+                event = getNextContechEvent();
+            }
+            else
+            {
+                barrierNum++;
+            }
+        }
+        break;
         case ct_event_task_create:
         {
             // if approx_skew != 0, then this is the child (i.e. created context)

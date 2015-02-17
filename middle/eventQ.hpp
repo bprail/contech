@@ -16,6 +16,7 @@ namespace contech {
         unsigned long int currentQueuedCount ;
         unsigned long int maxQueuedCount ;
         unsigned long long ticketNum ;
+        unsigned long long barrierNum;
         unsigned long long minQueuedTicket ;
         bool resetMinTicket;
         
@@ -24,6 +25,7 @@ namespace contech {
         map <unsigned int, deque <pct_event> >::iterator eventQueueCurrent;
         
         void rescanMinTicket();
+        void barrierTicket();
         
         public:
         EventList(ct_file*);
