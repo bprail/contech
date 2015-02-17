@@ -15,8 +15,6 @@ public:
     Task* onEnter(Task& arrivingTask, ct_tsc_t arrivalTime, ct_addr_t addr);
     Task* onExit(Task*, ct_tsc_t exitTime, bool*);
 private:
-    unsigned int entryCount;
-    unsigned int exitCount;
     Task* entryBarrierTask;
     list<Task*> exitBarrierTasks;
 };

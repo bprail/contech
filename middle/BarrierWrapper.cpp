@@ -4,8 +4,6 @@ using namespace contech;
 
 BarrierWrapper::BarrierWrapper()
 {
-    entryCount = 0;
-    exitCount = 0;
     entryBarrierTask = NULL;
     exitBarrierTasks.clear();
 }
@@ -156,12 +154,18 @@ Task* BarrierWrapper::onExit(Task* departingTask, ct_tsc_t exitTime, bool* finis
     *finished = false;
 
     // If this was the last thread to arrive, clear out
-    if (exitT->getPredecessorTasks().size() == exitT->getSuccessorTasks().size())
+    //  N.B. pred = succ + 1, as the last successor will be added when departingTasks's
+    //     context creates its continuation
+    if (exitT->getPredecessorTasks().size() == (1 + exitT->getSuccessorTasks().size()))
     {
         exitBarrierTasks.remove(exitT);
      
         // This barrier has finished, let the caller know
         *finished = true;
+    }
+    else
+    {
+        //printf("\t%d != %d\n", exitT->getPredecessorTasks().size(), exitT->getSuccessorTasks().size());
     }
 
     return exitT;
