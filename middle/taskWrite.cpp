@@ -202,6 +202,25 @@ struct TaskWrapper
     long        writePos; // where was the task written
 };
 
+void findPredInTaskMap(map<TaskId, TaskWrapper> &writeTaskMap, int c, int s)
+{
+    TaskId tid = TaskId(c, s);
+    
+    for (auto it = writeTaskMap.begin(), et = writeTaskMap.end(); it != et; ++it)
+    {
+        for (TaskId succ : it->second.s)
+        {
+            if (succ == tid)
+            {
+                printf("Found in %u:%u that is at %u\n", it->first.getContextId(),
+                                                         it->first.getSeqId(),
+                                                         it->second.p);
+                return;
+            }
+        }
+    }
+}
+
 void* backgroundTaskWriter(void* v)
 {
     ct_file* out = *(ct_file**)v;
@@ -285,6 +304,18 @@ void* backgroundTaskWriter(void* v)
                 tw.writePos = pos;
                 assert(writeTaskMap.find(id) == writeTaskMap.end());
                 writeTaskMap[id] = tw;
+                
+                /* Debugging code for bug where TaskId(x:0) had multiple predecessors
+                if (id.getSeqId() == 0)
+                {
+                    printf("%u:%u -- ", id.getContextId(), id.getSeqId());
+                    auto pr = t->getPredecessorTasks();
+                    for (auto it = pr.begin(), et = pr.end(); it != et; ++it)
+                    {
+                        printf("%s\t", it->toString().c_str());
+                    }
+                    printf("\n");
+                }*/
                 //printf("%s", t->toSummaryString().c_str());
             }
             
