@@ -58,15 +58,15 @@ __thread pcontech_join_stack __ctJoinStack = NULL;
 //__thread uint64_t __ctCurrentOverheadStart = 0;
 #endif
 
-unsigned long long __ctGlobalOrderNumber = 0;
-unsigned long long __ctGlobalBarrierNumber = 0;
-unsigned int __ctThreadGlobalNumber = 0;
+unsigned long long __ctGlobalOrderNumber __attribute__ ((aligned (64))) = 0;
+unsigned long long __ctGlobalBarrierNumber __attribute__ ((aligned (64)))= 0;
+unsigned int __ctThreadGlobalNumber __attribute__ ((aligned (64))) = 0;
 unsigned int __ctThreadExitNumber = 0;
 unsigned int __ctMaxBuffers = -1;
 unsigned int __ctCurrentBuffers = 0;
-pct_serial_buffer __ctQueuedBuffers = NULL;
+pct_serial_buffer __ctQueuedBuffers __attribute__ ((aligned (64))) = NULL;
 pct_serial_buffer __ctQueuedBufferTail = NULL;
-pct_serial_buffer __ctFreeBuffers = NULL;
+pct_serial_buffer __ctFreeBuffers __attribute__ ((aligned (64))) = NULL;
 // Setting the size in a variable, so that future code can tune / change this value
 const size_t serialBufferSize = (SERIAL_BUFFER_SIZE);
 
@@ -79,7 +79,7 @@ pthread_mutex_t __ctPrintLock;
 //   and then puts them onto the free list.
 // When the queuedBuffers goes from NULL to non-NULL, then signal bufferSignal
 //
-pthread_mutex_t __ctQueueBufferLock;
+pthread_mutex_t __ctQueueBufferLock __attribute__ ((aligned (64)));
 pthread_cond_t __ctQueueSignal;
 pthread_mutex_t __ctFreeBufferLock;
 pthread_cond_t __ctFreeSignal;
