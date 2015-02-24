@@ -55,6 +55,7 @@ public:
     
     Task* getNextTask();
     Task* getTaskById(TaskId id);
+	void setTaskOrderCurrent(TaskId tid);
     unsigned int getNumberOfTasks();
     unsigned int getNumberOfContexts();
     

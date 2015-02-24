@@ -85,6 +85,18 @@ Task* TaskGraph::getNextTask()
 }
 
 //
+// Sets the specified TaskId as the current task
+//   getNextTask will retrieve the next task after TaskId
+//
+void TaskGraph::setTaskOrderCurrent(TaskId tid)
+{
+	//nextTask = taskOrder.find(tid);
+	uint64_t tidPos = taskIdx[tid];
+	while (nextTask != taskOrder.end() &&
+		   *nextTask != tidPos) {++nextTask;}
+}
+
+//
 // Request tasks in order until ID is found
 //
 Task* TaskGraph::getTaskById(TaskId id)
@@ -120,7 +132,7 @@ void TaskGraph::initTaskIndex(uint64 off)
 {
     if (0 != ct_seek(inputFile, off))
     {
-        fprintf(stderr, "Failed to seek to specified offset for Task Graph Index - %lld\n", off);
+        fprintf(stderr, "Failed to seek to specified offset for Task Graph Index - %llu\n", off);
         return;
     }
     //printf("At %lld, ready to read index\n", off);
