@@ -1093,11 +1093,11 @@ cleanup:
                     }
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", atomI);
-                    Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                    Value* synType = ConstantInt::get(int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(int32Ty, 0);
                     Value* cArg[] = {cinst,
-                                     con1, 
+                                     synType, 
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
@@ -1181,13 +1181,13 @@ cleanup:
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
-                    Value* con1 = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                    Value* synType = ConstantInt::get(int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(int32Ty, 0);
                     // ++I moves the insertion point to after the xchg inst 
                     Value* cinst = castSupport(voidPtrTy, xchgI->getPointerOperand(), ++I);
                     Value* cArg[] = {cinst,
-                                     con1, 
+                                     synType, 
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
@@ -1208,7 +1208,7 @@ cleanup:
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", I);
-                    Value* synType = ConstantInt::get(int32Ty, 3); // HACK - user-defined sync type
+                    Value* synType = ConstantInt::get(int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(int32Ty, 0);
                     // ++I moves the insertion point to after the armw inst 
