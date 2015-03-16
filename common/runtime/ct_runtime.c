@@ -606,10 +606,8 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     
     // With a little endian machine, we write 8 bytes and then will overwrite the highest two
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
-    // void __builtin_ia32_movntq (di *, di)
+    // void __builtin_ia32_movnti64 (di *, di)
     *((uint64_t*)(r + c * 6 * sizeof(char) + sizeof(unsigned int))) = (uint64_t)addr;
-    //*((unsigned int*)(r + c * 6* sizeof(char)+sizeof(unsigned int))) = (uint32_t) (uint64_t)addr;
-    // *((uint16_t*)(r + c * 6* sizeof(char) + 2*sizeof(unsigned int))) = (uint16_t) (((uint64_t)addr) >> 32);
 }
 
 void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
