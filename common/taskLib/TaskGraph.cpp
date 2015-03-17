@@ -46,7 +46,7 @@ TaskGraph::TaskGraph(ct_file* f)
         return;
     }
     
-    if (version < TASK_GRAPH_VERSION)
+    if (version != TASK_GRAPH_VERSION)
     {
         fprintf(stderr, "TASK GRAPH - Warning version number is %u, expected %u\n", version, TASK_GRAPH_VERSION);
     }
@@ -86,14 +86,13 @@ Task* TaskGraph::getNextTask()
 
 //
 // Sets the specified TaskId as the current task
-//   getNextTask will retrieve the next task after TaskId
+//   getNextTask will retrieve the next task starting with TaskId
 //
 void TaskGraph::setTaskOrderCurrent(TaskId tid)
 {
-	//nextTask = taskOrder.find(tid);
-	uint64_t tidPos = taskIdx[tid];
-	while (nextTask != taskOrder.end() &&
-		   *nextTask != tidPos) {++nextTask;}
+    uint64_t tidPos = taskIdx[tid];
+    while (nextTask != taskOrder.end() &&
+           *nextTask != tidPos) {++nextTask;}
 }
 
 //
