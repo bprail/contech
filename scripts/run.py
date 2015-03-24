@@ -36,22 +36,6 @@ def main(parsec=False, nas=False):
     else:
         print_error("Error: Could not find contech installation. Set CONTECH_HOME to the root of your contech directory.")
         exit(1)
-
-    # Find parsec installation
-    if parsec:
-        if os.environ.has_key("PARSEC_HOME"):
-            PARSEC_HOME = os.environ["PARSEC_HOME"]
-            PARSECMGMT = os.path.join(PARSEC_HOME, "bin/parsecmgmt")
-        else:
-            print_error("Error: Could not find parsec installation. Set PARSEC_HOME to the root of your parsec directory.")
-            exit(1)
-            
-    if nas:
-        if os.environ.has_key("NAS_HOME"):
-            NAS_HOME = os.environ["NAS_HOME"]
-        else:
-            print_error("Error: Could not find NAS installation. Set NAS_HOME to the root of your nas directory.")
-            exit(1)
     
     # Find output directory
     if os.environ.has_key("CONTECH_OUTDIR"): 
@@ -99,6 +83,22 @@ def main(parsec=False, nas=False):
         taskgraphBasename = "{}.taskgraph".format(name)
     
     if args.cached == False:
+        # Find parsec installation
+        if parsec:
+            if os.environ.has_key("PARSEC_HOME"):
+                PARSEC_HOME = os.environ["PARSEC_HOME"]
+                PARSECMGMT = os.path.join(PARSEC_HOME, "bin/parsecmgmt")
+            else:
+                print_error("Error: Could not find parsec installation. Set PARSEC_HOME to the root of your parsec directory.")
+                exit(1)
+                
+        if nas:
+            if os.environ.has_key("NAS_HOME"):
+                NAS_HOME = os.environ["NAS_HOME"]
+            else:
+                print_error("Error: Could not find NAS installation. Set NAS_HOME to the root of your nas directory.")
+                exit(1)
+    
         # Run the benchmark
         print_header("Running " + name)
         tracefile = os.path.join(CONTECH_OUTDIR, name + ".contech.trace")
