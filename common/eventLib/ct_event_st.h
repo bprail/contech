@@ -59,6 +59,8 @@ enum _ct_sync_type {
     ct_sync_acquire = 1,
     ct_cond_wait,
     ct_cond_sig,
+    ct_sync_atomic,
+    ct_task_depend,
     ct_sync_unknown};
 typedef enum _ct_sync_type ct_sync_type;
 
