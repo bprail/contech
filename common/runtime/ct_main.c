@@ -237,12 +237,20 @@ void* __ctBackgroundThreadWriter(void* d)
     //   Write queued buffer to disk until program terminates
     pthread_mutex_lock(&__ctQueueBufferLock);
     do {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 30;
+        int condRetVal = 0;
+        
         // Check for queued buffer, i.e. is the program generating events
-        while (__ctQueuedBuffers == NULL)
+        while (__ctQueuedBuffers == NULL && condRetVal == 0)
         {
-            pthread_cond_wait(&__ctQueueSignal, &__ctQueueBufferLock);
+            condRetVal = pthread_cond_timedwait(&__ctQueueSignal, &__ctQueueBufferLock, &ts);
         }
-        pthread_mutex_unlock(&__ctQueueBufferLock);
+        if (condRetVal == 0)
+        {
+            pthread_mutex_unlock(&__ctQueueBufferLock);
+        }
     
         // The thread writer will likely sit in this loop except when the memory limit is triggered
         while (__ctQueuedBuffers != NULL)
