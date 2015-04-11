@@ -41,7 +41,7 @@ typedef struct _contech_id_stack {
 
 typedef struct _contech_join_stack {
     ct_tsc_t start;
-    unsigned int id;
+    unsigned int id, parentId;
     struct _contech_join_stack* next;
 } contech_join_stack, *pcontech_join_stack;
 

@@ -698,7 +698,7 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
-    
+
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalBarrierNumber, 1);
@@ -855,6 +855,8 @@ void __ctOMPThreadCreate(unsigned int parent)
 {
     unsigned int threadId = __ctAllocateCTid();
 
+    
+    
     // First close out any current buffer, if one exists
     if (__ctThreadLocalBuffer != NULL &&
         __ctThreadLocalBuffer != (pct_serial_buffer)&initBuffer)
@@ -921,6 +923,24 @@ void __ctOMPTaskCreate(int ret)
     return;
 }
 
+void __ctOMPTaskDelayJoin(unsigned int ctid)
+{
+    // Joins are pushed onto a stack, so that
+    //   All of the creates occur for the tasks before any joins of the tasks
+    pcontech_join_stack elem = malloc(sizeof(contech_join_stack));
+    if (elem == NULL)
+    {
+        fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
+        pthread_exit(NULL);
+    }
+    
+    elem->id = ctid;
+    elem->parentId = __ctThreadLocalNumber;
+    elem->start = rdtsc();
+    elem->next = __ctJoinStack;
+    __ctJoinStack = elem;
+}
+
 // join event for thread and task
 //   if bool == true, then we are in task context
 //   else ignore
@@ -939,19 +959,21 @@ void __ctOMPTaskJoin()
     
     __ctThreadLocalNumber = threadId;
     __ctThreadLocalBuffer->id = threadId;
-    
-    // Joins are pushed onto a stack, so that
-    //   All of the creates occur for the tasks before any joins of the tasks
-    pcontech_join_stack elem = malloc(sizeof(contech_join_stack));
-    if (elem == NULL)
+ 
+    __ctOMPTaskDelayJoin(taskId);
+}
+
+void __ctOMPProcessJoinStack()
+{
+    pcontech_join_stack elem = __ctJoinStack;
+    while (elem != NULL && elem->parentId == __ctThreadLocalNumber)
     {
-        fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
-        pthread_exit(NULL);
+        pcontech_join_stack t = elem;
+        __ctStoreThreadJoinInternal(false, elem->id, elem->start);
+        elem = elem->next;
+        free(t);
+        __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
     }
-    
-    elem->id = taskId;
-    elem->start = rdtsc();
-    elem->next = __ctJoinStack;
     __ctJoinStack = elem;
 }
 
@@ -972,20 +994,12 @@ void __ctOMPThreadJoin(unsigned int parent)
         __ctAllocateLocalBuffer();
     }
     
-    pcontech_join_stack elem = __ctJoinStack;
-    while (elem != NULL)
-    {
-        pcontech_join_stack t = elem;
-        __ctStoreThreadJoinInternal(false, elem->id, elem->start);
-        elem = elem->next;
-        free(elem);
-        __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
-    }
-    __ctJoinStack = NULL;
+    __ctOMPProcessJoinStack();
     
     __ctStoreThreadJoinInternal(true, parent, rdtsc());
     __ctQueueBuffer(true);
     
+    assert(__ctThreadLocalNumber != parent);
     __sync_fetch_and_add(&__ctThreadExitNumber, 1);
     
     __ctThreadLocalNumber = parent;
@@ -1012,6 +1026,81 @@ void __ctOMPPushParent()
 void __ctOMPPopParent()
 {
     __ctThreadLocalNumber = __ctPopIdStack(&__ctParentIdStack);
+}
+
+typedef struct __ct_kmp_depend_info {
+     void*                      base_addr;
+     size_t 	                len;
+     struct {
+         bool                   in:1;
+         bool                   out:1;
+     } flags;
+} __ct_kmp_depend_info_t;
+
+void __ctOMPPrepareTask(void* task, size_t offset, __ct_kmp_depend_info_t* dList, int32_t numDeps)
+{
+    char* t = (char*) task;
+    unsigned int taskId;
+    __ct_kmp_depend_info_t* dCopy;
+
+    if (numDeps == 0 || dList == NULL)
+    {
+        dCopy = NULL;
+    }
+    else
+    {
+        dCopy = (__ct_kmp_depend_info_t*) malloc(sizeof(__ct_kmp_depend_info_t) * numDeps);
+        memcpy(dCopy, dList, sizeof(__ct_kmp_depend_info_t) * numDeps);
+    }
+    
+    *(__ct_kmp_depend_info_t**)(t + offset) = dCopy;
+    
+    taskId = __ctAllocateCTid();
+    __ctOMPTaskDelayJoin(taskId);
+    
+    *(unsigned int*)(t + offset + sizeof(char*)) = __ctThreadLocalNumber;
+    *(unsigned int*)(t + offset + sizeof(char*) + sizeof(unsigned int)) = taskId;
+    
+    __ctStoreThreadCreate(taskId, 0, rdtsc());
+}
+
+void __ctOMPStoreInOutDeps(void* task, size_t offset, int32_t numDeps, int32_t inDep)
+{
+    char* t = (char*) task;
+    int i;
+    unsigned int parentId, threadId;
+    __ct_kmp_depend_info_t* dCopy = *(__ct_kmp_depend_info_t**)(t + offset);
+
+    parentId = *(unsigned int*)(t + offset + sizeof(char*));
+    threadId = *(unsigned int*)(t + offset + sizeof(char*) + sizeof(unsigned int));
+    
+    if (inDep == 1)
+    {
+        __ctQueueBuffer(true);
+        *(unsigned int*)(t + offset + sizeof(char*) + sizeof(unsigned int)) = __ctThreadLocalNumber;
+        __ctThreadLocalNumber = threadId;
+        __ctStoreThreadCreate(parentId, 1, rdtsc());
+    }
+    
+    if (dCopy != NULL)
+    {
+        for (i = 0; i < numDeps; i++)
+        {
+            if (inDep == 1 && dCopy[i].flags.in == 0) continue;
+            if (inDep == 0 && dCopy[i].flags.out == 0) continue;
+            __ctStoreSync(dCopy[i].base_addr, ct_task_depend, 0, rdtsc());
+        }
+        
+        if (inDep == 0) free(dCopy);
+    }
+    
+    if (inDep == 0)
+    {
+        __ctStoreThreadJoinInternal(true, parentId, rdtsc());
+        __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+        __ctQueueBuffer(true);
+        __ctThreadLocalNumber = threadId;
+    }
 }
 
 unsigned int __ctPeekParent()
