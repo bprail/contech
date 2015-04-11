@@ -200,6 +200,7 @@ struct TaskWrapper
     vector<TaskId> s;   // tasks that follow this task
     ct_tsc_t    start;  // start time for this task
     long        writePos; // where was the task written
+    task_type   t;
 };
 
 void findPredInTaskMap(map<TaskId, TaskWrapper> &writeTaskMap, int c, int s)
@@ -301,6 +302,7 @@ void* backgroundTaskWriter(void* v)
                 tw.start = t->getStartTime();
                 tw.p = t->getPredecessorTasks().size();
                 tw.s = t->getSuccessorTasks();
+                tw.t = t->getType();
                 tw.writePos = pos;
                 assert(writeTaskMap.find(id) == writeTaskMap.end());
                 writeTaskMap[id] = tw;
@@ -399,6 +401,20 @@ void* backgroundTaskWriter(void* v)
         indexWriteCount ++;
     }
     printf("Wrote %u tasks to index\n", indexWriteCount);
+    
+    if (indexWriteCount != taskWriteCount)
+    {
+        for (auto it = writeTaskMap.begin(), et = writeTaskMap.end(); it != et; ++it)
+        {
+            printf("%s (type:%d) (pred:%d)\t", it->first.toString().c_str(), it->second.t, it->second.p);
+            for (TaskId succ : it->second.s)
+            {
+                printf("%s\t", succ.toString().c_str());
+            }
+            printf("\n");
+        }
+    }
+    
     // Failing this assert indicates that the graph either has cycles or is disjoint
     //   Both case are bad
     assert(indexWriteCount == taskWriteCount);
