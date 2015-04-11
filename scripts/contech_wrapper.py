@@ -313,7 +313,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     pcall([CC, CFLAGS, "-c -o", out + "_ct.o", out + "_ct_inline.bc"])
                     pcall([CC, out + "_ct.o", CFLAGS, "-o", out, "-lpthread", "contech_state.o"])
                 else:
-                    pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-flto", "-lpthread", "contech_state.o"])
+                    pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-lrt", "-flto", "-lpthread", "contech_state.o"])
                         
         else:
             passThrough(CC)
