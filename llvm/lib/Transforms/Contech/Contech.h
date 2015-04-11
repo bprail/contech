@@ -54,6 +54,7 @@ namespace llvm {
         OMP_FORK,
         OMP_FOR_ITER,
         OMP_BARRIER,
+        OMP_TASK_CALL,
         OMP_END,
         GLOBAL_SYNC_ACQUIRE, // Syncs that have no explicit address
         GLOBAL_SYNC_RELEASE,

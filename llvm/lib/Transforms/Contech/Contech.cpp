@@ -89,7 +89,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 48
+#define FUNCTIONS_INSTRUMENT_SIZE 49
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -132,6 +132,7 @@ namespace llvm {
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
                                            {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER},
                                            {STORE_AND_LEN("__kmpc_cancel_barrier"), OMP_BARRIER},
+                                           {STORE_AND_LEN("__kmpc_omp_task_with_deps"), OMP_TASK_CALL},
                                            {STORE_AND_LEN("MPI_Send"), MPI_SEND_BLOCKING},
                                            {STORE_AND_LEN("mpi_send_"), MPI_SEND_BLOCKING},
                                            {STORE_AND_LEN("MPI_Recv"), MPI_RECV_BLOCKING},
@@ -185,8 +186,12 @@ namespace llvm {
         Constant* ompPushParentFunction;
         Constant* ompPopParentFunction;
         Constant* ctPeekParentIdFunction;
+        Constant* ompProcessJoinFunction;
+        Constant* ompGetNestLevelFunction;
         
         Constant* ompGetParentFunction;
+        Constant* ompPrepareTaskFunction;
+        Constant* ompStoreInOutDepsFunction;
         
         Constant* pthreadExitFunction;
         GlobalVariable* threadLocalNumber;
@@ -198,6 +203,7 @@ namespace llvm {
         Type* int64Ty;
         Type* pthreadTy;
         Type* threadArgsTy;  // needed when wrapping pthread_create
+        int pthreadSize;
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
         
@@ -216,6 +222,7 @@ namespace llvm {
         unsigned int getCriticalPathLen(BasicBlock& B);
         Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
+        Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
         Value* castSupport(Type*, Value*, Instruction*);
         void insertMPITransfer(bool, bool, Value*, CallInst*);
         
@@ -283,12 +290,14 @@ namespace llvm {
         storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
         ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
         ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
+        ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
         
         allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(int32Ty, false));
         getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(int32Ty, false));
         getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(int64Ty, false));
-        ompGetParentFunction = M.getOrInsertFunction("__kmpc_get_parent_taskid", FunctionType::get(int64Ty, false));
+        
         ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(int32Ty, false));
+        ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(int32Ty, false));
         
         Type* argsSSync[] = {voidPtrTy, int32Ty/*type*/, int32Ty/*retVal*/, int64Ty /*ct_tsc_t*/};
         funVoidVoidPtrI32I32I64Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsSSync, 4), false);
@@ -308,6 +317,7 @@ namespace llvm {
         
         funI32I32Ty = FunctionType::get(int32Ty, ArrayRef<Type*>(argsTC, 1), false);
         storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
+        ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
        
         Type* argsQB[] = {int8Ty};
         funVoidI8Ty = FunctionType::get(voidTy, ArrayRef<Type*>(argsQB, 1), false);
@@ -341,19 +351,23 @@ namespace llvm {
         if (currentDataLayout->getPointerSize() == llvm::Module::Pointer64)
         {
             pthreadTy = int64Ty;
+            pthreadSize = 8;
         }
         else
         {
             pthreadTy = int32Ty;
+            pthreadSize = 4;
         }
         #else
         if (M.getPointerSize() == llvm::Module::Pointer64)
         {
             pthreadTy = int64Ty;
+            pthreadSize = 8;
         }
         else
         {
             pthreadTy = int32Ty;
+            pthreadSize = 4;
         }
         #endif
         
@@ -368,6 +382,11 @@ namespace llvm {
         storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
         
         storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
+        
+        Type* argsOMPSD[] = {voidPtrTy, pthreadTy, int32Ty, int32Ty};
+        FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
+        ompStoreInOutDepsFunction = M.getOrInsertFunction("__ctOMPStoreInOutDeps", funVoidVoidPtrI64I32I32);
+        ompPrepareTaskFunction = NULL;
         
         Type* pthreadTyPtr = pthreadTy->getPointerTo();
         Type* argsCTA[] = {pthreadTyPtr, 
@@ -1695,12 +1714,25 @@ cleanup:
                 break;
                 case (OMP_BARRIER):
                 {
+                    debugLog("ompProcessJoinFunction @" << __LINE__);
+                    CallInst* procJoin = CallInst::Create(ompProcessJoinFunction, "", ci);
+                    
                     // OpenMP barriers use argument 1 for barrier ID
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(getCurrentTickFunction, "tick", ci);
                     //IntToPtrInst* bci = new IntToPtrInst(ci->getArgOperand(1), voidPtrTy, "locktovoid", I);
                     debugLog("ompGetParentFunction @" << __LINE__);
-                    IntToPtrInst* bci = new IntToPtrInst(CallInst::Create(ompGetParentFunction, "", I), voidPtrTy, "locktovoid", I);
+                    CallInst* OGNLF = CallInst::Create(ompGetNestLevelFunction, "", I);
+                    Value* cArgGPF[] = {OGNLF};
+                    CallInst* OGPF = CallInst::Create(ompGetParentFunction, ArrayRef<Value*>(cArgGPF), "", I);
+                    Value* mul8 = BinaryOperator::Create(Instruction::Mul,
+                                                OGPF,
+                                                ConstantInt::get(int32Ty, 256), "", I);
+                    Value* mergV = BinaryOperator::Create(Instruction::Add,
+                                                mul8,
+                                                OGNLF, "", I);
+                    IntToPtrInst* bci = new IntToPtrInst(mergV, voidPtrTy, "locktovoid", I);
+                    // omp_get_active_level
                     Value* c1 = ConstantInt::get(int8Ty, 1);
                     Value* cArgs[] = {c1, bci, nGetTick};
                     // Record the barrier entry
@@ -1722,6 +1754,71 @@ cleanup:
                     containQueueBuf = true;
                     iPt = nStoreBarEn;
                     hasUninstCall = true;
+                }
+                break;
+                case(OMP_TASK_CALL):
+                {
+                    // __kmpc_omp_task_with_deps( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * new_task,
+                    //             kmp_int32 ndeps, kmp_depend_info_t *dep_list,
+				    //             kmp_int32 ndeps_noalias, kmp_depend_info_t *noalias_dep_list )
+                    //  IF the task has no dependencies, it is still invoked with this routine, with NULL depends lists
+                    //  new_task -> ... -> call __kmpc_omp_task_alloc(..., entry_point)
+                    //  kmp_depend_info_t { base_addr, in, out}
+                    //  Task will also be run in the current thread context
+                    Value* taskPtr = ci->getArgOperand(2);
+                    Value* nDeps = ci->getArgOperand(3);
+                    Value* depList = ci->getArgOperand(4);
+                    if (ompPrepareTaskFunction == NULL)
+                    {
+                        Type* argsPrepDep[] = {voidPtrTy, pthreadTy, depList->getType(), int32Ty};
+                        FunctionType* funPrepDepsTy = FunctionType::get(voidTy, ArrayRef<Type*>(argsPrepDep, 4), false);
+                        ompPrepareTaskFunction = M.getOrInsertFunction("__ctOMPPrepareTask", funPrepDepsTy);
+                    }
+                    
+                    CallInst* taskAllocInst = dyn_cast<CallInst>(taskPtr);
+                    
+                    Value* baseTaskSize = taskAllocInst->getArgOperand(3);
+                    
+                    ConstantExpr* bci = NULL;
+                    Function* baseTask = NULL;
+                    if ((bci = dyn_cast<ConstantExpr>(taskAllocInst->getArgOperand(5))) != NULL)
+                    {
+                        if (bci->isCast())
+                        {
+                            baseTask = dyn_cast<Function>(bci->getOperand(0));
+                        }
+                    }
+                    else if ((baseTask = dyn_cast<Function>(taskAllocInst->getArgOperand(5))) != NULL)
+                    {
+                        
+                    }
+                    else 
+                    {
+                        errs() << "Need new casting route for omp task call\n";
+                    }
+                    
+                    Value* castTask = castSupport(voidPtrTy, taskPtr, ci);
+                    Value* cArgs[] = {castTask, baseTaskSize, depList, nDeps};
+                    CallInst::Create(ompPrepareTaskFunction, ArrayRef<Value*>(cArgs, 4), "", ci);
+                    
+                    ConstantInt* cnstTaskSize = dyn_cast<ConstantInt>(baseTaskSize);
+                    ConstantInt* cnstNDeps = dyn_cast<ConstantInt>(nDeps);
+                    
+                    Function* wrapDTask = createMicroDependTaskWrap(baseTask, M, 
+                                                                    cnstTaskSize->getValue().getLimitedValue(), 
+                                                                    cnstNDeps->getValue().getLimitedValue());
+                    contechAddedFunctions.insert(wrapDTask);
+                    
+                    // Add space for depend*, parentID, childID
+                    taskAllocInst->setArgOperand(3, BinaryOperator::Create(Instruction::Add,
+                                                taskAllocInst->getArgOperand(3),
+                                                ConstantInt::get(baseTaskSize->getType(), pthreadSize + 2*4),
+                                                "", taskAllocInst));
+                    taskAllocInst->setArgOperand(5, wrapDTask);
+                    
+                    // ParentID
+                    debugLog("getThreadNumFunction @" << __LINE__);
+                    Value* tNum = CallInst::Create(getThreadNumFunction, "", ci);
                 }
                 break;
                 case(MPI_SEND_BLOCKING):
@@ -1981,6 +2078,60 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
         ReturnInst::Create(M.getContext(), soloBlock);
     
     delete [] argTy;
+    delete [] cArgExt;
+    
+    return extFun;
+}
+    
+Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep)
+{
+    if (ompMicroTask == NULL) {errs() << "Cannot create wrapper from NULL function\n"; return NULL;}
+    FunctionType* baseFunType = ompMicroTask->getFunctionType();
+    if (ompMicroTask->isVarArg()) { errs() << "Cannot create wrapper for varg function\n"; return NULL;}
+    
+    Type** argTy = new Type*[baseFunType->getNumParams()];
+    for (unsigned int i = 0; i < baseFunType->getNumParams(); i++)
+    {
+        argTy[i] = baseFunType->getParamType(i);
+    }
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+                                                 ArrayRef<Type*>(argTy, baseFunType->getNumParams()),
+                                                 false);
+                                                 
+    Function* extFun = Function::Create(extFunType, 
+                                        ompMicroTask->getLinkage(),
+                                        Twine("__ct", ompMicroTask->getName()),
+                                        &M);
+    
+    BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
+    
+    Function::ArgumentListType& argList = extFun->getArgumentList();
+    unsigned argListSize = argList.size();
+    
+    Value** cArgExt = new Value*[argListSize];
+    auto it = argList.begin();
+    for (unsigned i = 0; i < argListSize; i ++)
+    {
+        cArgExt[i] = it;
+        ++it;
+    }
+    
+    Constant* c1 = ConstantInt::get(int32Ty, 1);
+    Constant* tSize = ConstantInt::get(pthreadTy, taskOffset);
+    Constant* nDeps = ConstantInt::get(int32Ty, numDep);
+    Value* cArgs[] = {cArgExt[1], tSize, nDeps, c1};
+    CallInst::Create(ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize), "", soloBlock);
+    
+    Constant* c0 = ConstantInt::get(int32Ty, 0);
+    cArgs[3] = c0;
+    CallInst::Create(ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    
+    if (ompMicroTask->getReturnType() != voidTy)
+        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+    else
+        ReturnInst::Create(M.getContext(), soloBlock);
+    
     delete [] cArgExt;
     
     return extFun;
