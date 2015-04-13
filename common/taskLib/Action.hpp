@@ -41,6 +41,7 @@ struct MemoryAction
     };
     MemoryAction();
     MemoryAction(Action a);
+    MemoryAction(uint64_t a, uint64_t ps, action_type at) {data = 0; addr = a; pow_size = ps; type = at;}
 };
 bool operator< (const MemoryAction& lhs, const MemoryAction& rhs);
 
