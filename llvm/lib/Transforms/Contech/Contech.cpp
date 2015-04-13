@@ -1723,7 +1723,10 @@ cleanup:
                     //IntToPtrInst* bci = new IntToPtrInst(ci->getArgOperand(1), voidPtrTy, "locktovoid", I);
                     debugLog("ompGetParentFunction @" << __LINE__);
                     CallInst* OGNLF = CallInst::Create(ompGetNestLevelFunction, "", I);
-                    Value* cArgGPF[] = {OGNLF};
+                    Value* sub1 = BinaryOperator::Create(Instruction::Sub,
+                                                OGNLF,
+                                                ConstantInt::get(int32Ty, 1), "", I);
+                    Value* cArgGPF[] = {sub1}; // TODO: add check that this will saturate at 0
                     CallInst* OGPF = CallInst::Create(ompGetParentFunction, ArrayRef<Value*>(cArgGPF), "", I);
                     Value* mul8 = BinaryOperator::Create(Instruction::Mul,
                                                 OGPF,
