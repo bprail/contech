@@ -435,6 +435,11 @@ size_t Task::writeContechTask(Task& task, ct_file* out)
         
     assert(src != NULL);
     assert(dst != NULL);
+    
+    if (task.type == task_type_join)
+        assert(task.p.size() > task.s.size());
+    if (task.type == task_type_create)
+        assert(task.p.size() < task.s.size());
         
     // Record length
     //ct_write(&recordLength, sizeof(uint), out);
