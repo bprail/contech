@@ -8,7 +8,8 @@ using namespace contech;
  */
 
 
-int racesReported = 0;
+uint64_t racesReported = 0;
+uint64_t memAccesses = 0;
 int printVerbose = false;
 
 int main(int argc, char const *argv[])
@@ -32,7 +33,7 @@ int main(int argc, char const *argv[])
 
     
     //Create file handles for input and output
-    //taskGraphIn is for fetching tasks and interating through all the memOps
+    //taskGraphIn is for fetching tasks and iterating through all the memOps
     ct_file* taskGraphIn  = create_ct_file_r(filename.c_str());
     if (taskGraphIn == NULL) {
         cerr << "Error: Couldn't open input file" << endl;
@@ -41,11 +42,7 @@ int main(int argc, char const *argv[])
     
     
     //run happened-before race detection algorithm
-    cerr << "Starting Race Detection" << endl;
     hbRaceDetector(taskGraphIn);
-    cerr << endl;
-    
-    printf("Done processing taskgraph file \n");
 
     //cleanup
     close_ct_file(taskGraphIn);
@@ -153,12 +150,19 @@ void hbRaceDetector(ct_file* taskGraphIn)
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
     if (tg == NULL) {}
     TaskGraphInfo* tgi = tg->getTaskGraphInfo();
+    map <uint64_t, uint32_t> allocSize;
+    TaskId roiStart = tg->getROIStart(), roiEnd = tg->getROIEnd();
+    bool inROI = false;
+    uint64_t numRaceAccesses = 0;
 
-    while(Task* currentTask = tg->readContechTask()){
+    while(Task* currentTask = tg->readContechTask())
+    {
             
-        TaskId ctid = currentTask->getTaskId();
+        TaskId tid = currentTask->getTaskId();
+        if (tid == roiStart) {inROI = true;}
+        if (tid == roiEnd) {delete currentTask; break;}
         if(printVerbose){
-                cout << "Processing task with CTID:  " << ctid << endl; 
+                cout << "Processing task with CTID:  " << tid << endl; 
                 cout << "Num Mem Actions: " << currentTask->getMemoryActions().size() << endl;
         }
         //Add to the taskgraph in an online fashion, as tasks come in.
@@ -166,83 +170,129 @@ void hbRaceDetector(ct_file* taskGraphIn)
         
         //For every basic block
         auto act = currentTask->getBasicBlockActions();
-        for (auto f = act.begin(), e = act.end(); f != e; ++f){
+        for (auto f = act.begin(), e = act.end(); f != e; ++f)
+        {
             BasicBlockAction bb = *f;
             //Examine every memory operation in the current basic block
             int memOpIndex = 0;
+            uint64_t mallocAddr = 0;
             
-            for (MemoryAction newMop : f.getMemoryActions()){
-                Heltech_memory_op* existingMop = lastAccess[newMop.addr];
-            
-                //if this isn't the first access to that address
-                if(existingMop != NULL){
-                        
-                    if (existingMop->ctid == ctid)
-                    {
-                        if (existingMop->mop.type == action_type_mem_write) continue;
-                        if (newMop.type == action_type_mem_read) continue;
-                        delete existingMop;
-                        lastAccess[newMop.addr] = new Heltech_memory_op(newMop,bb.basic_block_id,ctid);
-                        continue;
-                    }
-                    
-                    
-                    //note: concurrent reads don't have a problem running in parallel
-                    if( (newMop.type == action_type_mem_write || 
-                         existingMop->mop.type == action_type_mem_write) && //either access is a write
-                       //TODO what about the case where you have a free/malloc
-                        (raceAddresses.count(newMop.addr) == 0))   // and if a race hasn't already been found on this address
-                    {
-                        //Check if a path exists between the previous memory access and the one
-                        //we're currently iterating through . This implies a "happened before" realtionship
-                        // which is the basis of Helgrind's race detection algorithm.
-                        
-                        //check if path has been computed/cached
-                        bool pathExists = false;
-
-                        pathExists = hbPathCheck(vecClock, existingMop->ctid, ctid);
-                        
-                        if (!pathExists) 
-                        {
-                            reportRace(existingMop->mop,newMop,existingMop->ctid,ctid,bb,existingMop->bbid,memOpIndex, tgi);
-                            raceAddresses.insert(newMop.addr);
-                            basicBlocks.insert(bb.basic_block_id);
-                        }
-                            
-                    }
-                    
-                    if (newMop.type == action_type_mem_write)
-                    {
-                        delete existingMop;
-                        existingMop = NULL;
-                    }
+            for (MemoryAction bMop : f.getMemoryActions())
+            {
+                unsigned int nBytes = (0x1 << bMop.pow_size);
+                bool isRaceAccess = false;
+                
+                if (bMop.type == action_type_malloc)
+                {
+                    mallocAddr = bMop.addr;
+                    continue;
                 }
                 
-                //
-                //  We only update the lastAccess on a write, such that the following cases hold:
-                //
-                //  If X writes to A, then Y reads from A and Z reads from A
-                //      This will treat as either XYZ or XZY, but if there is only a HB
-                //      between X and Y, then there is a race to detect a race.
-                //
-                //
-                //  If X writes to A, then X reads from A, and Y reads from A
-                //      This will not be a race, even if there is no HB between X and Y
-                //
-                if (existingMop == NULL)
+                if (mallocAddr != 0)
                 {
-                    lastAccess[newMop.addr] = new Heltech_memory_op(newMop,bb.basic_block_id,ctid);
+                    assert(bMop.type == action_type_size);
+                    uint32_t asz = bMop.addr;
+                    allocSize[mallocAddr] = asz;
+                    mallocAddr = 0;
+                    continue;
                 }
-        
-                //handle frees by clearing out that memory location from the last access
-                //and then adding the free to the list of existing mops
-                if(newMop.type == action_type_free){
-                    delete lastAccess[newMop.addr];
-                    lastAccess[newMop.addr] = NULL;
-                    raceAddresses.erase(newMop.addr);
+                
+                if (bMop.type == action_type_free)
+                {
+                    nBytes = allocSize[bMop.addr];
+                    allocSize.erase(bMop.addr);
                 }
+                else
+                {
+                    memAccesses++;
+                }
+                
+                for (unsigned int sz = 0; sz < nBytes; sz++)
+                {
+                    MemoryAction newMop(bMop.addr + sz, 0, (action_type)bMop.type);
+                    Heltech_memory_op* existingMop = lastAccess[newMop.addr];
+            
+                    //if this isn't the first access to that address
+                    if (existingMop != NULL)
+                    {        
+                        if (existingMop->tid == tid)
+                        {
+                            if (existingMop->mop.type == action_type_mem_write) continue;
+                            if (newMop.type == action_type_mem_read) continue;
+                            delete existingMop;
+                            lastAccess[newMop.addr] = new Heltech_memory_op(newMop, bb.basic_block_id, tid);
+                            continue;
+                        }
+                        
+                        
+                        //note: concurrent reads don't have a problem running in parallel
+                        if( (newMop.type == action_type_mem_write || 
+                             existingMop->mop.type == action_type_mem_write) && //either access is a write
+                            (raceAddresses.count(newMop.addr) == 0))   // and if a race hasn't already been found on this address
+                        {
+                            //Check if a path exists between the previous memory access and the one
+                            //we're currently iterating through . This implies a "happened before" relationship
+                            // which is the basis of Helgrind's race detection algorithm.
+                            
+                            //check if path has been computed/cached
+                            bool pathExists = false;
+
+                            pathExists = hbPathCheck(vecClock, existingMop->tid, tid);
+                            
+                            if (!pathExists && inROI == true) 
+                            {
+                                reportRace(existingMop->mop,
+                                           newMop,
+                                           existingMop->tid,
+                                           tid,
+                                           bb,
+                                           existingMop->bbid,
+                                           memOpIndex, 
+                                           tgi);
+                                raceAddresses.insert(newMop.addr);
+                                basicBlocks.insert(bb.basic_block_id);
+                                isRaceAccess = true;
+                            }
+                        }
+                        
+                        if (newMop.type == action_type_mem_write)
+                        {
+                            delete existingMop;
+                            existingMop = NULL;
+                        }
+                    }
                     
+                    //
+                    //  We only update the lastAccess on a write, such that the following cases hold:
+                    //
+                    //  If X writes to A, then Y reads from A and Z reads from A
+                    //      This will treat as either XYZ or XZY, but if there is only a HB
+                    //      between X and Y, then there is a race to detect a race.
+                    //
+                    //
+                    //  If X writes to A, then X reads from A, and Y reads from A
+                    //      This will not be a race, even if there is no HB between X and Y
+                    //
+                    if (existingMop == NULL)
+                    {
+                        lastAccess[newMop.addr] = new Heltech_memory_op(newMop, bb.basic_block_id, tid);
+                    }
+            
+                    //handle frees by clearing out that memory location from the last access
+                    //and then adding the free to the list of existing mops
+                    if (newMop.type == action_type_free)
+                    {
+                        delete lastAccess[newMop.addr];
+                        lastAccess[newMop.addr] = NULL;
+                        raceAddresses.erase(newMop.addr);
+                    }
+                }
                 memOpIndex++;
+                
+                if (isRaceAccess == true)
+                {
+                    numRaceAccesses++;
+                }
             }
         }
 
@@ -250,12 +300,8 @@ void hbRaceDetector(ct_file* taskGraphIn)
     }
     delete tg;
     
-    if(racesReported == 0){
-        cerr << "\nNo data races found!!!" << endl;
-    } else {
-        cerr << "\nERROR: " << racesReported << " races observed!!!" << endl;
-        cerr << "Number of BB's containing races: " << basicBlocks.size() << endl;
-    }
+    printf("Race Bytes, Accesses, Race Accesses, Basic Blocks with Races\n");
+    printf("%llu, %llu, %llu, %llu\n", racesReported, memAccesses, numRaceAccesses, (basicBlocks.size()));
 }
 
 
@@ -264,8 +310,8 @@ void hbRaceDetector(ct_file* taskGraphIn)
  */
 void reportRace(MemoryAction existingMop,
                 MemoryAction newMop,
-                TaskId existingCTID,
-                TaskId newCTID,
+                TaskId existingTID,
+                TaskId newTID,
                 BasicBlockAction bb,
                 unsigned int srcBBID,
                 int idx,
@@ -275,6 +321,8 @@ void reportRace(MemoryAction existingMop,
     //Increment the number of races found
     racesReported++;
 
+    if (!printVerbose) return;
+    
     string raceReason = "";
     // write and write
     if((newMop.type == action_type_mem_write && existingMop.type == action_type_mem_write)){
@@ -286,8 +334,8 @@ void reportRace(MemoryAction existingMop,
     cerr << "**************There may be a race!!**************" << endl;
     cerr << "Reason: " << raceReason << endl;
     cerr << "Conflicting access address: " << hex << newMop.addr << dec << "(Idx:" << idx << ")" << " in (Contech:Task) -- ("
-        << existingCTID << ") and (" 
-        << newCTID << ")\n" << endl;
+        << existingTID << ") and (" 
+        << newTID << ")\n" << endl;
     cerr << bb << endl;
     {
         auto bbi = tgi->getBasicBlockInfo(srcBBID);
@@ -312,8 +360,8 @@ void reportRace(MemoryAction existingMop,
 /**
  *Constructor for the Heltech_memory_op container
  */
-Heltech_memory_op::Heltech_memory_op(MemoryAction mop,unsigned int b, TaskId ctid){
+Heltech_memory_op::Heltech_memory_op(MemoryAction mop, unsigned int b, TaskId tid){
     this->mop = mop;
     this->bbid = b;
-    this->ctid = ctid;
+    this->tid = tid;
 }
