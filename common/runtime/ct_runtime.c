@@ -228,6 +228,7 @@ void __parsec_bench_end()
 
 void __ctCleanupThread(void* v)
 {
+    unsigned int parent_ctid = (unsigned int) v;
     // A thread has exited
     // TODO: Verify whether the atomic add should be before the queue buffer
     #ifdef CT_OVERHEAD_TRACK
@@ -238,7 +239,7 @@ void __ctCleanupThread(void* v)
     {
         __ctAllocateLocalBuffer();
     }
-    __ctStoreThreadJoinInternal(true, __ctThreadLocalNumber, rdtsc());
+    __ctStoreThreadJoinInternal(true, parent_ctid, rdtsc());
     __ctQueueBuffer(false);
     __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
 }
@@ -351,7 +352,7 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     }
  
     g = __ctCleanupThread;
-    pthread_cleanup_push(g, NULL);
+    pthread_cleanup_push(g, p);
     
     #ifdef CT_OVERHEAD_TRACK
     {
