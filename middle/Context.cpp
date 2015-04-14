@@ -86,24 +86,6 @@ void Context::getChildJoin(ContextId ctid, Task* tj)
 {
     joinMap[ctid] = tj;
     joinCountMap[tj->getTaskId()] ++;
-    //return TaskId(0);
-    //auto it = joinMap.find(ctid);
-    
-    // child hasn't exited, record a 'cookie' for the child
-    /*if (it == joinMap.end())
-    {
-        joinMap[ctid] = tid;
-        
-        joinCountMap[tid] ++;
-    
-        return TaskId(0);
-    }
-    else
-    {
-        TaskId r = it->second;
-        joinMap.erase(it);
-        return r;
-    }*/
 }
 
 bool Context::isCompleteJoin(TaskId tid)

@@ -125,7 +125,6 @@ void updateContextTaskList(Context &c)
                (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
                (t->getSuccessorTasks().size() > 0)) ||
                t->getType() == task_type_create)
-              
         {
             c.tasks.pop_back();
             backgroundQueueTask(t);

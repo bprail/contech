@@ -439,8 +439,6 @@ reset_middle:
         // Task joins
         else if (event->event_type == ct_event_task_join)
         {
-            //Task& otherTask = *context[event->tj.other_id].activeTask();
-
             // I exited
             if (event->tj.isExit)
             {
@@ -477,10 +475,8 @@ reset_middle:
                 }
                 
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "exited", otherContext.activeTask()->getTaskId(), startTime, endTime);
-
-            // I joined with another task
             } 
-            else 
+            else // I joined with another task
             {
                 Context& otherContext = context[(currentRank << 24) | event->tj.other_id];
                 if (otherContext.endTime != 0)
@@ -504,7 +500,9 @@ reset_middle:
                     taskJoin->addPredecessor(otherTask->getTaskId());
                     
                     if (parallelMiddle)
+                    {
                         updateContextTaskList(otherContext);
+                    }
                     
                     // The join task starts when both tasks have executed the join, and ends when the parent finishes the join
                     if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "joined with", otherTask->getTaskId(), startTime, endTime);
