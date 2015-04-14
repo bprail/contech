@@ -215,7 +215,8 @@ def main(parsec=False, nas=False):
                     print_header("Running MultiCacheSim with " + os.path.basename(cacheModel) + " in " + mode + " mode.") 
                     pcall([CACHESIM, taskgraph, cacheModel, profile, mode , ">", output])
                 elif "heltech" in backend:
-                    pcall([HELTECH, taskgraph])
+                    output = os.path.join(CONTECH_HOME, "backend/Heltech/output/", name + ".csv")
+                    pcall([HELTECH, taskgraph, ">", output])
                 elif "hammer" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/Hammer/output/", name + ".csv")
                     pcall([HAMMER, taskgraph, ">", output])
@@ -240,6 +241,15 @@ def main(parsec=False, nas=False):
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
+                elif "critPath" in backend:
+                    # Three changes: output dir
+                    #   Tsks file dir
+                    #   Tsks file name
+                    #   Also the limit parameter on the commandline
+                    output = os.path.join(CONTECH_HOME, "backend/CritPath/output_12", name + ".csv")
+                    tsks = "tsks/{}_{}_{}_12configs.tasks".format(name, args.numthreads, args.input)
+                    tsks = os.path.join(CONTECH_HOME, "backend/CritPath/", tsks)
+                    pcall([os.path.join(CONTECH_HOME, "backend/CritPath/critPath"), taskgraph, tsks, " >", output])
                 elif "falseShare" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/FalseShare/output/", name + ".csv")
                     pcall([FSHARE, taskgraph, ">", output])    
