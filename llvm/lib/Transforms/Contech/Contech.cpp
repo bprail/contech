@@ -1496,11 +1496,7 @@ cleanup:
                     // Record the barrier entry
                     debugLog("storeBarrierFunction @" << __LINE__);
                     CallInst* nStoreBarEn = CallInst::Create(storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
-                                                        "", I);
-                    Value* cArg[] = {c1};
-                    debugLog("queueBufferFunction @" << __LINE__);
-                    /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
-                                                        "", I);                   
+                                                        "", I);               
                     ++I;
                     cArgs[0] = ConstantInt::get(int8Ty, 0);
                     // Record the barrier exit
@@ -1741,11 +1737,7 @@ cleanup:
                     // Record the barrier entry
                     debugLog("storeBarrierFunction @" << __LINE__);
                     CallInst* nStoreBarEn = CallInst::Create(storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
-                                                        "", I);
-                    Value* cArg[] = {c1};
-                    debugLog("queueBufferFunction @" << __LINE__);
-                    /*CallInst* nQueueBuf = */CallInst::Create(queueBufferFunction, ArrayRef<Value*>(cArg, 1),
-                                                        "", I);                   
+                                                        "", I);             
                     ++I;
                     cArgs[0] = ConstantInt::get(int8Ty, 0);
                     // Record the barrier exit
