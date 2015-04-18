@@ -84,6 +84,11 @@ Task* TaskGraph::getNextTask()
     return Task::readContechTaskUnlock(inputFile);
 }
 
+void TaskGraph::resetTaskOrder()
+{
+    nextTask = taskOrder.begin();
+}
+
 //
 // Sets the specified TaskId as the current task
 //   getNextTask will retrieve the next task starting with TaskId
