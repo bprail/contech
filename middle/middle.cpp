@@ -539,6 +539,10 @@ reset_middle:
                 barA.data = 0;
                 barA.addr = event->bar.sync_addr;
                 barA.rank = currentRank;
+                if (activeContech.activeTask()->getType() != task_type_basic_blocks)
+                {
+                    activeContech.createBasicBlockContinuation();
+                }
                 Task* barrierTask = barrierList[barA.data].onEnter(*activeContech.activeTask(), startTime, event->bar.sync_addr);
                 if (DEBUG) eventDebugPrint(activeContech.activeTask()->getTaskId(), "arrived at barrier", barrierTask->getTaskId(), startTime, endTime);
             }
