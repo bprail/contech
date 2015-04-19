@@ -225,7 +225,7 @@ reset_middle:
         if (hasTime)
         {
             // TODO: Why does NAS-is fail on this assert?
-            //assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
+            assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
             if (endTime < startTime)
             {
                 printf("Timestamps reordered on type (%d): %llu <= %llu\n", event->event_type,
