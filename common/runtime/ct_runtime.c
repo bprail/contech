@@ -888,6 +888,20 @@ void __ctOMPThreadCreate(unsigned int parent)
     }
 }
 
+void __ctOMPProcessJoinStack()
+{
+    pcontech_join_stack elem = __ctJoinStack;
+    while (elem != NULL && elem->parentId == __ctThreadLocalNumber)
+    {
+        pcontech_join_stack t = elem;
+        __ctStoreThreadJoinInternal(false, elem->id, elem->start);
+        elem = elem->next;
+        free(t);
+        __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
+    }
+    __ctJoinStack = elem;
+}
+
 // create event for thread and task
 //   if int == 0, restore thread ctid from stack
 //   else create events with task and thread ids
@@ -898,16 +912,7 @@ void __ctOMPTaskCreate(int ret)
     if (ret == 0)
     {
         __ctThreadLocalNumber = __ctPeekIdStack(&__ctThreadIdStack);
-        pcontech_join_stack elem = __ctJoinStack;
-        while (elem != NULL)
-        {
-            pcontech_join_stack t = elem;
-            __ctStoreThreadJoinInternal(false, elem->id, elem->start);
-            elem = elem->next;
-            free(elem);
-            __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
-        }
-        __ctJoinStack = NULL;
+        __ctOMPProcessJoinStack();
         return;
     }
     taskId = __ctAllocateCTid();
@@ -962,20 +967,6 @@ void __ctOMPTaskJoin()
     __ctThreadLocalBuffer->id = threadId;
  
     __ctOMPTaskDelayJoin(taskId);
-}
-
-void __ctOMPProcessJoinStack()
-{
-    pcontech_join_stack elem = __ctJoinStack;
-    while (elem != NULL && elem->parentId == __ctThreadLocalNumber)
-    {
-        pcontech_join_stack t = elem;
-        __ctStoreThreadJoinInternal(false, elem->id, elem->start);
-        elem = elem->next;
-        free(t);
-        __ctCheckBufferSize(__ctThreadLocalBuffer->pos);
-    }
-    __ctJoinStack = elem;
 }
 
 // join event for parent and thread
