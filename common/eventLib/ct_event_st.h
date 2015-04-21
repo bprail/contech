@@ -167,6 +167,11 @@ typedef struct _ct_mpi_wait
     ct_tsc_t end_time;
 } ct_mpi_wait, *pct_mpi_wait;
 
+typedef struct _ct_roi_event
+{
+    ct_tsc_t start_time;
+} ct_roi_event, *pct_roi_event;
+
 //
 // There are two ways to combine objects with common fields.
 //   1) Common fields in a single type that is the first field
@@ -193,6 +198,7 @@ typedef struct _ct_event {
         ct_rank             rank;
         ct_mpi_transfer     mpixf;
         ct_mpi_wait         mpiw;
+        ct_roi_event        roi;
     };
 } ct_event, *pct_event;
 

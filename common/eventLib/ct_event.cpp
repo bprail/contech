@@ -506,6 +506,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         case (ct_event_roi):
         {
             // This event has no additional fields
+            fread_check(&npe->roi.start_time, sizeof(ct_tsc_t), 1, fptr);
         }
         break;
         
