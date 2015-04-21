@@ -825,7 +825,8 @@ reset_middle:
         else if (event->event_type == ct_event_roi)
         {
             Task* activeT = activeContech.activeTask();
-            activeT->setEndTime(activeT->getStartTime() + activeT->getBBCount());
+            ct_tsc_t roiTime = event->roi.start_time - activeContech.timeOffset;
+            activeT->setEndTime(roiTime);
             activeContech.createBasicBlockContinuation();
             updateContextTaskList(activeContech);
             
@@ -835,13 +836,13 @@ reset_middle:
             {
                 
                 setROIStart(tid);
-                printf("DEBUG - ROI Start - %llu\n", tid);
+                printf("DEBUG - ROI Start - %llu - %llu\n", tid, roiTime);
                 roiEvent = true;
             }
             else
             {
                 setROIEnd(tid);
-                printf("DEBUG - ROI End - %llu\n", tid);
+                printf("DEBUG - ROI End - %llu - %llu\n", tid, roiTime);
             }
         }
         // End switch block on event type
