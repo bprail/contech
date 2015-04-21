@@ -182,7 +182,8 @@ void __ctWriteROIEvent()
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_roi;
-    __ctThreadLocalBuffer->pos += 1;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + 1]) = rdtsc();
+    __ctThreadLocalBuffer->pos += (1 + sizeof(ct_tsc_t));
 }
 
 void __parsec_roi_begin()
@@ -352,7 +353,7 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     }
  
     g = __ctCleanupThread;
-    pthread_cleanup_push(g, p);
+    pthread_cleanup_push(g, (void*)p);
     
     #ifdef CT_OVERHEAD_TRACK
     {
