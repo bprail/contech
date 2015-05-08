@@ -10,24 +10,27 @@ using namespace contech;
 int main(int argc, char const *argv[])
 {
     //input check
-    if(argc != 2){
-        cout << "Usage: " << argv[0] << " taskGraphInputFile" << endl;
+    if (argc < 2)
+    {
+        cout << "Usage: " << argv[0] << " taskGraphInputFile [ROI]" << endl;
         exit(1);
     }
 
     ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
-    if(taskGraphIn == NULL){
+    if(taskGraphIn == NULL)
+    {
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
     }
 
     uint64 totalTasks = 0;
     uint64 totalBasicBlocks = 0;
-    uint64 totalMemOps = 0;
+    uint64 totalMemOps = 0, totalMemBytes = 0;
     uint64 totalBlocksWithGlobals = 0;
     uint64 totalBlocksWithCalls = 0;
     uint64 totalBlocksInROI = 0;
     bool inROI = false;
+    bool modelROI = (argc > 2);
 
     double averageBasicBlocksPerTask = 0;
     uint maxBasicBlocksPerTask = 0;
@@ -50,8 +53,10 @@ int main(int argc, char const *argv[])
     if (tg == NULL) {}
     
     TaskGraphInfo* tgi = tg->getTaskGraphInfo();
+    if (modelROI) tg->setTaskOrderCurrent(tg->getROIStart());
 
-    while(Task* currentTask = tg->getNextTask()){
+    while(Task* currentTask = tg->getNextTask())
+    {
 
         totalTasks++;
         uint basicBlocksInTask = 0;
@@ -64,6 +69,11 @@ int main(int argc, char const *argv[])
         else if (currentTask->getTaskId() == tg->getROIEnd())
         {
             inROI = false;
+            if (modelROI)
+            {
+                delete currentTask;
+                break;
+            }
         }
 
         switch(currentTask->getType())
@@ -99,6 +109,8 @@ int main(int argc, char const *argv[])
                         totalMemOps++;
                         memOpsInTask++;
                         memOpsInBlock++;
+                        if (mem.type == action_type_mem_read || mem.type == action_type_mem_write)
+                            totalMemBytes += (0x1 << mem.pow_size);
                     }
 
                     maxMemOpsPerBasicBlock = max(maxMemOpsPerBasicBlock, memOpsInBlock);
@@ -151,6 +163,7 @@ int main(int argc, char const *argv[])
     printf("Blocks with Global Accesses: %lf (%llu)\n", (double)(totalBlocksWithGlobals) / (double)(totalBasicBlocks), totalBlocksWithGlobals);
     printf("\n");
     printf("Total MemOps: %llu\n", totalMemOps);
+    printf("Total Bytes Accessed: %llu\n", totalMemBytes);
     printf("Average MemOps per Task: %f\n", averageMemOpsPerTask);
     printf("Max MemOps per Task: %u\n", maxMemOpsPerTask);
     printf("Average MemOps per Basic Block: %f\n", averageMemOpsPerBasicBlock);
