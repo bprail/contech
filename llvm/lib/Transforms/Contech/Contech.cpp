@@ -79,7 +79,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 49
+#define FUNCTIONS_INSTRUMENT_SIZE 53
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -99,6 +99,7 @@ namespace llvm {
                                            {STORE_AND_LEN("memalign"), MALLOC2},
                                            {STORE_AND_LEN("operator new"), MALLOC},
                                            {STORE_AND_LEN("mmap"), MALLOC2},
+                                           {STORE_AND_LEN("realloc"), REALLOC},
                                            // Splash2.raytrace has a free_rayinfo, so \0 added
                                            {STORE_AND_LEN("free\0"), FREE},
                                            {STORE_AND_LEN("operator delete"), FREE},
@@ -107,6 +108,9 @@ namespace llvm {
                                            {STORE_AND_LEN("pthread_mutex_lock"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("pthread_mutex_trylock"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("pthread_mutex_unlock"), SYNC_RELEASE},
+                                           {STORE_AND_LEN("pthread_spin_lock"), SYNC_ACQUIRE},
+                                           {STORE_AND_LEN("pthread_spin_trylock"), SYNC_ACQUIRE},
+                                           {STORE_AND_LEN("pthread_spin_unlock"), SYNC_RELEASE},
                                            {STORE_AND_LEN("_mutex_lock_"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("_mutex_unlock_"), SYNC_RELEASE},
                                            {STORE_AND_LEN("pthread_cond_wait"), COND_WAIT},
@@ -403,7 +407,7 @@ namespace llvm {
             errs() << "MemOp of size: " << tMemOp->size << "\n";
         }
         
-        if (GlobalValue* gv = dyn_cast<GlobalValue>(addr))
+        if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
         {
             tMemOp->isGlobal = true;
             //errs() << "Is global - " << *addr << "\n";
@@ -418,10 +422,14 @@ namespace llvm {
         //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
         //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
         Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
-        Value* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
+        Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
+        MarkInstAsContechInst(addrI);
+        
         Value* argsMO[] = {addrI, cPos, pos};
         debugLog("storeMemOpFunction @" << __LINE__);
         CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
+        MarkInstAsContechInst(smo);
+        
         assert(smo != NULL);
         smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
         
@@ -691,6 +699,7 @@ cleanup:
         *tci = NULL;
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
+            // As InvokeInst are already terminator instructions, we do not have to find them here
             if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
             {
                 *tci = ci;
@@ -746,11 +755,10 @@ cleanup:
     {
         Instruction* iPt = B.getTerminator();
         std::vector<pllvm_mem_op> opsInBlock;
-        ct_event_id containingEvent = ct_event_basic_block;
         unsigned int memOpCount = 0;
         Instruction* aPhi = B.begin();
         bool getNextI = false;
-        bool containCall = false, containQueueBuf = false;
+        bool containQueueBuf = false;
         bool hasUninstCall = false;
         bool containKeyCall = false;
         Value* posValue = NULL;
@@ -786,6 +794,7 @@ cleanup:
             }
             else if (I->getMetadata(cct.ContechMDID) )
             {
+                // This instruction was already added by the instrumentation skip!
                 getNextI = true;
                 numIROps --;
                 continue;
@@ -882,6 +891,7 @@ cleanup:
             Value* argsBB[] = {llvm_bbid};
             debugLog("storeBasicBlockMarkFunction @" << __LINE__);
             sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
+            MarkInstAsContechInst(sbb);
         }
         else {
             llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
@@ -891,12 +901,15 @@ cleanup:
                                    ArrayRef<Value*>(argsBB, 1), 
                                    string("storeBlock") + to_string(bbid), 
                                    aPhi);
+            MarkInstAsContechInst(sbb);
+            
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
 
 //#define TSC_IN_BB
 #ifdef TSC_IN_BB
             Value* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
+            MarkInstAsContechInst(stTick);
             
             //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
             pllvm_mem_op tMemOp = new llvm_mem_op;
@@ -909,6 +922,8 @@ cleanup:
             Value* argsMO[] = {addrI, cPos, sbb};
             debugLog("storeMemOpFunction @" << __LINE__);
             CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", aPhi);
+            MarkInstAsContechInst(smo);
+            
             assert(smo != NULL);
             smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
             
@@ -930,7 +945,8 @@ cleanup:
 #endif
             
             // In LLVM 3.3+, switch to Monotonic and not Acquire
-            new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
+            Instruction* fenI = new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
+            MarkInstAsContechInst(fenI);
         }
 
         
@@ -952,15 +968,20 @@ cleanup:
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", aPhi);
+                    MarkInstAsContechInst(sbbc);
                     
-                    new FenceInst(M.getContext(), Release, SingleThread, aPhi);
+                    Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, aPhi);
+                    MarkInstAsContechInst(fenI);
                     iPt = aPhi;
                 }
                 else
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
-                    new FenceInst(M.getContext(), Release, SingleThread, I);
+                    MarkInstAsContechInst(sbbc);
+                    
+                    Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, I);
+                    MarkInstAsContechInst(fenI);
                     iPt = I;
                 }
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
@@ -986,6 +1007,8 @@ cleanup:
                     }
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", atomI);
+                    MarkInstAsContechInst(nGetTick);
+                    
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
@@ -995,7 +1018,8 @@ cleanup:
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
-                                                                "", iPt);    
+                                                                "", iPt);
+                    MarkInstAsContechInst(nStoreSync);
                 }
             }
 
@@ -1078,6 +1102,8 @@ cleanup:
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", I);
+                    MarkInstAsContechInst(nGetTick);
+                    
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
@@ -1090,8 +1116,9 @@ cleanup:
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", I); // Insert after xchg inst
+                    MarkInstAsContechInst(nStoreSync);
+                    
                     I = nStoreSync;
-                    containingEvent = ct_event_sync;
                     iPt = nStoreSync;
                 }
                 else
@@ -1105,12 +1132,13 @@ cleanup:
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", I);
+                    MarkInstAsContechInst(nGetTick);
+                    
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
                     // ++I moves the insertion point to after the armw inst 
                     Value* cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), ++I);
-                    
                     Value* cArg[] = {cinst,
                                      synType, 
                                      retV,
@@ -1118,8 +1146,9 @@ cleanup:
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", I); // Insert after armw inst
+                    MarkInstAsContechInst(nStoreSync);
+                    
                     I = nStoreSync;
-                    containingEvent = ct_event_sync;
                     iPt = nStoreSync;
                 }
                 else
@@ -1129,13 +1158,11 @@ cleanup:
             }
             else if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
             {
-                I = InstrumentFunctionCall<CallInst>(ci, 
-                                                     containCall, 
+                I = InstrumentFunctionCall<CallInst>(ci,
                                                      hasUninstCall, 
                                                      containQueueBuf,
                                                      hasInstAllMemOps, 
                                                      ContechMinimal,
-                                                     containingEvent, 
                                                      I, 
                                                      iPt, 
                                                      bi, 
@@ -1145,13 +1172,11 @@ cleanup:
             }
             else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I)) 
             {
-                I = InstrumentFunctionCall<InvokeInst>(ci, 
-                                                     containCall, 
+                I = InstrumentFunctionCall<InvokeInst>(ci,
                                                      hasUninstCall, 
                                                      containQueueBuf,
                                                      hasInstAllMemOps, 
                                                      ContechMinimal,
-                                                     containingEvent, 
                                                      I, 
                                                      iPt, 
                                                      bi, 
@@ -1171,8 +1196,8 @@ cleanup:
             // TODO: Function not defined in ct_runtime
             Value* argsCheck[] = {llvm_nops};
             debugLog("checkBufferLargeFunction @" << __LINE__);
-            CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
-            containCall = true;
+            Instruction* callChk = CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
+            MarkInstAsContechInst(callChk);
         }
         //
         // Being conservative, if another function was called, then
@@ -1188,41 +1213,14 @@ cleanup:
             //   These blocks would have only 1 successor
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
-            CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
-            containCall = true;
+            Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+            MarkInstAsContechInst(callChk);
         }
-        
-        
         
         // Finally record the information about this basic block
         //  into the CFG structure, so that targets can be matched up
         //  once all basic blocks have been parsed
-        {
-            // Does this basic block check its buffer?
-            bi->hasCheckBuffer = (containCall)?2:0;
-            bi->ev = containingEvent;
-            {
-                TerminatorInst* t = B.getTerminator();
-                unsigned i = t->getNumSuccessors();
-                unsigned j;
-                
-                // Let's assume that a basic block can only go to at most two other blocks
-                for (j = 0; j < 2; j++)
-                {
-                    if (j < i)
-                    {
-                        bi->tgts[j] = t->getSuccessor(j);
-                    }
-                    else
-                    {
-                        bi->tgts[j] = NULL;
-                    }
-                }
-                
-            }
-            cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
-            
-        }
+        cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
         
         debugLog("Return from BBID: " << bbid);
         
@@ -1249,29 +1247,46 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     
     Function::ArgumentListType& argList = extFun->getArgumentList();
     
-    Value* addrI = new BitCastInst(argList.begin(), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
+    Instruction* addrI = new BitCastInst(argList.begin(), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
+    MarkInstAsContechInst(addrI);
     
     // getElemPtr 0, 0 -> arg 0 of type*
     
     Value* args[2] = {ConstantInt::get(cct.int32Ty, 0), ConstantInt::get(cct.int32Ty, 0)};
-    Value* ppid = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
-    Value* pid = new LoadInst(ppid, "ParentId", soloBlock);
+    Instruction* ppid = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
+    MarkInstAsContechInst(ppid);
+    
+    Instruction* pid = new LoadInst(ppid, "ParentId", soloBlock);
+    MarkInstAsContechInst(pid);
     
     // getElemPtr 0, 1 -> arg 1 of type*
     args[1] = ConstantInt::get(cct.int32Ty, 1);
-    Value* parg = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
-    Value* argP = new LoadInst(parg, "Arg", soloBlock);
-    Value* argV = new BitCastInst(argP, baseFunType->getParamType(0), "Cast to ArgTy", soloBlock);
+    Instruction* parg = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
+    MarkInstAsContechInst(parg);
+    
+    Instruction* argP = new LoadInst(parg, "Arg", soloBlock);
+    MarkInstAsContechInst(argP);
+    
+    Instruction* argV = new BitCastInst(argP, baseFunType->getParamType(0), "Cast to ArgTy", soloBlock);
+    MarkInstAsContechInst(argV);
     
     Value* cArg[] = {pid};
-    CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(callOTCF);
+    
     Value* cArgCall[] = {argV};
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgCall, 1), "", soloBlock);
-    CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(wrappedCall);
+    
+    Instruction* callOTJF = CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(callOTJF);
+    
+    Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
-        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+        retI = ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
     else
-        ReturnInst::Create(M.getContext(), soloBlock);
+        retI = ReturnInst::Create(M.getContext(), soloBlock);
+    MarkInstAsContechInst(retI);
     
     return extFun;
 }
@@ -1311,13 +1326,21 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
     }
     
     Value* cArg[] = {--(argList.end())};
-    CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(callOTCF);
+    
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize - 1), "", soloBlock);
-    CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(wrappedCall);
+    
+    Instruction* callOTJF = CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
+    MarkInstAsContechInst(callOTJF);
+    
+    Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
-        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+        retI = ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
     else
-        ReturnInst::Create(M.getContext(), soloBlock);
+        retI = ReturnInst::Create(M.getContext(), soloBlock);
+    MarkInstAsContechInst(retI);
     
     delete [] argTy;
     delete [] cArgExt;
@@ -1362,17 +1385,28 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
     Constant* tSize = ConstantInt::get(cct.pthreadTy, taskOffset);
     Constant* nDeps = ConstantInt::get(cct.int32Ty, numDep);
     Value* cArgs[] = {cArgExt[1], tSize, nDeps, c1};
-    CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    
+    Instruction* callOSDF = CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    MarkInstAsContechInst(callOSDF);
+    
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize), "", soloBlock);
+    MarkInstAsContechInst(wrappedCall);
     
     Constant* c0 = ConstantInt::get(cct.int32Ty, 0);
     cArgs[3] = c0;
-    CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    callOSDF = CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
+    MarkInstAsContechInst(callOSDF);
     
+    Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
-        ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+    {
+        retI = ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
+    }
     else
-        ReturnInst::Create(M.getContext(), soloBlock);
+    {
+        retI = ReturnInst::Create(M.getContext(), soloBlock);
+    }
+    MarkInstAsContechInst(retI);
     
     delete [] cArgExt;
     
@@ -1383,7 +1417,9 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
 {
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
     debugLog("CastInst @" << __LINE__);
-    return CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
+    Instruction* ret = CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
+    MarkInstAsContechInst(ret);
+    return ret;
 }
     
 char Contech::ID = 0;
