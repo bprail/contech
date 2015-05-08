@@ -25,6 +25,7 @@ namespace contech {
         map <unsigned int, deque <pct_event> >::iterator eventQueueCurrent;
         
         void rescanMinTicket();
+        void rescanMinTicketDeep();
         void barrierTicket();
         
         public:

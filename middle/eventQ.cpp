@@ -90,10 +90,39 @@ void EventList::rescanMinTicket()
         pct_event event = it->second.front();
         if (event->event_type == ct_event_sync)
         {
-            printf("%u: on ticket %u\n", event->contech_id, event->sy.ticketNum);
+            printf("%u: on ticket %llu\n", event->contech_id, event->sy.ticketNum);
             if (event->sy.ticketNum < minQueuedTicket)
             {
                 minQueuedTicket = event->sy.ticketNum;
+            }
+        }
+    }
+}
+
+void EventList::rescanMinTicketDeep()
+{
+    for (auto it = queuedEvents.begin(), et = queuedEvents.end(); it != et; ++it)
+    {
+        unsigned long long tNum = 0;
+        pct_event tevent = NULL;
+        
+        for (auto ivt = it->second.begin(), evt = it->second.end(); ivt != evt; ++ivt)
+        {
+            pct_event event = *ivt;
+            
+            if (event->event_type == ct_event_sync)
+            {
+               
+                if (event->sy.ticketNum < tNum)
+                {
+                     printf("%u: non ticket on %llu, as < %llu of %p\n", event->contech_id, event->sy.ticketNum, tevent);
+                     assert(0);
+                }
+                else
+                {
+                    tNum = event->sy.ticketNum;
+                    tevent = event;
+                }
             }
         }
     }
@@ -279,7 +308,7 @@ pct_event EventList::getNextContechEvent()
                 event = getNextContechEvent();
             }
             else {
-                //printf("Ticket:%llu %d\n", event->sy.ticketNum, queuedEvents.size());
+                //printf("Ticket:%llu %d, %u\n", event->sy.ticketNum, queuedEvents.size(), event->contech_id);
                 ticketNum ++;
             }
             break;
@@ -319,6 +348,8 @@ pct_event EventList::getNextContechEvent()
             }
         }
         break;
+        
+        // NB Optimizing compiler may point to this getNextContechEvent() even if it is from one of the other cases
         case ct_event_rank:
         {
             mpiRank = event->rank.rank;
