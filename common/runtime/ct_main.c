@@ -13,6 +13,9 @@
 #include <sys/mman.h>
 #include <assert.h>
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
 
 #include <sched.h>
 
@@ -154,6 +157,7 @@ void* __ctBackgroundThreadWriter(void* d)
     FILE* serialFile;
     char* fname = getenv("CONTECH_FE_FILE");
     unsigned int wpos = 0;
+    unsigned int maxBuffersAlloc = 0;
     size_t totalWritten = 0;
     pct_serial_buffer memLimitQueue = NULL;
     pct_serial_buffer memLimitQueueTail = NULL;
@@ -394,6 +398,10 @@ void* __ctBackgroundThreadWriter(void* d)
                 {
                     t->next = __ctFreeBuffers;
                     __ctFreeBuffers = t;
+                    if (__ctCurrentBuffers > maxBuffersAlloc)
+                    {
+                        maxBuffersAlloc = __ctCurrentBuffers;
+                    }
                     __ctCurrentBuffers --;
 #if DEBUG
                     if (__ctCurrentBuffers < 2)
@@ -421,6 +429,14 @@ void* __ctBackgroundThreadWriter(void* d)
                 printf("CT_LIMIT: %llu.%03llu\n", totalLimitTime / 1000, totalLimitTime % 1000);
             }
             printf("Total Uncomp Written: %ld\n", totalWritten);
+            printf("Max Buffers Alloc: %u of %lu\n", maxBuffersAlloc, sizeof(ct_serial_buffer_sized));
+            {
+                struct rusage use;
+                if (0 == getrusage(RUSAGE_SELF, &use))
+                {
+                    printf("Max RSS: %ld\n", use.ru_maxrss);
+                }
+            }
             printQueueStats();
             fflush(stdout);
             
