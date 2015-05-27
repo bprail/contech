@@ -1055,8 +1055,11 @@ cleanup:
             if (LoadInst *li = dyn_cast<LoadInst>(&*I)) 
             {
                 if (memOpPos >= memOpCount) continue;
+                // Skip globals for testing
+                //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
                 pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
                 memOpPos ++;
+                
                 if (tMemOp->isGlobal)
                 {
                     bi->containGlobalAccess = true;
@@ -1077,6 +1080,8 @@ cleanup:
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
             {
                 if (memOpPos >= memOpCount) continue;
+                // Skip globals for testing
+                //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
                 pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
                 memOpPos ++;
                 
