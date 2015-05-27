@@ -7,8 +7,6 @@
 #include <zlib.h>
 #include <stdint.h>
 
-#define SERIAL_BUFFER_SIZE (1024 * 1024)
-
 // Used to store serial data
 typedef struct _ct_serial_buffer
 {
@@ -17,6 +15,13 @@ typedef struct _ct_serial_buffer
     //char pad[24];
     char data[0];
 } ct_serial_buffer, *pct_serial_buffer;
+
+// Thread local buffer space:
+//   1MB 
+// - sizeof(ct_serial_buffer) - sizeof(size_t))
+// - size of base fields - malloc overhead
+//   Thus the final allocation is 1MB
+#define SERIAL_BUFFER_SIZE (1024 * 1024 * 1)
 
 typedef struct _contech_thread_create {
     void* (*func)(void*);
@@ -91,6 +96,7 @@ void __ctStoreBarrier(bool, void*, ct_tsc_t);
 void __ctStoreMemoryEvent(bool, size_t, void*);
 void* __ctInitThread(void*);//pcontech_thread_create ptc
 void __ctCheckBufferSize(unsigned int);
+void __ctCheckBufferBySize(unsigned int);
 void __ctStoreDelay(ct_tsc_t start_t);
 
 int __ctIsMPIPresent();
