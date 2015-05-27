@@ -135,6 +135,7 @@ reset_middle:
             //printf("%d - %d at %d\t", event->bbi.basic_block_id, event->bbi.num_mem_ops, event->bbi.line_num);
             //printf("in %s() of %s\n", event->bbi.fun_name, event->bbi.file_name);
             //printf("%d <> %d\n", event->bbi.crit_path_len, event->bbi.num_ops);
+            
             tgi->addRawBasicBlockInfo(event->bbi.basic_block_id, 
                                      event->bbi.flags,
                                      event->bbi.line_num, 
@@ -283,8 +284,20 @@ reset_middle:
                 activeT = activeContech.activeTask();
             }
             
-            // Record that this task executed this basic block
-            activeT->recordBasicBlockAction(event->bb.basic_block_id);
+            // If the basic block action will overflow, then split the task at this time
+            try {
+                // Record that this task executed this basic block
+                activeT->recordBasicBlockAction(event->bb.basic_block_id);
+            }
+            catch (std::bad_alloc)
+            {
+                activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
+                activeContech.createBasicBlockContinuation();
+                updateContextTaskList(activeContech);
+                
+                activeT = activeContech.activeTask();
+                activeT->recordBasicBlockAction(event->bb.basic_block_id);
+            }
 
             // Examine memory operations
             for (uint i = 0; i < event->bb.len; i++)
@@ -834,7 +847,6 @@ reset_middle:
             TaskId tid = activeT->getTaskId();
             if (roiEvent == false)
             {
-                
                 setROIStart(tid);
                 printf("DEBUG - ROI Start - %llu - %llu\n", tid, roiTime);
                 roiEvent = true;
