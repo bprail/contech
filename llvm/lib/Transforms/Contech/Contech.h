@@ -103,6 +103,8 @@ namespace llvm {
         Constant* getCurrentTickFunction;
         Constant* createThreadActualFunction;
         Constant* checkBufferLargeFunction;
+        Constant* getBufPosFunction;
+        Constant* getBufFunction;
         
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
@@ -133,7 +135,6 @@ namespace llvm {
         PointerType* voidPtrTy;
         Type* int64Ty;
         Type* pthreadTy;
-        Type* threadArgsTy;  // needed when wrapping pthread_create
         int pthreadSize;
         
         unsigned ContechMDID;
@@ -502,6 +503,17 @@ namespace llvm {
                 debugLog("storeSyncFunction @" << __LINE__);
                 Instruction* callSF = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,4), "", ci);
                 MarkInstAsContechInst(callSF);
+                
+                // ISSUE #63
+                // TODO: By strict semantics, this queue buffer is not required.
+                //   However, processing a trace may require excessive memory if the
+                //   cond wait takes a long time.
+                Value* c1 = ConstantInt::get(cct->int8Ty, 1);
+                Value* cArgQB[] = {c1};
+                debugLog("queueBufferFunction @" << __LINE__);
+                CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
+                                                    "", ci);
+                MarkInstAsContechInst(nQueueBuf);
                 
                 if (isa<CallInst>(ci))
                 {

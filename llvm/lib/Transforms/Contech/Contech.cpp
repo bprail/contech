@@ -149,7 +149,7 @@ namespace llvm {
     bool Contech::doInitialization(Module &M)
     {
         // Function types are named fun(Return type)(arg1 ... argN)Ty
-        FunctionType* funVoidPtrI32Ty;
+        FunctionType* funVoidPtrI32I32VoidPtrTy;
         FunctionType* funVoidVoidPtrI32VoidPtrTy;
         FunctionType* funVoidVoidPtrI32I32I64Ty;
         FunctionType* funVoidPtrVoidPtrTy;
@@ -164,6 +164,8 @@ namespace llvm {
         FunctionType* funVoidI64I64Ty;
         FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
         FunctionType* funI32I32Ty;
+        FunctionType* funI32VoidPtrTy;
+        FunctionType* funI32I32I32VoidPtrTy;
         FunctionType* funVoidVoidPtrI64Ty;
 
         LLVMContext &ctx = M.getContext();
@@ -179,21 +181,26 @@ namespace llvm {
         cct.voidPtrTy = cct.int8Ty->getPointerTo();
 
         Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
-        funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
-
-        Type* threadStructTypes[] = {static_cast<Type *>(funVoidPtrVoidTy)->getPointerTo(), cct.voidPtrTy, cct.int32Ty, cct.int32Ty};
-        cct.threadArgsTy = StructType::create(ArrayRef<Type*>(threadStructTypes, 4), "contech_thread_create", false);
+        funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
+        cct.threadInitFunction = M.getOrInsertFunction("__ctInitThread", funVoidPtrVoidPtrTy);
         
-        Type* argsBB[] = {cct.int32Ty};
-        funVoidPtrI32Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 1), false);
-        cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32Ty);
+        funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
+        cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
+        
+        Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy};
+        funVoidPtrI32I32VoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 3), false);
+        cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrTy);
+        
+        funI32I32I32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 3), false);
+        cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrTy);
+        
         Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy};
         funVoidVoidPtrI32VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 3), false);
         cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrTy);
-        Type* argsInit[] = {cct.voidPtrTy};//threadArgsTy->getPointerTo()};
-        funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsInit, 1), false);
-        cct.threadInitFunction = M.getOrInsertFunction("__ctInitThread", funVoidPtrVoidPtrTy);
-
+        
+        funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
+        cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
+        
         // void (void) functions:
         funVoidVoidTy = FunctionType::get(cct.voidTy, false);
         cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
@@ -227,7 +234,6 @@ namespace llvm {
         cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
         
         funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
-        cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32Ty);
         cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
        
         Type* argsQB[] = {cct.int8Ty};
@@ -284,6 +290,7 @@ namespace llvm {
         
         Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
         funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
+        cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
         
         Type* argsME[] = {cct.int8Ty, cct.pthreadTy, cct.voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsME, 3), false);
@@ -291,8 +298,6 @@ namespace llvm {
         Type* argsBulkMem[] = {cct.pthreadTy, cct.voidPtrTy, cct.voidPtrTy};
         funVoidI64VoidPtrVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
         cct.storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
-        
-        cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
         
         Type* argsOMPSD[] = {cct.voidPtrTy, cct.pthreadTy, cct.int32Ty, cct.int32Ty};
         FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
@@ -302,7 +307,7 @@ namespace llvm {
         Type* pthreadTyPtr = cct.pthreadTy->getPointerTo();
         Type* argsCTA[] = {pthreadTyPtr, 
                            cct.voidPtrTy, 
-                           static_cast<Type *>(funVoidPtrVoidTy)->getPointerTo(),
+                           static_cast<Type *>(funVoidPtrVoidPtrTy)->getPointerTo(),
                            cct.voidPtrTy};
         FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
         cct.createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
@@ -762,6 +767,8 @@ cleanup:
         bool hasUninstCall = false;
         bool containKeyCall = false;
         Value* posValue = NULL;
+        Value* basePosValue = NULL;
+        Value* baseBufValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
         
         vector<Instruction*> delayedAtomicInsts;
@@ -894,11 +901,20 @@ cleanup:
             MarkInstAsContechInst(sbb);
         }
         else {
+            Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
+            MarkInstAsContechInst(bufV);
+            baseBufValue = bufV;
+            
+            Value* argsGBF[] = {baseBufValue};
+            Instruction* bufPos = CallInst::Create(cct.getBufPosFunction, ArrayRef<Value*>(argsGBF,1), "bufPos", aPhi);
+            MarkInstAsContechInst(bufPos);
+            basePosValue = bufPos;
+            
             llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-            Value* argsBB[] = {llvm_bbid};
+            Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue};
             debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
             sbb = CallInst::Create(cct.storeBasicBlockFunction, 
-                                   ArrayRef<Value*>(argsBB, 1), 
+                                   ArrayRef<Value*>(argsBB, 3), 
                                    string("storeBlock") + to_string(bbid), 
                                    aPhi);
             MarkInstAsContechInst(sbb);
@@ -959,7 +975,7 @@ cleanup:
             if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
             {
                 llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
-                Value* argsBBc[] = {llvm_nops};
+                Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue};
                 #ifdef TSC_IN_BB
                 if (memOpCount == 1)
                 #else
@@ -967,7 +983,7 @@ cleanup:
                 #endif
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", aPhi);
+                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", aPhi);
                     MarkInstAsContechInst(sbbc);
                     
                     Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, aPhi);
@@ -977,7 +993,7 @@ cleanup:
                 else
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 1), "", I);
+                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", I);
                     MarkInstAsContechInst(sbbc);
                     
                     Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, I);
