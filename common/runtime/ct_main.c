@@ -31,8 +31,9 @@ extern int ct_orig_main(int, char**);
 void printQueueStats()
 {
     #ifdef CT_OVERHEAD_TRACK
-    printf("T(0), %lld, %lld, %d\n",  
+    printf("T(0), %lld, %lld, %lld, %d\n",  
                                 __ctTotalThreadOverhead, 
+                                __ctTotalThreadQueue,
                                 __ctTotalTimeBetweenQueueBuffers,
                                 __ctTotalThreadBuffersQueued);
     #endif
@@ -459,11 +460,12 @@ void* __ctBackgroundThreadDiscard(void* d)
     pct_serial_buffer memLimitQueue = NULL;
     pct_serial_buffer memLimitQueueTail = NULL;
     unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
-    
+    sleep(1);
     // Main loop
     //   Write queued buffer to disk until program terminates
     pthread_mutex_lock(&__ctQueueBufferLock);
     do {
+        
         // Check for queued buffer, i.e. is the program generating events
         while (__ctQueuedBuffers == NULL)
         {
