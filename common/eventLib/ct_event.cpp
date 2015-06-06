@@ -31,13 +31,14 @@ EventLib::EventLib()
 }
 
 /* unpack: unpack packed items from buf, return length */
-int EventLib::unpack(uint8_t *buf, char *fmt, ...)
+int EventLib::unpack(uint8_t *buf, char const fmt[], ...)
 {
     va_list args;
-    char *p;
+    const char *p;
     uint8_t *bp, *pc;
     uint16_t *ps;
     uint32_t *pl;
+    uint64_t *pll;
 
     bp = buf;
     va_start(args, fmt);
@@ -45,6 +46,7 @@ int EventLib::unpack(uint8_t *buf, char *fmt, ...)
 
         switch (*p) 
         {
+            case 'b': /* bool */
             case 'c': /* char */
             {
                 pc = va_arg(args, uint8_t*);
@@ -57,8 +59,8 @@ int EventLib::unpack(uint8_t *buf, char *fmt, ...)
             {
                 ps = va_arg(args, uint16_t*);
                 
-                *ps = *bp++ << 8;
-                *ps |= *bp++;
+                *ps = *bp++;
+                *ps |= *bp++ << 8;
 
                 break;
             }
@@ -66,15 +68,32 @@ int EventLib::unpack(uint8_t *buf, char *fmt, ...)
             {
                 pl = va_arg(args, uint32_t*);
 
-                *pl = *bp++ << 24;
-                *pl |= *bp++ << 16;
+                *pl = *bp++;
                 *pl |= *bp++ << 8;
-                *pl |= *bp++;
+                *pl |= *bp++ << 16;
+                *pl |= *bp++ << 24;
+                break;
+            }
+            case 't': /* ct_tsc_t */
+            case 'p': /* pointer or long long */
+            {
+                pll = va_arg(args, uint64_t*);
+                
+                *pll = *bp++;
+                *pll += *bp++ << 8;
+                *pll += *bp++ << 16;
+                *pll += *bp++ << 24;
+                *pll += ((uint64_t)(*bp++)) << 32;
+                *pll += ((uint64_t)(*bp++)) << 40;
+                *pll += ((uint64_t)(*bp++)) << 48;
+                *pll += ((uint64_t)(*bp++)) << 56;
+                
+                break;
             }
             default: /* illegal type character */
             {
                 va_end(args);
-
+                assert("Illegal type character" && 0);
                 return -1;
             }
         }
@@ -359,19 +378,37 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         
         case (ct_event_task_create):
         {
+            /*const int create_size = 28;
+            uint8_t buf[create_size];
+            int bytesConsume = 0;
+            
+            fread_check(buf, sizeof(uint8_t), create_size, fptr);
+            bytesConsume = unpack(buf, "ttlp", &npe->tc.start_time, &npe->tc.end_time, &npe->tc.other_id, &npe->tc.approx_skew);
+            assert(bytesConsume == create_size);*/
+            
             fread_check(&npe->tc.start_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->tc.end_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->tc.other_id, sizeof(unsigned int), 1, fptr);
             fread_check(&npe->tc.approx_skew, sizeof(long long), 1, fptr);
+            
         }
         break;
         
         case (ct_event_task_join):
         {
+            /*const int join_size = 21;
+            uint8_t buf[join_size];
+            int bytesConsume = 0;
+            
+            fread_check(buf, sizeof(uint8_t), join_size, fptr);
+            bytesConsume = unpack(buf, "bttl", &npe->tj.isExit, &npe->tj.start_time, &npe->tj.end_time, &npe->tj.other_id);
+            assert(bytesConsume == join_size);*/
+            
             fread_check(&npe->tj.isExit, sizeof(bool), 1, fptr);
             fread_check(&npe->tj.start_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->tj.end_time, sizeof(ct_tsc_t), 1, fptr);
             fread_check(&npe->tj.other_id, sizeof(unsigned int), 1, fptr);
+            
         }
         break;
         

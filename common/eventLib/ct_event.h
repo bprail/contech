@@ -57,7 +57,7 @@ namespace contech
 
             pinternal_basic_block_info bb_info_table;
             
-            int unpack(uint8_t *buf, char *fmt, ...);
+            int unpack(uint8_t *buf, char const fmt[], ...);
             void dumpAndTerminate(ct_file *fptr);
     
         public:
