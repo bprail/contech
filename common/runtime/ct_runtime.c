@@ -52,6 +52,7 @@ __thread pcontech_join_stack __ctJoinStack = NULL;
 // __thread ct_tsc_t __ctLastQueueBuffer = 0;
 // __thread ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
  ct_tsc_t __ctTotalThreadOverhead = 0;
+ ct_tsc_t __ctTotalThreadQueue = 0;
  unsigned int __ctTotalThreadBuffersQueued = 0;
  __thread ct_tsc_t __ctLastQueueBuffer = 0;
  ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
@@ -374,7 +375,7 @@ void __ctQueueBuffer(bool alloc)
 {
     pct_serial_buffer localBuffer = NULL;
 #ifdef CT_OVERHEAD_TRACK
-    ct_tsc_t start, end;
+    ct_tsc_t start, end, qstart, qend;
     start = rdtsc();
 #endif
     
@@ -440,6 +441,9 @@ void __ctQueueBuffer(bool alloc)
     // Queue the thread local buffer to the back of the queue, tail pointer available
     //   Signal the background thread if the queue is empty
     //
+#ifdef CT_OVERHEAD_TRACK
+    qstart = rdtsc();
+#endif
     pthread_mutex_lock(&__ctQueueBufferLock);
     __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
     if (__ctQueuedBuffers == NULL)
@@ -457,6 +461,9 @@ void __ctQueueBuffer(bool alloc)
         __ctThreadLocalBuffer = NULL;
     }
     pthread_mutex_unlock(&__ctQueueBufferLock);
+#ifdef CT_OVERHEAD_TRACK
+    qend = rdtsc();
+#endif
 
     //
     // Used a temporary to hold the thread local buffer, restore
@@ -481,7 +488,10 @@ void __ctQueueBuffer(bool alloc)
 #ifdef CT_OVERHEAD_TRACK
     end = rdtsc();
     __sync_fetch_and_add(&__ctTotalThreadOverhead, (end - start));
-    __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
+    __sync_fetch_and_add(&__ctTotalThreadQueue, (qend - qstart));
+    int d = __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
+    
+    //printf("XYZ, %llx, %llx, %d\n", (end - start), localBuffer, d);
     
     if (__ctLastQueueBuffer != 0)
     {
@@ -564,9 +574,14 @@ void __ctStoreMemWriteMark()
 
 }
 
-unsigned int __ctGetBufferPos()
+pct_serial_buffer __ctGetBuffer()
 {
-    return __ctThreadLocalBuffer->pos;
+    return __ctThreadLocalBuffer;
+}
+
+unsigned int __ctGetBufferPos(pct_serial_buffer t)
+{
+    return t->pos;
 }
 
 void __ctSetBufferPos(unsigned int pos)
@@ -575,13 +590,13 @@ void __ctSetBufferPos(unsigned int pos)
 }
 
 // (contech_id, basic block id, num of ops)
-__attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid)
+__attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsigned int pos, pct_serial_buffer t)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
-    unsigned int p = __ctThreadLocalBuffer->pos;
-    char* r = &__ctThreadLocalBuffer->data[p];
+    unsigned int p = pos;
+    char* r = &t->data[p];
     
     __ctCheckBufferSizeDebug(bbid);
     
@@ -591,13 +606,13 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid)
     return r;
 }
 
-__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps)
+__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t)
 {
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int for id + event
-    (__ctThreadLocalBuffer->pos += numMemOps * 6 * sizeof(char) + sizeof(unsigned int));
+    (t->pos = p + numMemOps * 6 * sizeof(char) + sizeof(unsigned int));
     #endif
-    return __ctThreadLocalBuffer->pos;
+    return t->pos;
 }
 
 __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r)
@@ -625,6 +640,8 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     unsigned int p = __ctThreadLocalBuffer->pos;
     ct_tsc_t t = rdtsc();
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
+    
+    
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;

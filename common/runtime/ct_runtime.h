@@ -22,6 +22,8 @@ typedef struct _ct_serial_buffer
 // - size of base fields - malloc overhead
 //   Thus the final allocation is 1MB
 #define SERIAL_BUFFER_SIZE (1024 * 1024 * 1)
+//32768
+//(1024 * 1024 * 1)
 
 typedef struct _contech_thread_create {
     void* (*func)(void*);
@@ -84,11 +86,11 @@ pct_serial_buffer ctInternalAllocateBuffer();
 
 void __ctQueueBuffer(bool);
 // (contech_id, basic block id, num of ops)
-char* __ctStoreBasicBlock(unsigned int bbid);
+char* __ctStoreBasicBlock(unsigned int bbid, unsigned int, pct_serial_buffer);
 // (basic block id, size of string, string)
 void __ctStoreBasicBlockInfo (unsigned int, unsigned int, char*);
 void __ctStoreMemOp(void*, unsigned int, char*);
-unsigned int __ctStoreBasicBlockComplete(unsigned int);
+unsigned int __ctStoreBasicBlockComplete(unsigned int, unsigned int, pct_serial_buffer);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);
 void __ctStoreSync(void*, int, int, ct_tsc_t);
@@ -122,6 +124,7 @@ extern bool __ctIsROIActive;
 
 extern ct_tsc_t __ctTotalTimeBetweenQueueBuffers;
 extern ct_tsc_t __ctTotalThreadOverhead;
+extern ct_tsc_t __ctTotalThreadQueue;
 extern unsigned int __ctTotalThreadBuffersQueued;
 
 extern __thread pct_serial_buffer __ctThreadLocalBuffer;
