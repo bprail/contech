@@ -150,8 +150,6 @@ extern pthread_cond_t __ctQueueSignal;
 extern pthread_mutex_t __ctFreeBufferLock;
 extern pthread_cond_t __ctFreeSignal;
 
-extern pthread_mutex_t ctAllocLock;
-
 extern uint8_t _binary_contech_bin_start[];// asm("_binary_contech_bin_start");
 extern uint8_t _binary_contech_bin_size[];// asm("_binary_contech_bin_size");
 extern uint8_t _binary_contech_bin_end[];//  asm("_binary_contech_bin_end");
