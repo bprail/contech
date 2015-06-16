@@ -85,8 +85,6 @@ pthread_cond_t __ctQueueSignal;
 pthread_mutex_t __ctFreeBufferLock;
 pthread_cond_t __ctFreeSignal;
 
-pthread_mutex_t ctAllocLock;
-
 void __ctStoreThreadJoinInternal(bool, unsigned int, ct_tsc_t);
 unsigned int __ctStoreThreadJoinInternalPos(bool, unsigned int, unsigned int, ct_tsc_t);
 
@@ -600,8 +598,8 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     
     __ctCheckBufferSizeDebug(bbid);
     
-    // Shift 1 byte of 0s, which is the basic block event
-    *((unsigned int*)r) = bbid << 8;
+    // Shift 1 bit of 0s, which is the basic block event
+    *((unsigned int*)r) = ((bbid & 0x7fff80) << 1 ) | (bbid & 0x7f);
     
     return r;
 }
@@ -609,8 +607,8 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
 __attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t)
 {
     #ifdef POS_USED
-    // 6 bytes per memory op, unsigned int for id + event
-    (t->pos = p + numMemOps * 6 * sizeof(char) + sizeof(unsigned int));
+    // 6 bytes per memory op, unsigned int (-1 byte) for id + event
+    (t->pos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char));
     #endif
     return t->pos;
 }
@@ -624,7 +622,7 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     // With a little endian machine, we write 8 bytes and then will overwrite the highest two
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
     // void __builtin_ia32_movnti64 (di *, di)
-    *((uint64_t*)(r + c * 6 * sizeof(char) + sizeof(unsigned int))) = (uint64_t)addr;
+    *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
 }
 
 void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
