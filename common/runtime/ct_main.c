@@ -98,7 +98,6 @@ int main(int argc, char** argv)
         pthread_cond_init(&__ctQueueSignal, NULL);
         pthread_mutex_init(&__ctFreeBufferLock, NULL);
         pthread_cond_init(&__ctFreeSignal, NULL);
-        pthread_mutex_init(&ctAllocLock, NULL);
 #ifdef DEBUG        
         pthread_mutex_init(&__ctPrintLock, NULL);
 #endif
