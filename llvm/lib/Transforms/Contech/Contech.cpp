@@ -441,6 +441,124 @@ namespace llvm {
         return tMemOp;
     }
     
+    Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr)
+    {
+        vector<Value*> addrComponents;
+        Instruction* addrI = dyn_cast<Instruction>(addr);
+        
+        return NULL;
+        
+        if (addrI == NULL)
+        {
+            // No instruction generates the address, it is probably a global value
+            for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+            {
+                if (memI == dyn_cast<Instruction>(&*it)) break;
+                if (LoadInst *li = dyn_cast<LoadInst>(&*it))
+                {
+                    Value* addrT = li->getPointerOperand();
+                    
+                    if (addrT == addr) return li;
+                }
+                else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
+                {
+                    Value* addrT = si->getPointerOperand();
+                    
+                    if (addrT == addr) return si;
+                }
+            }
+
+            return NULL;
+        }
+        else if (addrI->getParent() != memI->getParent())
+        {
+            // Address is computed in a different basic block
+            return NULL;
+        }
+        else if (CastInst* bci = dyn_cast<CastInst>(addr))
+        {
+            for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+            {
+                if (memI == dyn_cast<Instruction>(&*it)) break;
+                if (LoadInst *li = dyn_cast<LoadInst>(&*it))
+                {
+                    Value* addrT = li->getPointerOperand();
+                    
+                    if (addrT == addr) return li;
+                }
+                else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
+                {
+                    Value* addrT = si->getPointerOperand();
+                    
+                    if (addrT == addr) return si;
+                }
+            }
+
+            return NULL;
+        }
+        
+        // Given addr, find the values that it depends on
+        GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+        if (gepAddr == NULL)
+        {
+            //errs() << *addr << "\n";
+            //errs() << "Mem instruction did not come from GEP\n";
+            return NULL;
+        }
+        
+        for (auto it = gepAddr->idx_begin(), et = gepAddr->idx_end(); it != et; ++it)
+        {
+            Value* gepI = *it;
+            
+            // If the index of GEP is a Constant, then it can vary between mem ops
+            //if (dyn_cast<Constant>(gepI)) continue;
+            
+            // TODO: if the value is a constant global, then it matters
+            addrComponents.push_back(gepI);
+        }
+        
+        for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+        {
+            GetElementPtrInst* gepAddrT = NULL;
+            if (memI == dyn_cast<Instruction>(&*it)) break;
+            
+            if (LoadInst *li = dyn_cast<LoadInst>(&*it))
+            {
+                Value* addrT = li->getPointerOperand();
+                
+                gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+            }
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
+            {
+                Value* addrT = si->getPointerOperand();
+                
+                gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+            }
+            
+            if (gepAddrT == NULL) continue;
+            
+            unsigned int i = 0;
+            if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
+            for (auto itG = gepAddrT->idx_begin(), etG = gepAddrT->idx_end(); itG != etG; i++, ++itG)
+            {
+                Value* gepI = *itG;
+                
+                // If the index of GEP is a Constant, then it can vary between mem ops
+                if (dyn_cast<Constant>(gepI)) 
+                {
+                    if (dyn_cast<Constant>(addrComponents[i])) continue;
+                    break;
+                }
+                
+                if (gepI != addrComponents[i]) break;
+            }
+            
+            if (i == addrComponents.size()) return &*it;
+        }
+        
+        return NULL;
+    }
+    
     void Contech::internalAddAllocate(BasicBlock& B)
     {
         debugLog("allocateBufferFunction @" << __LINE__);
@@ -601,14 +719,14 @@ cleanup:
         if (ContechMarkFrontend == false && ContechMinimal == false)
         {
             int wcount = 0;
-            char evTy = ct_event_basic_block_info;
+            unsigned char evTy = ct_event_basic_block_info;
             for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
             {
                 pllvm_mem_op t = bi->second->first_op;
                 
                 // Write out basic block info events
                 //   Then runtime can directly pass the events to the event list
-                contechStateFile->write((char*)&evTy, sizeof(char));
+                contechStateFile->write((char*)&evTy, sizeof(unsigned char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
                 // This is the flags field, which is currently 0 or 1 for containing a call
                 unsigned int flags = ((unsigned int)bi->second->containCall) | 
@@ -639,6 +757,7 @@ cleanup:
                     pllvm_mem_op tn = t->next;
                     contechStateFile->write((char*)&t->isWrite, sizeof(bool));
                     contechStateFile->write((char*)&t->size, sizeof(char));
+                    // Add optional dep mem op info
                     delete (t);
                     t = tn;
                 }
@@ -772,8 +891,10 @@ cleanup:
         unsigned int lineNum = 0, numIROps = B.size();
         
         vector<Instruction*> delayedAtomicInsts;
+        map<Instruction*, Value*> dupMemOps;
         
         //errs() << "BB: " << bbid << "\n";
+        debugLog("Enter BBID: " << bbid);
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
@@ -806,13 +927,33 @@ cleanup:
                 numIROps --;
                 continue;
             }
-            else if (/*LoadInst *li = */dyn_cast<LoadInst>(&*I))
+            else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
             {
-                memOpCount ++;
+                Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand());
+                
+                if (addrSimilar != NULL)
+                {
+                    //errs() << *addrSimilar << " ?=? " << *li << "\n";
+                    dupMemOps[li] = addrSimilar;
+                }
+                else
+                {
+                    memOpCount ++;
+                }
             }
-            else if (/*StoreInst *si = */dyn_cast<StoreInst>(&*I)) 
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
             {
-                memOpCount ++;
+                Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand());
+                
+                if (addrSimilar != NULL)
+                {
+                    //errs() << *addrSimilar << " ?=? " << *li << "\n";
+                    dupMemOps[si] = addrSimilar;
+                }
+                else
+                {
+                    memOpCount ++;
+                }
             }
             else if (ContechMinimal == true)
             {
@@ -1071,6 +1212,7 @@ cleanup:
             if (LoadInst *li = dyn_cast<LoadInst>(&*I)) 
             {
                 if (memOpPos >= memOpCount) continue;
+                if (dupMemOps.find(li) != dupMemOps.end()) continue;
                 // Skip globals for testing
                 //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
                 pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
@@ -1096,6 +1238,7 @@ cleanup:
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
             {
                 if (memOpPos >= memOpCount) continue;
+                if (dupMemOps.find(si) != dupMemOps.end()) continue;
                 // Skip globals for testing
                 //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
                 pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
