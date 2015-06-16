@@ -33,10 +33,8 @@ typedef struct _ct_memory_op {
 } ct_memory_op, *pct_memory_op;
 
 // Event IDs used primarily in serialize / deserialize
-//   NB.  If the high bit (ie 128) is set, then the field
-//   represents the memory op information (is_write and pow_size)
 enum _ct_event_id { ct_event_basic_block = 0, 
-    ct_event_basic_block_info, 
+    ct_event_basic_block_info = 128, 
     ct_event_memory, 
     ct_event_sync, 
     ct_event_barrier, 
@@ -50,7 +48,6 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_mpi_transfer,
     ct_event_mpi_wait,
     ct_event_roi,
-    ct_event_memory_op = 128,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
 

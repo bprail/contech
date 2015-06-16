@@ -169,6 +169,13 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             free(npe);
             return NULL;
         }
+        
+        if (npe->event_type < ct_event_basic_block_info) 
+        {
+            npe->bb.basic_block_id = npe->event_type;
+            npe->event_type = ct_event_basic_block;
+        }
+        
         sum += t;
                 
         npe->contech_id = currentID;
@@ -201,8 +208,9 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             }
             else
             {
-                npe->bb.basic_block_id = 0;
-                fread_check(&npe->bb.basic_block_id, sizeof(char), 3, fptr);
+                unsigned char bbid_high = 0;
+                fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
+                npe->bb.basic_block_id |= (bbid_high << 7);
                 if (npe->bb.basic_block_id >= bb_count)
                 {
                     fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);
