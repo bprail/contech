@@ -405,6 +405,7 @@ namespace llvm {
         tMemOp->addr = NULL;
         tMemOp->next = NULL;
         tMemOp->isWrite = isWrite;
+        tMemOp->isDep = false;
         tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
         
         if (tMemOp->size > 4)
@@ -424,29 +425,33 @@ namespace llvm {
             //errs() << "Is not global - " << *addr << "\n";
         }
         
-        //Constant* cIsWrite = ConstantInt::get(int8Ty, isWrite);
-        //Constant* cSize = ConstantInt::get(int8Ty, tMemOp->size);
-        Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
-        Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
-        MarkInstAsContechInst(addrI);
-        
-        Value* argsMO[] = {addrI, cPos, pos};
-        debugLog("storeMemOpFunction @" << __LINE__);
-        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
-        MarkInstAsContechInst(smo);
-        
-        assert(smo != NULL);
-        smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+        if (li != NULL)
+        {
+            Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
+            Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
+            MarkInstAsContechInst(addrI);
+            
+            Value* argsMO[] = {addrI, cPos, pos};
+            debugLog("storeMemOpFunction @" << __LINE__);
+            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
+            MarkInstAsContechInst(smo);
+            
+            assert(smo != NULL);
+            smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+        }
         
         return tMemOp;
     }
     
-    Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr)
+    Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
     {
         vector<Value*> addrComponents;
         Instruction* addrI = dyn_cast<Instruction>(addr);
+        int tOffset = 0, baseOffset = 0;
         
-        return NULL;
+        *offset = 0;
+        
+        //return NULL;
         
         if (addrI == NULL)
         {
@@ -506,12 +511,29 @@ namespace llvm {
             return NULL;
         }
         
-        for (auto it = gepAddr->idx_begin(), et = gepAddr->idx_end(); it != et; ++it)
+        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
-            Value* gepI = *it;
+            Value* gepI = itG.getOperand();
             
             // If the index of GEP is a Constant, then it can vary between mem ops
-            //if (dyn_cast<Constant>(gepI)) continue;
+            if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
+            {
+                if (StructType *STy = dyn_cast<StructType>(*itG)) 
+                {
+                    unsigned ElementIdx = aConst->getZExtValue();
+                    const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+                    baseOffset += SL->getElementOffset(ElementIdx);
+                }
+                else
+                {
+                    baseOffset += aConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
+                }
+            }
+            else
+            {
+                // Reset to 0 if there is a variable offset
+                baseOffset = 0;
+            }
             
             // TODO: if the value is a constant global, then it matters
             addrComponents.push_back(gepI);
@@ -536,24 +558,68 @@ namespace llvm {
             }
             
             if (gepAddrT == NULL) continue;
+            if (gepAddrT == gepAddr)
+            {
+                *offset = 0;
+                return &*it;
+            }
             
             unsigned int i = 0;
+            bool constMode = false;
             if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
-            for (auto itG = gepAddrT->idx_begin(), etG = gepAddrT->idx_end(); itG != etG; i++, ++itG)
+            if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
+            tOffset = 0;
+            for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
             {
-                Value* gepI = *itG;
+                Value* gepI = itG.getOperand();
                 
                 // If the index of GEP is a Constant, then it can vary between mem ops
-                if (dyn_cast<Constant>(gepI)) 
+                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI)) 
                 {
-                    if (dyn_cast<Constant>(addrComponents[i])) continue;
+                    if (ConstantInt* aConst = dyn_cast<ConstantInt>(addrComponents[i])) 
+                    {
+                        if (aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
+                        
+                        //
+                        // GetElementPtr supports computing a constant offset; however, it requires
+                        //   all fields to be constant.  The code is reproduced here, in order to compute
+                        //   a partial constant offset along with the delta from the other GEP inst.
+                        //
+                        if (StructType *STy = dyn_cast<StructType>(*itG)) 
+                        {
+                            unsigned ElementIdx = gConst->getZExtValue();
+                            const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+                            tOffset += SL->getElementOffset(ElementIdx);
+                            continue;
+                        }
+                        
+                        tOffset += gConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
+                        
+                        continue;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                else if (constMode == true)
+                {
+                    // Only can handle cases where a varying constant is at the end of the calculation
+                    //   or has non-varying constants around it.
                     break;
                 }
                 
+                // temp offset remains 0 until a final sequence of constant int offsets
+                tOffset = 0;
                 if (gepI != addrComponents[i]) break;
             }
             
-            if (i == addrComponents.size()) return &*it;
+            if (i == addrComponents.size()) 
+            {
+                //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
+                *offset = baseOffset - tOffset;
+                return &*it;
+            }
         }
         
         return NULL;
@@ -750,14 +816,24 @@ cleanup:
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 *contechStateFile << bi->second->callFnName;
                 
+                // Number of memory operations
                 contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
                 
                 while (t != NULL)
                 {
                     pllvm_mem_op tn = t->next;
-                    contechStateFile->write((char*)&t->isWrite, sizeof(bool));
+                    char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
+                    memFlags |= (t->isWrite)?0x1:0x0;
+                    
+                    contechStateFile->write((char*)&memFlags, sizeof(char));
                     contechStateFile->write((char*)&t->size, sizeof(char));
                     // Add optional dep mem op info
+                    if (t->isDep )
+                    {
+                        assert((memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP);
+                        contechStateFile->write((char*)&t->depMemOp, sizeof(unsigned short));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                    }
                     delete (t);
                     t = tn;
                 }
@@ -892,6 +968,8 @@ cleanup:
         
         vector<Instruction*> delayedAtomicInsts;
         map<Instruction*, Value*> dupMemOps;
+        map<Instruction*, int> dupMemOpOff;
+        map<Value*, unsigned short> dupMemOpPos;
         
         //errs() << "BB: " << bbid << "\n";
         debugLog("Enter BBID: " << bbid);
@@ -929,12 +1007,15 @@ cleanup:
             }
             else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
             {
-                Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand());
+                int addrOffset = 0;
+                Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
                 
                 if (addrSimilar != NULL)
                 {
-                    //errs() << *addrSimilar << " ?=? " << *li << "\n";
+                    //errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
                     dupMemOps[li] = addrSimilar;
+                    dupMemOpOff[li] = addrOffset;
+                    dupMemOpPos[addrSimilar] = 0;
                 }
                 else
                 {
@@ -943,12 +1024,15 @@ cleanup:
             }
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
             {
-                Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand());
+                int addrOffset = 0;
+                Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
                 
                 if (addrSimilar != NULL)
                 {
-                    //errs() << *addrSimilar << " ?=? " << *li << "\n";
+                    //errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
                     dupMemOps[si] = addrSimilar;
+                    dupMemOpOff[si] = addrOffset;
+                    dupMemOpPos[addrSimilar] = 0;
                 }
                 else
                 {
@@ -1142,7 +1226,7 @@ cleanup:
                     iPt = I;
                 }
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-                bi->len = memOpCount;
+                bi->len = memOpCount + dupMemOps.size();
                 hasInstAllMemOps = true;
                 
                 // Handle the delayed atomics now
@@ -1211,52 +1295,80 @@ cleanup:
             // 
             if (LoadInst *li = dyn_cast<LoadInst>(&*I)) 
             {
-                if (memOpPos >= memOpCount) continue;
-                if (dupMemOps.find(li) != dupMemOps.end()) continue;
-                // Skip globals for testing
-                //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
-                pllvm_mem_op tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
-                memOpPos ++;
+                pllvm_mem_op tMemOp = NULL;
+                
+                if (dupMemOps.find(li) != dupMemOps.end()) 
+                {
+                    tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue);
+                    tMemOp->isDep = true;
+                    tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
+                    tMemOp->depMemOpDelta = dupMemOpOff[li];
+                }
+                else
+                {
+                    assert(memOpPos < memOpCount);
+                    // Skip globals for testing
+                    //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
+                    tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
+                    memOpPos ++;
+                }
                 
                 if (tMemOp->isGlobal)
                 {
                     bi->containGlobalAccess = true;
                 }
                 
+                unsigned short pos = 0;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
                 {
                     pllvm_mem_op t = bi->first_op;
                     while (t->next != NULL)
                     {
+                        pos++;
                         t = t->next;
                     }
+                    if (dupMemOpPos.find(li) != dupMemOpPos.end()) {dupMemOpPos[li] = pos + 1;}
                     t->next = tMemOp;
                 }
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
             else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
             {
-                if (memOpPos >= memOpCount) continue;
-                if (dupMemOps.find(si) != dupMemOps.end()) continue;
-                // Skip globals for testing
-                //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                pllvm_mem_op tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
-                memOpPos ++;
+                pllvm_mem_op tMemOp = NULL;
+                
+                if (dupMemOps.find(si) != dupMemOps.end()) 
+                {
+                    tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue);
+                    tMemOp->isDep = true;
+                    tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
+                    tMemOp->depMemOpDelta = dupMemOpOff[si];
+                }
+                else
+                {
+                    assert(memOpPos < memOpCount);
+                    // Skip globals for testing
+                    //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
+                    tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
+                    memOpPos ++;
+                }
                 
                 if (tMemOp->isGlobal)
                 {
                     bi->containGlobalAccess = true;
                 }
                 
+                unsigned short pos = 0;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
                 {
                     pllvm_mem_op t = bi->first_op;
                     while (t->next != NULL)
                     {
+                        pos ++;
                         t = t->next;
                     }
+                    if (dupMemOpPos.find(si) != dupMemOpPos.end()) {dupMemOpPos[si] = pos + 1;}
                     t->next = tMemOp;
                 }
             }

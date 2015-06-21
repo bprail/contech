@@ -29,7 +29,7 @@ namespace llvm {
         bool isGlobal;
         bool isDep;
         char size;
-        unsigned int depMemOp;
+        unsigned short depMemOp;
         int depMemOpDelta;
         Value* addr;
         struct _llvm_mem_op* next;
@@ -173,7 +173,7 @@ namespace llvm {
         Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
         Value* castSupport(Type*, Value*, Instruction*);
         
-        Value* findSimilarMemoryInst(Instruction*, Value*);
+        Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
         
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
