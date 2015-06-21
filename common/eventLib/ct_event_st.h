@@ -12,7 +12,7 @@
 //#endif
 //#endif
 
-#define CONTECH_EVENT_VERSION 7
+#define CONTECH_EVENT_VERSION 8
 
 typedef unsigned long long ct_tsc_t;
 typedef unsigned long long ct_addr_t;
@@ -62,6 +62,8 @@ enum _ct_sync_type {
 typedef enum _ct_sync_type ct_sync_type;
 
 #define BBI_FLAG_CONTAIN_CALL 0x1
+
+#define BBI_FLAG_MEM_DUP 0x2
 
 //
 // Maps basic_block_ids to string identifiers

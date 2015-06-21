@@ -247,7 +247,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 
                 if (sizeof(ct_memory_op) > sizeof(unsigned long long))
                 {
-                    fprintf(stderr, "Contect memory op is larger than a long long (8 bytes)\n");
+                    fprintf(stderr, "Contech memory op is larger than a long long (8 bytes)\n");
                 }
                 if (version == 0)
                 {
@@ -260,11 +260,38 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                     {
                         npe->bb.mem_op_array[i].data = 0;
                         
-                        fread_check(&npe->bb.mem_op_array[i].data32[0], sizeof(unsigned int), 1, fptr);
-                        fread_check(&npe->bb.mem_op_array[i].data32[1], sizeof(unsigned short), 1, fptr);
-                        
-                        npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].isWrite;
-                        npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
+                        if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP)
+                        {
+                            unsigned short dupOp = bb_info_table[id].mem_op_info[i].baseOp;
+                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            npe->bb.mem_op_array[i].addr = (npe->bb.mem_op_array[dupOp].addr) + offset;
+                            
+                            npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
+                            npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
+                            
+                            /*
+                             * The following code verified that the duplicate memory addresses were being
+                             * computed correctly.
+                            tmo.data = 0;
+                            fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                            fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                            
+                            if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                            {
+                                fprintf(stderr, "%d.%d\n", id, i);
+                                fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                fprintf(stderr, "[%d] + %d -> %p\n", dupOp, bb_info_table[id].mem_op_info[i].baseOffset, npe->bb.mem_op_array[dupOp].addr);
+                                assert(0);
+                            }*/
+                        }
+                        else
+                        {
+                            fread_check(&npe->bb.mem_op_array[i].data32[0], sizeof(unsigned int), 1, fptr);
+                            fread_check(&npe->bb.mem_op_array[i].data32[1], sizeof(unsigned short), 1, fptr);
+                            
+                            npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
+                            npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
+                        }
                     }
                 }
             }
@@ -375,6 +402,17 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 for (int i = 0; i < len; i++)
                 {
                     fread_check(&bb_info_table[id].mem_op_info[i], sizeof(char), 2, fptr);
+                    if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP)
+                    {
+                        //fprintf(stderr, "dup! - %d %d\n", id, i);
+                        fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
+                        fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                    }
+                    else
+                    {
+                        bb_info_table[id].mem_op_info[i].baseOp = 0;
+                        bb_info_table[id].mem_op_info[i].baseOffset = 0;
+                    }
                 }
             }
             else

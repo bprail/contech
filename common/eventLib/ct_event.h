@@ -46,7 +46,9 @@ namespace contech
             
             typedef struct _internal_memory_op_info
             {
-                char isWrite, size;
+                char memFlags, size;
+                unsigned short baseOp;
+                int baseOffset;  // N.B. Offset can be negative
             } internal_memory_op_info, *pinternal_memory_op_info;
 
             typedef struct _internal_basic_block_info
