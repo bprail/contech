@@ -643,6 +643,7 @@ void EventLib::deleteContechEvent(pct_event e)
     {
         if (e->bbi.fun_name != NULL) free(e->bbi.fun_name);
         if (e->bbi.file_name != NULL) free(e->bbi.file_name);
+        if (e->bbi.callFun_name != NULL) free(e->bbi.callFun_name);
     }    
     free(e);
 }
