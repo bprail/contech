@@ -188,6 +188,7 @@ pct_event EventList::getNextContechEvent()
                 barrierNum++;
                 eventQueueCurrent->second.pop_front();
                 eventQueueCurrent = queuedEvents.begin();
+                assert(currentQueuedCount > 0);
                 currentQueuedCount--;
                 return event;
             }
@@ -212,6 +213,7 @@ pct_event EventList::getNextContechEvent()
         else if (event->event_type != ct_event_sync)
         {
             eventQueueCurrent->second.pop_front();
+            assert(currentQueuedCount > 0);
             currentQueuedCount--;
             return event;
         }
@@ -221,6 +223,7 @@ pct_event EventList::getNextContechEvent()
             ticketNum++;
             eventQueueCurrent->second.pop_front();
             eventQueueCurrent = queuedEvents.begin();
+            assert(currentQueuedCount > 0);
             currentQueuedCount--;
             return event;
         }
@@ -375,6 +378,8 @@ void EventList::readyEvents(unsigned int context)
     }
     else
     {
+        currentQueuedCount += deq->second.size();
+        if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
         queuedEvents[context] = deq->second;
         waitingEvents.erase(deq);
         
