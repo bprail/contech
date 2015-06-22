@@ -2,6 +2,8 @@
 #define CT_CONTECH_HPP
 
 #include <deque>
+#include <map>
+#include <list>
 #include "../common/eventLib/ct_event.h"
 #include "../common/taskLib/Task.hpp"
 
@@ -26,7 +28,7 @@ public:
 
     // Queue of tasks that are running in this contech but have not been written to file yet. These tasks may have incomplete data.
     // The front of the queue represents more recent tasks.
-    deque<Task*> tasks;
+    list<Task*> tasks;
 
     // Map of ContextId -> TaskId, which task created which context
     map<ContextId, TaskId> creatorMap;

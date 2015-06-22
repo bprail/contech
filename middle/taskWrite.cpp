@@ -40,6 +40,7 @@ void backgroundQueueTask(Task* t)
     pthread_mutex_lock(&taskQueueLock);
     qSize = taskQueue->size();
     taskQueue->push_back(t);
+    //assert(t->getTaskId() != TaskId(17,3));
     // Signal if there are enough tasks, or a "maximal" sized task is queued
     if (qSize == QUEUE_SIGNAL_THRESHOLD || t->getBBCount() > (MAX_BLOCK_THRESHOLD - 1)) {pthread_cond_signal(&taskQueueCond);}
     pthread_mutex_unlock(&taskQueueLock);
@@ -88,6 +89,61 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
     }
 }
 
+//
+// Debug routine
+//
+void identifyMaxTaskPerContext(map<ContextId, Context> &context)
+{
+    for (auto it = context.begin(), et = context.end(); it != et; ++it)
+    {
+        Context tgt = it->second;
+        int countSyn = 0, countBB = 0, countC = 0, countJ = 0, countBar = 0;
+        uint64_t maxBBCount = 0;
+        Task* maxBBTask = NULL;
+        
+        for (Task* t : tgt.tasks)
+        {
+            switch(t->getType())
+            {
+                case task_type_basic_blocks:
+                {
+                    uint64_t bbCount = t->getBBCount();
+                    countBB++;
+                    if (bbCount > maxBBCount)
+                    {
+                        maxBBCount = bbCount;
+                        maxBBTask = t;
+                    }
+                }
+                break;
+                case task_type_create:
+                {
+                    countC++;
+                }
+                break;
+                case task_type_join:
+                {
+                    countJ++;
+                }
+                break;
+                case task_type_sync:
+                {
+                    countSyn++;
+                }
+                break;
+                case task_type_barrier:
+                {
+                    countBar++;
+                }
+                break;
+            }
+        }
+        cout << maxBBTask->getTaskId().toString() << " - " << maxBBCount << endl;
+        cout << it->first << " C: " << countC << " J: " << countJ << " S: " << countSyn;
+        cout << " B: " << countBar << " BB: " << countBB << endl;
+    }
+}
+
 void updateContextTaskList(Context &c)
 {
     // Non basic block tasks are handled by their creation logic
@@ -97,7 +153,7 @@ void updateContextTaskList(Context &c)
     //
     // Creates must be complete when they are not the active task.  The child is
     //   known at creation time, so no update is required of this task.
-    Task* t = c.tasks.back();
+    
     bool exited = (c.endTime != 0);
     
     // TODO: Should we 'cache' getType() or can the compiler do this?
@@ -105,7 +161,24 @@ void updateContextTaskList(Context &c)
     
     if (exited == false)
     {
-        while (t != c.activeTask() &&
+        for (auto it = c.tasks.begin(), et = c.tasks.end(); it != et; ++it)
+        {
+            Task* t = *it;
+            if (t == c.activeTask()) continue;
+            if (( t->getType() == task_type_basic_blocks &&
+                (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
+               (t->getType() == task_type_create) ||
+               (t->getType() == task_type_join && c.isCompleteJoin(t->getTaskId())))
+            {
+                // This is not guaranteed to remove every task in one pass;
+                //   however, the routine will be invoked many times and it
+                //   will correctly remove tasks.
+                it = c.tasks.erase(it);
+                backgroundQueueTask(t);
+            }
+        }
+        
+        /*while (t != c.activeTask() &&
                (( t->getType() == task_type_basic_blocks &&
                 (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0))) ||
                (t->getType() == task_type_create) ||
@@ -115,12 +188,13 @@ void updateContextTaskList(Context &c)
             c.tasks.pop_back();
             backgroundQueueTask(t);
             t = c.tasks.back();
-        }
+        }*/
     }
     else
     {
         // If the context has exited, then even the active task can go
         if (c.tasks.empty()) return;
+        Task* t = c.tasks.back();
         while (( t->getType() == task_type_basic_blocks &&
                (t->getPredecessorTasks().size() > 0 || t->getTaskId() == TaskId(0)) &&
                (t->getSuccessorTasks().size() > 0)) ||
