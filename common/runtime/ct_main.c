@@ -89,8 +89,8 @@ int main(int argc, char** argv)
             {
                 unsigned long long mem_size = (unsigned long long)t_info.freeram * (unsigned long long)t_info.mem_unit;
                 mem_size = (mem_size * 9) / 10;
-                printf("CT_MEM: %llu\n", mem_size);
                 __ctMaxBuffers = (mem_size) / ((unsigned long long) SERIAL_BUFFER_SIZE);
+                printf("CT_MEM: %llu\t%u\n", mem_size, __ctMaxBuffers);
             }
         }
         
@@ -157,7 +157,7 @@ void* __ctBackgroundThreadWriter(void* d)
     FILE* serialFile;
     char* fname = getenv("CONTECH_FE_FILE");
     unsigned int wpos = 0;
-    unsigned int maxBuffersAlloc = 0;
+    unsigned int maxBuffersAlloc = 0, memLimitBufCount = 0;
     size_t totalWritten = 0;
     pct_serial_buffer memLimitQueue = NULL;
     pct_serial_buffer memLimitQueueTail = NULL;
@@ -353,11 +353,6 @@ void* __ctBackgroundThreadWriter(void* d)
                 pthread_mutex_unlock(&__ctPrintLock);
 #endif
                 
-                
-                // If this is the only free buffer, signal any waiting threads
-                // TODO: Can we avoid the cond_signal if buffer limits are not in place?
-                // TODO: OR not signal until queuedBuffers is NULL ?
-                //if (t->next == NULL) {pthread_cond_signal(&__ctFreeSignal);}
                 if (__ctCurrentBuffers == __ctMaxBuffers)
                 {
                     if (__ctQueuedBuffers == NULL)
@@ -367,9 +362,17 @@ void* __ctBackgroundThreadWriter(void* d)
                         ftime(&tp);
                         endLimitTime = tp.time*1000 + tp.millitm;
                         totalLimitTime += (endLimitTime - startLimitTime);
-                        memLimitQueueTail->next = __ctFreeBuffers;
+                        memLimitQueueTail->next = t;
+                        t->next = __ctFreeBuffers;
                         __ctFreeBuffers = memLimitQueue;
-                        __ctCurrentBuffers = 0;
+                        maxBuffersAlloc = __ctCurrentBuffers;
+                        
+                        // N.B. It is possible that thread X is holding a lock L
+                        //   and then attempts to queue and allocate a new buffer.
+                        //   And that thread Y blocks on lock L, whereby its buffer
+                        //   will not be in the queue and therefore the count should
+                        //   be greater than 0.
+                        __ctCurrentBuffers = __ctMaxBuffers - (memLimitBufCount + 1);
                         memLimitQueue = NULL;
                         memLimitQueueTail = NULL;
                         pthread_cond_broadcast(&__ctFreeSignal);
@@ -378,6 +381,7 @@ void* __ctBackgroundThreadWriter(void* d)
                     {
                         if (memLimitQueueTail == NULL)
                         {
+                            memLimitBufCount = 1;
                             memLimitQueue = t;
                             memLimitQueueTail = t;
                             t->next = NULL;
@@ -388,6 +392,7 @@ void* __ctBackgroundThreadWriter(void* d)
                         }
                         else
                         {
+                            memLimitBufCount ++;
                             memLimitQueueTail->next = t;
                             t->next = NULL;
                             memLimitQueueTail = t;
@@ -402,6 +407,7 @@ void* __ctBackgroundThreadWriter(void* d)
                     {
                         maxBuffersAlloc = __ctCurrentBuffers;
                     }
+                    assert(__ctCurrentBuffers > 0);
                     __ctCurrentBuffers --;
 #if DEBUG
                     if (__ctCurrentBuffers < 2)
