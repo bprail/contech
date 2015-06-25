@@ -118,7 +118,6 @@ void __ctAllocateLocalBuffer()
         __ctFreeBuffers = __ctFreeBuffers->next;
         __ctCurrentBuffers++;
         pthread_mutex_unlock(&__ctFreeBufferLock);
-        __ctThreadLocalBuffer->next = NULL;
         // Buffer from list, just set position
         __ctThreadLocalBuffer->pos = 0;
     }
@@ -130,13 +129,13 @@ void __ctAllocateLocalBuffer()
             // Does this condition variable need an additional check?
             //   Or are we asserting that the delay is finished and
             //   __ctFreeBuffers is not NULL
-            pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
+            while (__ctCurrentBuffers == __ctMaxBuffers)
+                pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
             __ctThreadLocalBuffer = __ctFreeBuffers;
             __ctFreeBuffers = __ctFreeBuffers->next;
             __ctCurrentBuffers++;
             pthread_mutex_unlock(&__ctFreeBufferLock);
             __ctStoreDelay(start);
-            __ctThreadLocalBuffer->next = NULL;
             // Buffer from list, just set position
             __ctThreadLocalBuffer->pos = 0;
         }
