@@ -3,7 +3,6 @@ common/eventLib \
 common/runtime \
 common/taskLib \
 backend/CommTracker \
-backend/TraceValidator \
 backend/Statistics \
 backend/Comm2 \
 backend/TaskGraphFrontEnd \
