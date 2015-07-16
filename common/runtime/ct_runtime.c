@@ -99,7 +99,9 @@ unsigned int __ctGetLocalNumber()
 
 ct_tsc_t __ctGetCurrentTick()
 {
-    return rdtsc();
+    ct_tsc_t r = rdtsc();
+    
+    return r;
 }
 
 unsigned int __ctAllocateCTid()
@@ -395,7 +397,8 @@ void __ctQueueBuffer(bool alloc)
     // If we need to allocate a new buffer, and the current one is rather empty,
     //   then allocate one for the current, copy data and reuse the existing buffer
     if (alloc && 
-        (__ctThreadLocalBuffer->pos < (__ctThreadLocalBuffer->length / 2)))
+        (__ctThreadLocalBuffer->pos < (96 * 1024))) // Use a constant, if not 64KB
+        //(__ctThreadLocalBuffer->pos < (__ctThreadLocalBuffer->length / 2)))
     {
         unsigned int allocSize = (__ctThreadLocalBuffer->pos + 0) & (~0);
         localBuffer = __ctThreadLocalBuffer;
@@ -632,13 +635,11 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     
     // Unix 0 is successful
     //   So non zeros indicate the sync event did not happen
-    if (success != 0) return;
+    if (success != 0) {return;}
     
     unsigned int p = __ctThreadLocalBuffer->pos;
     ct_tsc_t t = rdtsc();
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
-    
-    
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
@@ -1086,6 +1087,7 @@ void __ctOMPStoreInOutDeps(void* task, size_t offset, int32_t numDeps, int32_t i
         __ctQueueBuffer(true);
         *(unsigned int*)(t + offset + sizeof(char*) + sizeof(unsigned int)) = __ctThreadLocalNumber;
         __ctThreadLocalNumber = threadId;
+        __ctThreadLocalBuffer->id = threadId; //Is this required?
         __ctStoreThreadCreate(parentId, 1, rdtsc());
     }
     
@@ -1107,6 +1109,7 @@ void __ctOMPStoreInOutDeps(void* task, size_t offset, int32_t numDeps, int32_t i
         __sync_fetch_and_add(&__ctThreadExitNumber, 1);
         __ctQueueBuffer(true);
         __ctThreadLocalNumber = threadId;
+        __ctThreadLocalBuffer->id = threadId; //Is this required?
     }
 }
 
@@ -1147,4 +1150,112 @@ unsigned int __ctPeekIdStack(pcontech_id_stack *head)
     pcontech_id_stack elem = *head;
     unsigned int id = elem->id;
     return id;
+}
+
+pcontech_cilk_sync __ctInitCilkSync()
+{
+    pcontech_cilk_sync r = (pcontech_cilk_sync) malloc(sizeof(contech_cilk_sync));
+    if (r == NULL)
+    {
+        fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
+        pthread_exit(NULL);
+    }
+    pthread_mutex_init(&r->l, NULL);
+    r->parentId = __ctThreadLocalNumber;
+    r->childHead = NULL;
+    
+    return r;
+}
+
+void __ctRecordCilkFrame(pcontech_cilk_sync pccs, ct_tsc_t start, unsigned int child, int retVal)
+{
+    if (retVal == 0)
+    {
+        if (__ctThreadLocalNumber != pccs->parentId)
+        {
+            __ctRestoreCilkFrame(pccs);
+        }
+        __ctStoreThreadCreate(child, 0, start);
+    }
+    
+    __ctQueueBuffer(true);
+    // RetVal comes from setjmp
+    //   0 - fall through
+    //   !0 - longjmp
+    if (retVal == 0)
+    {
+        pcontech_id_stack pcis = (pcontech_id_stack) malloc(sizeof(contech_id_stack));
+        if (pcis == NULL)
+        {
+            fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
+            pthread_exit(NULL);
+        }
+        
+        __ctThreadLocalNumber = child;
+        pcis->id = child;
+        pthread_mutex_lock(&pccs->l);
+        pcis->next = pccs->childHead;
+        pccs->childHead = pcis;
+        pthread_mutex_unlock(&pccs->l);
+        printf("Child create: %d\n", child);
+        __ctStoreThreadCreate(pccs->parentId, 1, start);
+    }
+    else
+    {
+        __ctThreadLocalNumber = pccs->parentId;
+    }
+    
+    // The thread local number has changed since allocation, update the buffer
+    __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+}
+
+void __ctRecordCilkSync(pcontech_cilk_sync pccs)
+{
+    if (pccs != NULL &&
+        __ctThreadLocalNumber == pccs->parentId)
+    {
+        pcontech_id_stack pcis = pccs->childHead;
+        pcontech_id_stack t = NULL;
+        
+        while (pcis != NULL)
+        {
+            printf("Join: %d\n", pcis->id);
+            __ctStoreThreadJoinInternal(false, pcis->id, rdtsc());
+            t = pcis;
+            pcis = pcis->next;
+            free(t);
+        }
+        
+        pccs->childHead = NULL;
+        //free(pccs);
+        //pccs = NULL;
+    }
+}
+
+void __ctRestoreCilkFrame(pcontech_cilk_sync pccs)
+{
+    if (pccs != NULL)
+    {
+        if (pccs->parentId == __ctThreadLocalNumber)
+        {
+            assert(pccs->childHead == NULL);
+            free(pccs);
+            pccs = NULL;
+        }
+        else
+        {
+            printf("Exit: %d\n", __ctThreadLocalNumber);
+            __ctStoreThreadJoinInternal(true, pccs->parentId, rdtsc());
+            __ctQueueBuffer(true);
+            __ctThreadLocalNumber = pccs->parentId;
+            __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+            __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+            
+            __ctRecordCilkSync(pccs); // HACK
+        }
+    }
+    else
+    {
+        __ctQueueBuffer(true);
+    }
 }
