@@ -79,7 +79,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 53
+#define FUNCTIONS_INSTRUMENT_SIZE 56
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -138,7 +138,10 @@ namespace llvm {
                                            {STORE_AND_LEN("MPI_Barrier"), BARRIER_WAIT},
                                            {STORE_AND_LEN("mpi_barrier_"), BARRIER_WAIT},
                                            {STORE_AND_LEN("MPI_Wait"), MPI_TRANSFER_WAIT},
-                                           {STORE_AND_LEN("mpi_wait_"), MPI_TRANSFER_WAIT}};
+                                           {STORE_AND_LEN("mpi_wait_"), MPI_TRANSFER_WAIT},
+                                           {STORE_AND_LEN("__cilkrts_leave_frame"), CILK_FRAME_DESTROY},
+                                           {STORE_AND_LEN("llvm.eh.sjlj.setjmp"), CILK_FRAME_CREATE},
+                                           {STORE_AND_LEN("__cilkrts_sync"), CILK_SYNC}};
 
     
     ModulePass* createContechPass() { return new Contech(); }
@@ -155,6 +158,7 @@ namespace llvm {
         FunctionType* funVoidPtrVoidPtrTy;
         FunctionType* funVoidPtrVoidTy;
         FunctionType* funVoidVoidTy;
+        FunctionType* funVoidVoidPtrTy;
         FunctionType* funVoidI8I64VoidPtrTy;
         FunctionType* funVoidI64VoidPtrVoidPtrTy;
         FunctionType* funVoidI8Ty;
@@ -167,6 +171,7 @@ namespace llvm {
         FunctionType* funI32VoidPtrTy;
         FunctionType* funI32I32I32VoidPtrTy;
         FunctionType* funVoidVoidPtrI64Ty;
+        FunctionType* funVoidVoidPtrI64I32I32Ty;
 
         LLVMContext &ctx = M.getContext();
         #if LLVM_VERSION_MINOR>=5
@@ -200,6 +205,7 @@ namespace llvm {
         
         funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
         cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
+        cct.cilkInitFunction = M.getOrInsertFunction("__ctInitCilkSync", funVoidPtrVoidTy);
         
         // void (void) functions:
         funVoidVoidTy = FunctionType::get(cct.voidTy, false);
@@ -210,12 +216,14 @@ namespace llvm {
         cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
         cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
         
+        
         cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
         cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
         cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
         
         cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
         cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
+        
         
         Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/};
         funVoidVoidPtrI32I32I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 4), false);
@@ -256,6 +264,15 @@ namespace llvm {
         Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
         funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
         cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
+        
+        Type* argsCFC[] = {cct.voidPtrTy, cct.int64Ty, cct.int32Ty, cct.int32Ty};
+        funVoidVoidPtrI64I32I32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCFC, 4), false);
+        cct.cilkCreateFunction = M.getOrInsertFunction("__ctRecordCilkFrame", funVoidVoidPtrI64I32I32Ty);
+        
+        Type* argsInit[] = {cct.voidPtrTy};
+        funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
+        cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
+        cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
         
         // This needs to be machine type here
         //
@@ -1149,7 +1166,7 @@ cleanup:
 
 //#define TSC_IN_BB
 #ifdef TSC_IN_BB
-            Value* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
+            Instruction* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
             MarkInstAsContechInst(stTick);
             
             //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
@@ -1157,6 +1174,9 @@ cleanup:
         
             tMemOp->isWrite = true;
             tMemOp->size = 7;
+            tMemOp->isDep = false;
+            tMemOp->depMemOp = 0;
+            tMemOp->depMemOpDelta = 0;
             
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi);
@@ -1462,7 +1482,9 @@ cleanup:
             }
         }
         
-        bi->containCall = hasUninstCall;
+        // There could be multiple call instructions in the block, due to intrinsics and
+        //   debug "calls".  If any are real calls, then the block contains a call.
+        bi->containCall = (bi->containCall)?true:hasUninstCall;
         
         
         
@@ -1696,6 +1718,98 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
     Instruction* ret = CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
     MarkInstAsContechInst(ret);
     return ret;
+}
+    
+Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
+{
+    Value* v = NULL;
+    
+    for (auto it = B.begin(), et = B.end(); it != et; ++it)
+    {
+        Value* iV = dyn_cast<Value>(&*it);
+        if (iV == NULL) continue;
+        
+        if (iV->getName().equals("ctInitCilkStruct"))
+        {
+            v = iV;
+            break;
+        }
+    }
+    
+    if (v == NULL && insert == true)
+    {
+        auto iPt = B.getFirstInsertionPt();
+        
+        // Call init
+        debugLog("cilkInitFunction @" << __LINE__);
+        Instruction* cilkInit = CallInst::Create(cct.cilkInitFunction, "ctInitCilkStruct", iPt);
+        MarkInstAsContechInst(cilkInit);
+        
+        v = cilkInit;
+    }
+    
+    return v;
+}
+
+bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft)
+{
+    for (BasicBlock::iterator I = B->begin(), E = B->end(); I != E; ++I)
+    {
+        Function* f = NULL;
+        if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+        {
+            f = ci->getCalledFunction();
+            if (f == NULL) 
+            { 
+                Value* v = ci->getCalledValue();
+                f = dyn_cast<Function>(v->stripPointerCasts());
+                if (f == NULL)
+                {
+                    continue;
+                }
+            }
+        }
+        else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I)) 
+        {
+            f = ci->getCalledFunction();
+            if (f == NULL) 
+            { 
+                Value* v = ci->getCalledValue();
+                f = dyn_cast<Function>(v->stripPointerCasts());
+                if (f == NULL)
+                {
+                    continue;
+                }
+            }
+        }
+        if (f == NULL) continue;
+        
+        // call is indirect
+        // TODO: add dynamic check on function called
+        
+
+        int status;
+        const char* fmn = f->getName().data();
+        char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
+        const char* fn = fdn;
+        if (status != 0) 
+        {
+            fn = fmn;
+        }
+        
+        CONTECH_FUNCTION_TYPE funTy = classifyFunctionName(fn);
+        
+        if (status == 0)
+        {
+            free(fdn);
+        }
+        
+        if (funTy == cft) 
+        {
+            return true;
+        }
+    }
+    return false;
 }
     
 char Contech::ID = 0;
