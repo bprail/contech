@@ -265,7 +265,7 @@ namespace llvm {
         //auto mFunc = M.getFunction("malloc");
         //FunctionType* mFuncTy = mFunc->getFunctionType();
         //pthreadTy = mFuncTy->getParamType(0);
-        if (currentDataLayout->getPointerSize() == llvm::Module::Pointer64)
+        if (currentDataLayout->getPointerSizeInBits() == 64)
         {
             cct.pthreadTy = cct.int64Ty;
             cct.pthreadSize = 8;

@@ -150,7 +150,7 @@ namespace llvm {
     public:
         static char ID; // Pass identification, replacement for typeid
         ConstantsCT cct;
-        DataLayout* currentDataLayout;
+        const DataLayout* currentDataLayout;
         
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
