@@ -2,6 +2,9 @@
 #include <mpi.h>
 #include <sched.h>
 
+#ifdef CT_MPI_NOT_PRESENT
+
+#else
 int __ctIsMPIPresent()
 {
     return 1;
@@ -27,3 +30,4 @@ int __ctGetSizeofMPIDatatype(int datatype)
     MPI_Type_size(datatype, &size);
     return size;
 }
+#endif
