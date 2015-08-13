@@ -9,7 +9,7 @@
 #include <string>
 #include <ct_event_st.h>
 
-//#define DEBUG_PRINT_CALLINST
+#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
     #define debugLog(s) errs() << s << "\n"
 #else
@@ -75,6 +75,9 @@ namespace llvm {
         MPI_SEND_NONBLOCKING,
         MPI_RECV_NONBLOCKING,
         MPI_TRANSFER_WAIT,
+        CILK_FRAME_CREATE,
+        CILK_FRAME_DESTROY,
+        CILK_SYNC,
         NUM_CONTECH_FUNCTION_TYPES
     } CONTECH_FUNCTION_TYPE;
     
@@ -130,6 +133,11 @@ namespace llvm {
         Constant* ompPrepareTaskFunction;
         Constant* ompStoreInOutDepsFunction;
         
+        Constant* cilkInitFunction;
+        Constant* cilkCreateFunction;
+        Constant* cilkSyncFunction;
+        Constant* cilkRestoreFunction;
+        
         Constant* pthreadExitFunction;
         
         Type* int8Ty;
@@ -172,6 +180,8 @@ namespace llvm {
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
         Value* castSupport(Type*, Value*, Instruction*);
+        Value* findCilkStructInBlock(BasicBlock& B, bool insert);
+        bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
         
         Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
@@ -1142,6 +1152,106 @@ namespace llvm {
                 {
                     I = storeWait;
                 }
+            }
+            break;
+            case (CILK_FRAME_CREATE):
+            {
+                // If this setjmp leads to cilk_sync, then ignore
+                // N.B. LLVM 3.4 does not have getSingleSuccessor, but 3.6 does
+                //   BasicBlock* sucB = ci->getParent()->getSingleSuccessor();
+                BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
+                
+                // If Contech has formed the basic blocks, then there should be 1 successor
+                assert(sucB != NULL); 
+                TerminatorInst* ti = sucB->getTerminator();
+                bool isSyncFrame = false;
+                for (unsigned i = 0; i < ti->getNumSuccessors(); i++)
+                {
+                    if (ctPass->blockContainsFunctionName(ti->getSuccessor(i), CILK_SYNC))
+                    {
+                        isSyncFrame = true;
+                        break;
+                    }
+                }
+                if (isSyncFrame)
+                {
+                    break;
+                }
+                
+                Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), true);
+                if (ctCilkStruct == NULL)
+                {
+                    break;
+                }
+                
+                // Add alloca, if not present, to entry block
+                // cilkCreateFunction(%alloc, getCurrentTick, child, retval)
+                debugLog("allocateCTidFunction @" << __LINE__);
+                CallInst* nChildCTID = CallInst::Create(cct->allocateCTidFunction, "childCTID", ci);
+                MarkInstAsContechInst(nChildCTID);
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
+                
+                
+                
+                Instruction* initialPt = NULL;
+                if (isa<CallInst>(ci))
+                {
+                    ++I;
+                    initialPt = I;
+                }
+                else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
+                {
+                    initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
+                }
+                
+                Value* argCreate[] = {ctCilkStruct, nGetTick, nChildCTID, ci};
+                debugLog("cilkCreateFunction @" << __LINE__);
+                CallInst* cilkCreate = CallInst::Create(cct->cilkCreateFunction, ArrayRef<Value*>(argCreate, 4), "", initialPt);
+                MarkInstAsContechInst(cilkCreate);
+                
+                if (isa<CallInst>(ci))
+                {
+                    I = cilkCreate;
+                }
+            }
+            break;
+            case (CILK_FRAME_DESTROY):
+            {
+                Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), false);
+                if (ctCilkStruct == NULL)
+                {
+                    // Leave frame without creating a frame in this function
+                    break;
+                }
+                
+                BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
+                Instruction* iPt = sucB->getFirstInsertionPt();
+                
+                Value* argRest[] = {ctCilkStruct};
+                debugLog("cilkRestoreFunction @" << __LINE__);
+                
+                CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", iPt);
+                MarkInstAsContechInst(cilkRest);
+            }
+            break;
+            case (CILK_SYNC):
+            {
+                BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
+                
+                Instruction* iPt = sucB->getFirstInsertionPt();
+                
+                Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), true);
+                if (ctCilkStruct == NULL)
+                {
+                    break;
+                }
+                
+                Value* argSync[] = {ctCilkStruct};
+                debugLog("cilkSyncFunction @" << __LINE__);
+                CallInst* cilkSync = CallInst::Create(cct->cilkSyncFunction, ArrayRef<Value*>(argSync, 1), "", iPt);
+                MarkInstAsContechInst(cilkSync);
             }
             break;
             default:

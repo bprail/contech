@@ -52,6 +52,12 @@ typedef struct _contech_join_stack {
     struct _contech_join_stack* next;
 } contech_join_stack, *pcontech_join_stack;
 
+typedef struct _contech_cilk_sync {
+    pthread_mutex_t l;
+    unsigned int parentId;
+    pcontech_id_stack childHead;
+} contech_cilk_sync, *pcontech_cilk_sync;
+
 void __ctCleanupThread(void* v);
 void __ctAllocateLocalBuffer();
 unsigned int __ctAllocateCTid();
@@ -104,6 +110,8 @@ void __ctStoreDelay(ct_tsc_t start_t);
 int __ctIsMPIPresent();
 int __ctGetMPIRank();
 int __ctGetSizeofMPIDatatype(int datatype);
+
+void __ctRestoreCilkFrame(pcontech_cilk_sync);
 
 void printQueueStats();
 

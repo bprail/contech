@@ -105,6 +105,21 @@ int main(int argc, char** argv)
         // Set aside 0 for main thread
         __ctThreadLocalNumber = __sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
         
+        // Prealloc
+        {
+            /*pct_serial_buffer t = NULL;
+            for (int i = 0; i < 10000; i++)
+            {
+                //__ctQueueBuffer(true);
+                __ctAllocateLocalBuffer();
+                __ctThreadLocalBuffer->next = t;
+                t = __ctThreadLocalBuffer;
+                __ctThreadLocalBuffer = NULL;
+            }
+            __ctCurrentBuffers = 0;
+            __ctFreeBuffers = t;*/
+        }
+        
         // Now create the background thread writer
         if (0 != pthread_create(&pt_temp, NULL, __ctBackgroundThreadWriter, NULL))
         {
@@ -123,6 +138,7 @@ int main(int argc, char** argv)
     // Allocate a real CT buffer for the main thread, this replaces initBuffer
     //   Use ROI code to reset if there is a ROI present
     __ctAllocateLocalBuffer();
+    
 
     {
         struct timeb tp;
@@ -343,6 +359,7 @@ void* __ctBackgroundThreadWriter(void* d)
                     //  we continue
                     continue;
                 }
+                //continue; // HACK: LEAK!
                 
                 // Switching locks, "t" is now only held locally
                 pthread_mutex_lock(&__ctFreeBufferLock);
@@ -434,6 +451,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 printf("CT_COMP: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
                 printf("CT_LIMIT: %llu.%03llu\n", totalLimitTime / 1000, totalLimitTime % 1000);
             }
+            printf("Total Contexts: %u\n", __ctThreadGlobalNumber);
             printf("Total Uncomp Written: %ld\n", totalWritten);
             printf("Max Buffers Alloc: %u of %lu\n", maxBuffersAlloc, sizeof(ct_serial_buffer_sized));
             {
