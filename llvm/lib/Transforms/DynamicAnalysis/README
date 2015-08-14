@@ -1,0 +1,9 @@
+DynamicAnalysis is an abstractd simulation of a microarchitecture using 
+LLVM IR ops as the ISA.  It is driven using a Contech task graph and the
+instrumented IR file (.bc).
+
+The simulator is based on the work of Victoria Caparros (caparrov@inf.ethz.ch)
+and was published previously [1].
+
+[1] Victoria Caparros and Markus Pueschel. ''Extending the Roofline Model: Bottleneck Analysis with Microarchitectural Constraints'', in IISWC'14.
+
