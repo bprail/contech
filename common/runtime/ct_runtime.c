@@ -40,6 +40,7 @@
 ct_serial_buffer_sized initBuffer = {0, SERIAL_BUFFER_SIZE, 0, NULL, {0}};
 
 __thread pct_serial_buffer __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
+__thread pct_serial_buffer __ctThreadMicroBuffer = NULL;
 __thread unsigned int __ctThreadLocalNumber = 0; // no static
 __thread pcontech_thread_info __ctThreadInfoList = NULL;
 __thread pcontech_id_stack __ctParentIdStack = NULL;
@@ -397,27 +398,69 @@ void __ctQueueBuffer(bool alloc)
     // If we need to allocate a new buffer, and the current one is rather empty,
     //   then allocate one for the current, copy data and reuse the existing buffer
     if (alloc && 
-        (__ctThreadLocalBuffer->pos < (96 * 1024))) // Use a constant, if not 64KB
+        (__ctThreadLocalBuffer->pos < (64 * 1024))) // Use a constant, if not 64KB
         //(__ctThreadLocalBuffer->pos < (__ctThreadLocalBuffer->length / 2)))
     {
         unsigned int allocSize = (__ctThreadLocalBuffer->pos + 0) & (~0);
         localBuffer = __ctThreadLocalBuffer;
-        
-        __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + allocSize);
-        
-        if(__ctThreadLocalBuffer != NULL)
+       
+        // The following microbuffer optimization can potentially reorder create events,
+        //   which still have an ordering requirement.
+        /*if (__ctThreadMicroBuffer == NULL)
         {
-            __ctThreadLocalBuffer->pos = localBuffer->pos;
-            __ctThreadLocalBuffer->length = allocSize;
-            __ctThreadLocalBuffer->next = NULL;
-            __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+            unsigned int mallocSize = allocSize;
+            if (mallocSize < 1024) mallocSize = 1024;
             
-            memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
+            __ctThreadMicroBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + mallocSize);
+            
+            if (__ctThreadMicroBuffer != NULL)
+            {
+                __ctThreadMicroBuffer->pos = localBuffer->pos;
+                __ctThreadMicroBuffer->basePos = localBuffer->pos;
+                __ctThreadMicroBuffer->length = mallocSize;
+                __ctThreadMicroBuffer->next = NULL;
+                __ctThreadMicroBuffer->id = __ctThreadLocalNumber;
+                
+                memcpy(__ctThreadMicroBuffer->data, localBuffer->data, allocSize);
+                goto microbuf_exit;
+            }
+            else
+            {
+                __ctThreadLocalBuffer = localBuffer;
+                localBuffer = NULL;
+            }
         }
-        else
+        else if ((__ctThreadMicroBuffer->length - __ctThreadMicroBuffer->pos) > (allocSize + 12))
         {
-            __ctThreadLocalBuffer = localBuffer;
-            localBuffer = NULL;
+            unsigned int buf[3];
+            buf[0] = ct_event_buffer;
+            buf[1] = __ctThreadLocalNumber;
+            buf[2] = allocSize;
+            memcpy(__ctThreadMicroBuffer->data + __ctThreadMicroBuffer->pos, buf, 12);
+            memcpy(__ctThreadMicroBuffer->data + __ctThreadMicroBuffer->pos + 12, 
+                   __ctThreadLocalBuffer->data, 
+                   allocSize);
+            __ctThreadMicroBuffer->pos += (allocSize + 12);
+            goto microbuf_exit;
+        }
+        else*/
+        {
+            __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + allocSize);
+            
+            if (__ctThreadLocalBuffer != NULL)
+            {
+                __ctThreadLocalBuffer->pos = localBuffer->pos;
+                __ctThreadLocalBuffer->length = allocSize;
+                __ctThreadLocalBuffer->next = NULL;
+                __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+                
+                memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
+            }
+            else
+            {
+                __ctThreadLocalBuffer = localBuffer;
+                localBuffer = NULL;
+            }
         }
     }
     
@@ -444,6 +487,16 @@ void __ctQueueBuffer(bool alloc)
 #ifdef CT_OVERHEAD_TRACK
     qstart = rdtsc();
 #endif
+
+    __ctThreadLocalBuffer->basePos = __ctThreadLocalBuffer->pos;
+    // Locally queue the micro buffer ahead of the local buffer
+    if (__ctThreadMicroBuffer != NULL)
+    {
+        __ctThreadMicroBuffer->next = __ctThreadLocalBuffer;
+        __ctThreadLocalBuffer = __ctThreadMicroBuffer;
+        __ctThreadMicroBuffer = NULL;
+    }
+
     pthread_mutex_lock(&__ctQueueBufferLock);
     __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
     if (__ctQueuedBuffers == NULL)
@@ -455,9 +508,15 @@ void __ctQueueBuffer(bool alloc)
     }
     else
     {
-        pct_serial_buffer t = __ctQueuedBuffers;
         __ctQueuedBufferTail->next = __ctThreadLocalBuffer;
-        __ctQueuedBufferTail = __ctThreadLocalBuffer;
+        if (__ctThreadLocalBuffer->next == NULL)
+        {
+            __ctQueuedBufferTail = __ctThreadLocalBuffer;
+        }
+        else
+        {
+            __ctQueuedBufferTail = __ctThreadLocalBuffer->next;
+        }
         __ctThreadLocalBuffer = NULL;
     }
     pthread_mutex_unlock(&__ctQueueBufferLock);
@@ -465,6 +524,7 @@ void __ctQueueBuffer(bool alloc)
     qend = rdtsc();
 #endif
 
+microbuf_exit:
     //
     // Used a temporary to hold the thread local buffer, restore
     //

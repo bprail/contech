@@ -286,7 +286,7 @@ void* __ctBackgroundThreadWriter(void* d)
                 unsigned int buf[3];
                 buf[0] = ct_event_buffer;
                 buf[1] = __ctQueuedBuffers->id;
-                buf[2] = __ctQueuedBuffers->pos;
+                buf[2] = __ctQueuedBuffers->basePos;
                 //fprintf(stderr, "%d, %llx, %d\n", __ctQueuedBuffers->id, totalWritten, __ctQueuedBuffers->pos);
                 do
                 {

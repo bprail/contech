@@ -10,7 +10,7 @@
 // Used to store serial data
 typedef struct _ct_serial_buffer
 {
-    unsigned int pos, length, id;
+    unsigned int pos, length, id, basePos;
     struct _ct_serial_buffer* next; // can order buffers 
     //char pad[24];
     char data[0];
