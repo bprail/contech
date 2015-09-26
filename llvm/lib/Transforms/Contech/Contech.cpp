@@ -79,7 +79,7 @@ cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally in
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 56
+#define FUNCTIONS_INSTRUMENT_SIZE 57
 // NB Order matters in this array.  Put the most specific function names first, then 
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -126,6 +126,7 @@ namespace llvm {
                                            {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
                                            {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER},
                                            {STORE_AND_LEN("__kmpc_cancel_barrier"), OMP_BARRIER},
+                                           {STORE_AND_LEN("GOMP_barrier"), OMP_BARRIER},
                                            {STORE_AND_LEN("__kmpc_omp_task_with_deps"), OMP_TASK_CALL},
                                            {STORE_AND_LEN("MPI_Send"), MPI_SEND_BLOCKING},
                                            {STORE_AND_LEN("mpi_send_"), MPI_SEND_BLOCKING},
@@ -172,6 +173,7 @@ namespace llvm {
         FunctionType* funI32I32I32VoidPtrTy;
         FunctionType* funVoidVoidPtrI64Ty;
         FunctionType* funVoidVoidPtrI64I32I32Ty;
+        FunctionType* funVoidI32I64I64Ty;
 
         LLVMContext &ctx = M.getContext();
         #if LLVM_VERSION_MINOR>=5
@@ -273,6 +275,11 @@ namespace llvm {
         funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
         cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
         cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
+        cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
+        
+        Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
+        funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
+        cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
         
         // This needs to be machine type here
         //

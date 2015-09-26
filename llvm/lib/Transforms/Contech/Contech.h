@@ -137,6 +137,7 @@ namespace llvm {
         Constant* cilkCreateFunction;
         Constant* cilkSyncFunction;
         Constant* cilkRestoreFunction;
+        Constant* cilkParentFunction;
         
         Constant* pthreadExitFunction;
         
@@ -149,7 +150,7 @@ namespace llvm {
         int pthreadSize;
         
         unsigned ContechMDID;
-    } ConstantsCT, *PConstantsCT;
+    } ConstantsCT, *pConstantsCT;
     
     //
     // Contech - First record every load or store in a program
@@ -1173,14 +1174,33 @@ namespace llvm {
                         break;
                     }
                 }
+                
+                Instruction* initialPt = NULL;
+                if (isa<CallInst>(ci))
+                {
+                    ++I;
+                    initialPt = I;
+                }
+                else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
+                {
+                    initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
+                }
+                
                 if (isSyncFrame)
                 {
+                    Value* ctCilkStructSync = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), false);
+                    Value* argRest[] = {ctCilkStructSync};
+                    debugLog("cilkParentFunction @" << __LINE__);
+                    
+                    CallInst* cilkRest = CallInst::Create(cct->cilkParentFunction, ArrayRef<Value*>(argRest, 1), "", initialPt);
+                    MarkInstAsContechInst(cilkRest);
                     break;
                 }
                 
                 Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), true);
                 if (ctCilkStruct == NULL)
                 {
+                    I = ci;
                     break;
                 }
                 
@@ -1193,18 +1213,12 @@ namespace llvm {
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
                 
-                
-                
-                Instruction* initialPt = NULL;
-                if (isa<CallInst>(ci))
-                {
-                    ++I;
-                    initialPt = I;
-                }
-                else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
-                {
-                    initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
-                }
+                Value* consZero = ConstantInt::get(cct->int64Ty, 0);
+                Value* argParentCreate[] = {nChildCTID, consZero, nGetTick};
+                debugLog("storeThreadCreateFunction @" << __LINE__);
+                CallInst* parentCreate = CallInst::Create(cct->storeThreadCreateFunction,
+                                                          ArrayRef<Value*>(argParentCreate, 3), "", ci);
+                MarkInstAsContechInst(parentCreate);
                 
                 Value* argCreate[] = {ctCilkStruct, nGetTick, nChildCTID, ci};
                 debugLog("cilkCreateFunction @" << __LINE__);
@@ -1223,16 +1237,30 @@ namespace llvm {
                 if (ctCilkStruct == NULL)
                 {
                     // Leave frame without creating a frame in this function
+                    
+                    Value* cinst = ctPass->castSupport(cct->voidPtrTy, ConstantInt::get(cct->int64Ty, 0), I);
+                    Value* argRest[] = {cinst};
+                    debugLog("cilkRestoreFunction @" << __LINE__);
+                    
+                    CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", ci);
+                    MarkInstAsContechInst(cilkRest);
+                    
                     break;
                 }
                 
-                BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
-                Instruction* iPt = sucB->getFirstInsertionPt();
+                
+                Instruction* iPt = ci;//sucB->getFirstInsertionPt();
                 
                 Value* argRest[] = {ctCilkStruct};
                 debugLog("cilkRestoreFunction @" << __LINE__);
                 
                 CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", iPt);
+                MarkInstAsContechInst(cilkRest);
+                
+                BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
+                iPt = sucB->getFirstInsertionPt();
+                
+                cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", iPt);
                 MarkInstAsContechInst(cilkRest);
             }
             break;
@@ -1252,6 +1280,13 @@ namespace llvm {
                 debugLog("cilkSyncFunction @" << __LINE__);
                 CallInst* cilkSync = CallInst::Create(cct->cilkSyncFunction, ArrayRef<Value*>(argSync, 1), "", iPt);
                 MarkInstAsContechInst(cilkSync);
+                
+                // Before syncing, restore to parent's frame
+                Value* argRest[] = {ctCilkStruct};
+                debugLog("cilkRestoreFunction @" << __LINE__);
+                
+                CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", ci);
+                MarkInstAsContechInst(cilkRest);
             }
             break;
             default:
