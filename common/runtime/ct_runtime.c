@@ -46,6 +46,7 @@ __thread pcontech_thread_info __ctThreadInfoList = NULL;
 __thread pcontech_id_stack __ctParentIdStack = NULL;
 __thread pcontech_id_stack __ctThreadIdStack = NULL;
 __thread pcontech_join_stack __ctJoinStack = NULL;
+__thread pcontech_cilk_sync __ctCilkLastFrame = NULL;
 
 #ifdef CT_OVERHEAD_TRACK
 // __thread ct_tsc_t __ctTotalThreadOverhead = 0;
@@ -395,6 +396,10 @@ void __ctQueueBuffer(bool alloc)
         return;
     }
     
+    
+    
+    //assert(__ctThreadLocalBuffer->data[0] != 0x13 && __ctThreadLocalBuffer->data[1] != 0x1);
+    
     // If we need to allocate a new buffer, and the current one is rather empty,
     //   then allocate one for the current, copy data and reuse the existing buffer
     if (alloc && 
@@ -403,6 +408,11 @@ void __ctQueueBuffer(bool alloc)
     {
         unsigned int allocSize = (__ctThreadLocalBuffer->pos + 0) & (~0);
         localBuffer = __ctThreadLocalBuffer;
+       
+        if (__ctThreadLocalBuffer->pos == 0)
+        {
+            return;
+        }
        
         // The following microbuffer optimization can potentially reorder create events,
         //   which still have an ordering requirement.
@@ -502,8 +512,14 @@ void __ctQueueBuffer(bool alloc)
     if (__ctQueuedBuffers == NULL)
     {
         __ctQueuedBuffers = __ctThreadLocalBuffer;
-        __ctQueuedBufferTail = __ctThreadLocalBuffer;
-        __ctThreadLocalBuffer = NULL;
+        if (__ctThreadLocalBuffer->next == NULL)
+        {
+            __ctQueuedBufferTail = __ctThreadLocalBuffer;
+        }
+        else
+        {
+            __ctQueuedBufferTail = __ctThreadLocalBuffer->next;
+        }
         pthread_cond_signal(&__ctQueueSignal);
     }
     else
@@ -517,9 +533,10 @@ void __ctQueueBuffer(bool alloc)
         {
             __ctQueuedBufferTail = __ctThreadLocalBuffer->next;
         }
-        __ctThreadLocalBuffer = NULL;
     }
     pthread_mutex_unlock(&__ctQueueBufferLock);
+    __ctThreadLocalBuffer = NULL;
+    
 #ifdef CT_OVERHEAD_TRACK
     qend = rdtsc();
 #endif
@@ -1215,6 +1232,7 @@ unsigned int __ctPeekIdStack(pcontech_id_stack *head)
 pcontech_cilk_sync __ctInitCilkSync()
 {
     pcontech_cilk_sync r = (pcontech_cilk_sync) malloc(sizeof(contech_cilk_sync));
+    //printf("Init: %d - %p\n", __ctThreadLocalNumber, r);
     if (r == NULL)
     {
         fprintf(stderr, "Internal Contech allocation failure at %d\n", __LINE__);
@@ -1223,6 +1241,7 @@ pcontech_cilk_sync __ctInitCilkSync()
     pthread_mutex_init(&r->l, NULL);
     r->parentId = __ctThreadLocalNumber;
     r->childHead = NULL;
+    r->parent = __ctCilkLastFrame;
     
     return r;
 }
@@ -1233,10 +1252,17 @@ void __ctRecordCilkFrame(pcontech_cilk_sync pccs, ct_tsc_t start, unsigned int c
     {
         if (__ctThreadLocalNumber != pccs->parentId)
         {
+            //printf("Switching - %d -> %d\n", __ctThreadLocalNumber, child);
+            // Restore the frame, if we are in the fall through case, whereby the same thread
+            //   is sequentially executing each cilk_spawn
             __ctRestoreCilkFrame(pccs);
         }
-        __ctStoreThreadCreate(child, 0, start);
+        // The parent create is promoted to occur before the setjmp call
+        //__ctStoreThreadCreate(child, 0, start);
     }
+    __ctCilkLastFrame = pccs;
+    
+    //assert(retVal == 0 || __ctThreadLocalBuffer == (pct_serial_buffer)&initBuffer || __ctThreadLocalBuffer->pos == 0);
     
     __ctQueueBuffer(true);
     // RetVal comes from setjmp
@@ -1257,11 +1283,17 @@ void __ctRecordCilkFrame(pcontech_cilk_sync pccs, ct_tsc_t start, unsigned int c
         pcis->next = pccs->childHead;
         pccs->childHead = pcis;
         pthread_mutex_unlock(&pccs->l);
-        printf("Child create: %d\n", child);
+        //printf("Child create: %d (from %d) - %p\n", child, pccs->parentId, pccs);
         __ctStoreThreadCreate(pccs->parentId, 1, start);
+        __ctQueueBuffer(true); // HACK!
     }
     else
     {
+        if (__ctThreadLocalBuffer == (pct_serial_buffer)&initBuffer)
+        {
+            __ctAllocateLocalBuffer();
+        }
+        //printf("Switch on frame - %d -> %d - %p\n", __ctThreadLocalNumber, pccs->parentId, pccs);
         __ctThreadLocalNumber = pccs->parentId;
     }
     
@@ -1271,20 +1303,28 @@ void __ctRecordCilkFrame(pcontech_cilk_sync pccs, ct_tsc_t start, unsigned int c
 
 void __ctRecordCilkSync(pcontech_cilk_sync pccs)
 {
+    //printf("Attempt sync - %d - %p\n", __ctThreadLocalNumber, pccs);
+    if (pccs == NULL) return;
+    if (__ctThreadLocalNumber != pccs->parentId)
+    {
+        __ctRestoreCilkFrame(pccs);
+    }
+    
     if (pccs != NULL &&
         __ctThreadLocalNumber == pccs->parentId)
     {
         pcontech_id_stack pcis = pccs->childHead;
         pcontech_id_stack t = NULL;
-        
+        pthread_mutex_lock(&pccs->l);
         while (pcis != NULL)
         {
-            printf("Join: %d\n", pcis->id);
+            //printf("Join: %d - %p\n", pcis->id, pccs);
             __ctStoreThreadJoinInternal(false, pcis->id, rdtsc());
             t = pcis;
             pcis = pcis->next;
             free(t);
         }
+        pthread_mutex_unlock(&pccs->l);
         
         pccs->childHead = NULL;
         //free(pccs);
@@ -1292,26 +1332,73 @@ void __ctRecordCilkSync(pcontech_cilk_sync pccs)
     }
 }
 
+void __ctCilkPromoteParent(pcontech_cilk_sync pccs)
+{
+    if (pccs != NULL)
+    {
+        if (__ctThreadLocalNumber != pccs->parentId)
+        {
+            __ctQueueBuffer(true);
+        }
+        __ctThreadLocalNumber = pccs->parentId;
+        __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+    }
+    else
+    {
+        __ctQueueBuffer(true);
+    }
+}
+
+//
+// __ctRestoreCilkFrame - Called before __cilkrts_leave_frame
+//     This indicates to Cilk that the thread is leaving the current stack frame and may
+//     be available to execute a different frame.
+//
 void __ctRestoreCilkFrame(pcontech_cilk_sync pccs)
 {
+    // Cilk may consume threads that are returning from the spawn, but before they reach
+    //   the parent context.  The Cilk last frame enables Contech to retain this information
+    //   and thereby properly exit this "leaf" thread.
+    if (pccs == NULL)
+    {
+        pccs = __ctCilkLastFrame;
+        //printf("NuE: %d - %p\n", __ctThreadLocalNumber, pccs);
+    }
+    
     if (pccs != NULL)
     {
         if (pccs->parentId == __ctThreadLocalNumber)
         {
-            assert(pccs->childHead == NULL);
+            //printf("NE: %d - %p\n", __ctThreadLocalNumber, pccs);
+            __ctCilkLastFrame = pccs->parent;
+            __ctQueueBuffer(true); // ?
+            /*assert(pccs->childHead == NULL);
             free(pccs);
-            pccs = NULL;
+            pccs = NULL;*/
         }
-        else
+        else if (pccs->childHead != NULL)
         {
-            printf("Exit: %d\n", __ctThreadLocalNumber);
+            pthread_mutex_lock(&pccs->l);
+            pcontech_id_stack pcis = pccs->childHead;
+            pcontech_id_stack t = NULL;
+            
+            while (pcis != NULL)
+            {
+                if (pcis->id == __ctThreadLocalNumber) break;
+                t = pcis;
+                pcis = pcis->next;
+            }
+            pthread_mutex_unlock(&pccs->l);
+            assert(pcis != NULL);
+            __ctCilkLastFrame = NULL;
+            //printf("Exit: %d (%d) - %p\n", __ctThreadLocalNumber, pccs->parentId, pccs);
             __ctStoreThreadJoinInternal(true, pccs->parentId, rdtsc());
             __ctQueueBuffer(true);
             __ctThreadLocalNumber = pccs->parentId;
             __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
             __sync_fetch_and_add(&__ctThreadExitNumber, 1);
             
-            __ctRecordCilkSync(pccs); // HACK
+            //__ctRecordCilkSync(pccs); // HACK
         }
     }
     else

@@ -55,6 +55,7 @@ typedef struct _contech_join_stack {
 typedef struct _contech_cilk_sync {
     pthread_mutex_t l;
     unsigned int parentId;
+    struct _contech_cilk_sync* parent;
     pcontech_id_stack childHead;
 } contech_cilk_sync, *pcontech_cilk_sync;
 
@@ -141,6 +142,7 @@ extern __thread pcontech_thread_info __ctThreadInfoList;
 extern __thread pcontech_id_stack __ctParentIdStack;
 extern __thread pcontech_id_stack __ctThreadIdStack;
 extern __thread pcontech_join_stack __ctJoinStack;
+extern __thread pcontech_cilk_sync __ctCilkLastFrame;
 
 extern unsigned long long __ctGlobalOrderNumber;
 extern unsigned int __ctThreadGlobalNumber;
