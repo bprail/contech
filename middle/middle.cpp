@@ -256,9 +256,10 @@ reset_middle:
             {
                 activeContech.createBasicBlockContinuation();
                 
-                if (DEBUG) {fprintf(stderr, "%s -> %s via Basic Block\n", 
-                                            activeT->getTaskId().toString().c_str(),
-                                            activeContech.activeTask()->getTaskId().toString().c_str());}
+                if (DEBUG) {fprintf(stderr, "%s (%d) -> %s via Basic Block (%d)\n", 
+                                            activeT->getTaskId().toString().c_str(), activeT->getType(),
+                                            activeContech.activeTask()->getTaskId().toString().c_str(),
+                                            event->bb.basic_block_id);}
                 
                 // Is the current active task a complete join?
                 if (activeT->getType() == task_type_join &&
@@ -906,6 +907,12 @@ reset_middle:
         //displayContechEventStats();
     }
     
+    // TODO: Other memory cleanup here (in, out):
+    /*
+    ==1157==    at 0x480831B: operator new(unsigned long) (vg_replace_malloc.c:319)
+==1157==    by 0x4189F1: contech::EventQ::registerEventList(_ct_file*) (eventQ.cpp:75)
+==1157==    by 0x40A481: main (middle.cpp:48)
+    */
     close_ct_file(out);
     
     return 0;
