@@ -9,7 +9,7 @@
 #include <string>
 #include <ct_event_st.h>
 
-#define DEBUG_PRINT_CALLINST
+//#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
     #define debugLog(s) errs() << s << "\n"
 #else
