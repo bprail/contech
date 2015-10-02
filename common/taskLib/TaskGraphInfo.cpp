@@ -116,8 +116,9 @@ void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
 
 BasicBlockInfo& TaskGraphInfo::getBasicBlockInfo(uint bbid)
 {
-    BasicBlockInfo bbi;
+    static BasicBlockInfo bbi;
+    bbi.lineNumber = ~0x0;
     auto it = bbInfo.find(bbid);
-    //if (it == bbInfo.end()) return bbi;
+    if (it == bbInfo.end()) return bbi;
     return it->second;
 }
