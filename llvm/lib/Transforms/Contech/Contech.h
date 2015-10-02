@@ -93,7 +93,6 @@ namespace llvm {
         Constant* storeBasicBlockFunction;
         Constant* storeBasicBlockCompFunction;
         Constant* storeMemOpFunction;
-        Constant* threadInitFunction;
         Constant* allocateBufferFunction;
         Constant* checkBufferFunction;
         Constant* storeThreadCreateFunction;
