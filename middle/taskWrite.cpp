@@ -58,8 +58,10 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
     Context tgt = context[id];
     Task* last;
     
-    for (Task* t : tgt.tasks)
+    //for (Task* t : tgt.tasks)
+    for (auto it : tgt.tasks)
     {
+        Task* t = it.second;
         last = t;
         printf("%llx  ", t->getTaskId());
     }
@@ -101,8 +103,10 @@ void identifyMaxTaskPerContext(map<ContextId, Context> &context)
         uint64_t maxBBCount = 0;
         Task* maxBBTask = NULL;
         
-        for (Task* t : tgt.tasks)
+        //for (Task* t : tgt.tasks)
+        for (auto it : tgt.tasks)
         {
+            Task* t = it.second;
             switch(t->getType())
             {
                 case task_type_basic_blocks:
@@ -156,6 +160,8 @@ void updateContextTaskList(Context &c)
     
     bool exited = (c.endTime != 0);
     
+    return;
+#if 0    
     // TODO: Should we 'cache' getType() or can the compiler do this?
     //   task_type tType ...
     
@@ -206,6 +212,7 @@ void updateContextTaskList(Context &c)
             t = c.tasks.back();   
         }
     }
+    #endif
 }
 
 //

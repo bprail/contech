@@ -28,7 +28,8 @@ public:
 
     // Queue of tasks that are running in this contech but have not been written to file yet. These tasks may have incomplete data.
     // The front of the queue represents more recent tasks.
-    list<Task*> tasks;
+    //list<Task*> tasks;
+    map<TaskId, Task*> tasks;
 
     // Map of ContextId -> TaskId, which task created which context
     map<ContextId, TaskId> creatorMap;

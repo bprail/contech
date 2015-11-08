@@ -8,7 +8,8 @@ Context::Context()
 }
 
 // Returns the currently active task
-Task* Context::activeTask() { return this->tasks.front(); }
+//Task* Context::activeTask() { return this->tasks.front(); }
+Task* Context::activeTask() { return this->tasks.rbegin()->second; }
 
 //
 // Which of this context's tasks created cid
@@ -38,12 +39,16 @@ TaskId Context::getCreator(ContextId cid)
 bool Context::removeTask(Task* t)
 {
     // Probably better to use rbegin, but erase only takes iterators and not reverse iterators
-    for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
+    /*for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
     {
         if (*it == t) {tasks.erase(it); return true;}
-    }
+    }*/
     
-    return false;
+    auto it = tasks.find(t->getTaskId());
+    if (it == tasks.end()) return false;
+    tasks.erase(it);
+    
+    return true; // false;
 }
 
 Task* Context::getTask(TaskId tid)
@@ -51,11 +56,15 @@ Task* Context::getTask(TaskId tid)
     Task* r = NULL;
     
     // Probably better to use rbegin, but erase only takes iterators and not reverse iterators
-    for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
+    /*for (auto it = tasks.begin(), et = tasks.end(); it != et; ++it)
     {
         r = *it;
         if (r->getTaskId() == tid) {return r;}
-    }
+    }*/
+    
+    auto it = tasks.find(tid);
+    if (it == tasks.end()) return NULL;
+    return it->second;
     
     // Is it safe that r is equal to the last element in the list?
     return r;
@@ -111,7 +120,8 @@ Task* Context::createBasicBlockContinuation()
     continuation->addPredecessor(activeTask()->getTaskId());
 
     // Make the continuation active
-    tasks.push_front(continuation);
+    //tasks.push_front(continuation);
+    tasks[continuation->getTaskId()] = continuation;
 
     return continuation;
 }
@@ -153,7 +163,8 @@ Task* Context::createContinuation(task_type type, ct_tsc_t tStartTime, ct_tsc_t 
     continuation->addPredecessor(activeTask()->getTaskId());
 
     // Make the continuation active
-    tasks.push_front(continuation);
+    //tasks.push_front(continuation);
+    tasks[continuation->getTaskId()] = continuation;
 
     return continuation;
 }

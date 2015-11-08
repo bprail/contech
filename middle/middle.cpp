@@ -70,7 +70,7 @@ reset_middle:
     pthread_cond_init(&taskQueueCond, NULL);
     taskQueue = new deque<Task*>;
     int r = pthread_create(&backgroundT, NULL, backgroundTaskWriter, &out);
-    if (r != 0) parallelMiddle = false;
+    assert(r == 0);
     
     // Track the owners of sync primitives
     map<ct_addr_t, Task*> ownerList;
@@ -89,11 +89,13 @@ reset_middle:
     // Context 0 is special, since it is uncreated
     if (totalRanks > 1)
     {
-        context[0].tasks.push_front(new Task(0, task_type_create));
+        //context[0].tasks.push_front(new Task(0, task_type_create));
+        context[0].tasks[0] = new Task(0, task_type_create);
     }
     else
     {
-        context[0].tasks.push_front(new Task(0, task_type_basic_blocks));
+        //context[0].tasks.push_front(new Task(0, task_type_basic_blocks));
+        context[0].tasks[0] = new Task(0, task_type_basic_blocks);
     }
     context[0].hasStarted = true;
     
@@ -280,6 +282,8 @@ reset_middle:
                 //   lower bound
                 activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
                 activeContech.createBasicBlockContinuation();
+                activeContech.removeTask(activeT);
+                backgroundQueueTask(activeT);
                 updateContextTaskList(activeContech);
                 
                 activeT = activeContech.activeTask();
@@ -294,6 +298,8 @@ reset_middle:
             {
                 activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
                 activeContech.createBasicBlockContinuation();
+                activeContech.removeTask(activeT);
+                backgroundQueueTask(activeT);
                 updateContextTaskList(activeContech);
                 
                 activeT = activeContech.activeTask();
@@ -326,7 +332,8 @@ reset_middle:
                     Task* taskCreate;
                     
                     context[(currentRank << 24) | 0].hasStarted = true;
-                    context[(currentRank << 24) | 0].tasks.push_front(new Task(childTaskId, task_type_basic_blocks));
+                    //context[(currentRank << 24) | 0].tasks.push_front(new Task(childTaskId, task_type_basic_blocks));
+                    context[(currentRank << 24) | 0].tasks[childTaskId] = new Task(childTaskId, task_type_basic_blocks);
                     context[(currentRank << 24) | 0].timeOffset = event->tc.start_time;
                     taskCreate = context[0].activeTask();
                     assert(taskCreate->getType() == task_type_create);
@@ -341,7 +348,10 @@ reset_middle:
                     
                     if (activeContech.activeTask()->getType() != task_type_create)
                     {
+                        Task* activeT = activeContech.activeTask();
                         taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
+                        activeContech.removeTask(activeT);
+                        backgroundQueueTask(activeT);
                     }
                     else
                     {
@@ -379,7 +389,8 @@ reset_middle:
 
                 // Start the first task for the new context
                 activeContech.hasStarted = true;
-                activeContech.tasks.push_front(new Task(newContechTaskId, task_type_basic_blocks));
+                //activeContech.tasks.push_front(new Task(newContechTaskId, task_type_basic_blocks));
+                activeContech.tasks[newContechTaskId] = new Task(newContechTaskId, task_type_basic_blocks);
                 activeContech.activeTask()->setStartTime(endTime);
 
                 // Record parent of this task
@@ -402,7 +413,10 @@ reset_middle:
         else if (event->event_type == ct_event_sync)
         {
             // Create a sync task
+            Task* activeT = activeContech.activeTask();
             Task* sync = activeContech.createContinuation(task_type_sync, startTime, endTime);
+            activeContech.removeTask(activeT);
+            backgroundQueueTask(activeT);
             ct_memory_op syncA;
             syncA.data = 0;
             syncA.addr = event->sy.sync_addr;
@@ -414,7 +428,7 @@ reset_middle:
             // Create a continuation
             activeContech.createBasicBlockContinuation();
             
-            // Make the sync dependent on whoever accessed the sync primitive last         
+            // Make the sync dependent on whomever accessed the sync primitive last         
             auto it = ownerList.find(syncA.data);
             if (it != ownerList.end() &&
                 event->sy.sync_type != ct_cond_wait&&
@@ -501,7 +515,10 @@ reset_middle:
                     
                     if (activeContech.activeTask()->getType() != task_type_join)
                     {
+                        Task* activeT = activeContech.activeTask();
                         taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                        activeContech.removeTask(activeT);
+                        backgroundQueueTask(activeT);
                     }
                     else
                     {
@@ -529,7 +546,10 @@ reset_middle:
                     Task* taskJoin;
                     if (activeContech.activeTask()->getType() != task_type_join)
                     {
+                        Task* activeT = activeContech.activeTask();
                         taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
+                        activeContech.removeTask(activeT);
+                        backgroundQueueTask(activeT);
                     }
                     else
                     {
@@ -586,19 +606,27 @@ reset_middle:
                 Task* continuation;
                 if (myBarrier)
                 {
+                    Task* activeT = activeContech.activeTask();
                     // Create the continuation task (this is a special case, since this is a continuation of the barrier, which is not the active task)
                     // TODO This copies a lot of code from Context::createBasicBlockContinuation()
                     continuation = new Task(barrierTask->getTaskId().getNext(), task_type_basic_blocks);
                     activeContech.activeTask()->addSuccessor(continuation->getTaskId());
                     continuation->addPredecessor(activeContech.activeTask()->getTaskId());
                     // Barrier owner is responsible for making sure the barrier task gets added to the output file
-                    activeContech.tasks.push_front(barrierTask);
+                    //activeContech.tasks.push_front(barrierTask);
+                    activeContech.tasks[barrierTask->getTaskId()] = barrierTask;
                     // Make it the active task for this context
-                    activeContech.tasks.push_front(continuation);
+                    //activeContech.tasks.push_front(continuation);
+                    activeContech.tasks[continuation->getTaskId()] = continuation;
+                    activeContech.removeTask(activeT);
+                    backgroundQueueTask(activeT);
                 }
                 else
                 {
+                    Task* activeT = activeContech.activeTask();
                     continuation = activeContech.createBasicBlockContinuation();
+                    activeContech.removeTask(activeT);
+                    backgroundQueueTask(activeT);
                 }
 
                 // Set continuation as successor of the barrier
@@ -879,9 +907,10 @@ reset_middle:
         
         //printf("%d\t%llx\t%llx\t%llx\n", p.first, c.timeOffset, c.startTime, c.endTime);
         
-        for (Task* t : c.tasks)
+        //for (Task* t : c.tasks)
+        for (auto t : c.tasks)
         {
-            backgroundQueueTask(t);
+            backgroundQueueTask(t.second);
         }
     }
     
