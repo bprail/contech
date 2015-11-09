@@ -248,6 +248,13 @@ public:
                         while ( it != parent->last && !it->isBasicBlockAction());
                         return *this;
                     }
+                    self_type& operator--()
+                    {
+                        if (it == parent->first) return *this;
+                        do { --it; }
+                        while ( it != parent->first && !it->isBasicBlockAction());
+                        return *this;
+                    }
                     reference operator*() { return *it; }
                     pointer operator->() { return it; }
                     bool operator==(const self_type& rhs) { return it == rhs.it; }
