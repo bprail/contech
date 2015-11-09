@@ -208,7 +208,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             }
             else
             {
-                unsigned char bbid_high = 0;
+                unsigned short bbid_high = 0;
                 fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
                 npe->bb.basic_block_id |= (bbid_high << 7);
                 if (npe->bb.basic_block_id >= bb_count)
@@ -620,6 +620,11 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         ced[cedPos].data0 = npe->bb.basic_block_id;
         ced[cedPos].data1 = npe->bb.len;
     }
+    else if (npe->event_type == ct_event_basic_block_info)
+    {
+        ced[cedPos].data0 = npe->bbi.basic_block_id;
+        ced[cedPos].data1 = npe->bbi.num_mem_ops;
+    }
     else
     {
         ced[cedPos].data0 = npe->mem.isAllocate;
@@ -657,7 +662,7 @@ void EventLib::dumpAndTerminate(ct_file *fptr)
     fprintf(stderr, "%llx - %d - %d - %llx - %d - %llx\n", 
                     fh, ferror(fh), feof(fh), ftell(fh), fread(&d, 1, 1, fh), buf.st_size);
     displayContechEventDebugInfo();
-    exit(1);
+    assert(0);
 }
 
 void EventLib::displayContechEventDiagInfo()
