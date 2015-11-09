@@ -6,19 +6,19 @@ import subprocess
 import shutil
 from util import *
 
-def main(parsec=False, nas=False):
+def main(parsec=False, nas=False, rodinia=False):
     
     # Find contech installation
     if os.environ.has_key("CONTECH_HOME"):
         CONTECH_HOME = os.environ["CONTECH_HOME"]
         MIDDLE = os.path.join(CONTECH_HOME, "middle/middle")
-        TRACEVALIDATOR = os.path.join(CONTECH_HOME, "backend/TraceValidator/traceValidator")
         
         #PIN frontend
         PINPATH = os.path.join(CONTECH_HOME,"../pin/pin-2.13-62732-gcc.4.4.7-linux/")
         PINBIN = os.path.join(PINPATH,"pin")
         #PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/buffer_linux.so")
-        PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/contech_fe.so")
+        #PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/contech_fe.so")
+        PINTOOL = os.path.join(PINPATH,"source/tools/ManualExamples/obj-intel64/inscount_tls.so")
         
         # List of backend tools.
         # TODO: generalize this list so that the script can recognize these by name
@@ -62,6 +62,11 @@ def main(parsec=False, nas=False):
         parser.add_argument("benchmark", help="The parsec benchmark to run.")
         parser.add_argument("-i", "--input", help="The input size to use.", default="S")
         parser.add_argument("-n", "--numthreads", help="The number of threads to run.", default="4")
+    elif rodinia:
+        parser = argparse.ArgumentParser(description="Runs a rodinia benchmark that has been compiled with contech, generating a task graph and optionally running backend tools.")
+        parser.add_argument("benchmark", help="The parsec benchmark to run.")
+        parser.add_argument("-i", "--input", help="The input size to use.", default=False, action='store_true')
+        parser.add_argument("-n", "--numthreads", help="The number of threads to run.", default="4")
     else:
         parser = argparse.ArgumentParser(description="Runs benchmark that has been compiled with contech, generating a task graph and optionally running backend tools.")
         parser.add_argument("benchmark", help="The executable to run.")
@@ -79,6 +84,8 @@ def main(parsec=False, nas=False):
     name = os.path.basename(args.benchmark)
     if parsec or nas:
         taskgraphBasename = "{}_{}_{}.taskgraph".format(name, args.numthreads, args.input)
+    elif rodinia:
+        taskgraphBasename = "rodinia_{}_{}.taskgraph".format(name, args.numthreads)
     else:
         taskgraphBasename = "{}.taskgraph".format(name)
     
@@ -117,7 +124,7 @@ def main(parsec=False, nas=False):
                        "-d", CONTECH_OUTDIR,
                        "-n", args.numthreads,
                        "-i", args.input,
-                       "-s", '"%(time)s %(PINBIN)s -t %(PINTOOL)s --"' % locals() 
+                       "-s", '"%(time)s %(PINBIN)s -follow_execv -t %(PINTOOL)s --"' % locals() 
                        ])  
             elif parsec:
                 pcall([
@@ -168,7 +175,7 @@ def main(parsec=False, nas=False):
             pcall([MIDDLE, tracefile, taskgraph])
             
         # Copy results back
-        shutil.copy(taskgraph, os.path.join(CONTECH_HOME, "middle/output"))
+        shutil.copy(taskgraph, os.path.join(CONTECH_HOME, "middle/output")) # TODO: restore to output
             
     else:
         # Use existing task graph
@@ -181,7 +188,7 @@ def main(parsec=False, nas=False):
             print_header("Running " + backend)
             with Timer(backend):
                 if backend == "stats":
-                    pcall([STATS, taskgraph])
+                    pcall([STATS, taskgraph, "1"]) # taskgraph, model ROI
                     
                 elif backend == "taskViz": 
                     print_header("Generating graph")
@@ -241,15 +248,23 @@ def main(parsec=False, nas=False):
                 elif "parhist" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/ParHist/output/", name + ".csv")
                     pcall([PARHIST, taskgraph, ">", output])
+                elif "taskStat" in backend:
+                    pcall([os.path.join(CONTECH_HOME, "backend/TaskStat/stats"), taskgraph])
                 elif "critPath" in backend:
                     # Three changes: output dir
                     #   Tsks file dir
                     #   Tsks file name
                     #   Also the limit parameter on the commandline
-                    output = os.path.join(CONTECH_HOME, "backend/CritPath/output_12", name + ".csv")
-                    tsks = "tsks/{}_{}_{}_12configs.tasks".format(name, args.numthreads, args.input)
+                    output = os.path.join(CONTECH_HOME, "backend/CritPath/output_lgf_ccf", name +  ".csv")
+                    #tsks = "tsks_200/{}_{}_{}_12configs_200x_10_All_buffers_taskCF.tasks".format(name, args.numthreads, args.input)
+                    #tsks = "tsks/{}_{}_{}_12configs_2x_10_All_buffers.tasks".format(name, args.numthreads, args.input)
+                    tsks = "tsks_lgf_ccf/{}_{}_{}_12configs_2x_10_All_buffers.tasks".format(name, args.numthreads, args.input)
+                    #tsks = "tsks_tcf/{}_{}_{}_12configs_2x_10_All_buffers_taskCF.tasks".format(name, args.numthreads, args.input)
+                    #tsks = "tsks_noCF/{}_{}_{}_12configs_2x_10_All_buffers_noCF.tasks".format(name, args.numthreads, args.input)
                     tsks = os.path.join(CONTECH_HOME, "backend/CritPath/", tsks)
                     pcall([os.path.join(CONTECH_HOME, "backend/CritPath/critPath"), taskgraph, tsks, " >", output])
+                elif "bbTime" in backend:
+                    pcall([os.path.join(CONTECH_HOME, "backend/BasicBlockTime/bbTime"), taskgraph])
                 elif "falseShare" in backend:
                     output = os.path.join(CONTECH_HOME, "backend/FalseShare/output/", name + ".csv")
                     pcall([FSHARE, taskgraph, ">", output])    
