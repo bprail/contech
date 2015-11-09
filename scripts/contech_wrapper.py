@@ -23,10 +23,6 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
     # Set locations of clang, opt, and the contech pass
     if os.environ.has_key("CONTECH_HOME"):
         CONTECH_HOME = os.environ["CONTECH_HOME"]
-        #CLANG = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/bin/clang"
-        #CLANGPP = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/bin/clang++"
-        #OPT = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/bin/opt"
-        CT_FILE = CONTECH_HOME + "/common/taskLib/ct_file_C.o"
         if os.environ.has_key("CONTECH_LLVM_HOME"):
             CONTECH_LLVM_HOME = os.environ["CONTECH_LLVM_HOME"]
             LLVMCONTECH = CONTECH_LLVM_HOME + "/lib/LLVMContech.so"
@@ -34,11 +30,8 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             CLANGPP = CLANG + "++"
             OPT = CONTECH_LLVM_HOME + "/bin/opt"
         else:
-            LLVMCONTECH = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMContech.so"
-            CLANG = "clang"
-            CLANGPP = "clang++"
-            OPT = "opt"
-        LLVMHAMMER = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMHammer.so"
+            ""
+        #LLVMHAMMER = CONTECH_HOME + "/llvm_fe_3.2/build/Release+Asserts/lib/LLVMHammer.so"
         #RUNTIME = CONTECH_HOME + "/common/runtime/libct_runtime.a"
         if markOnly:
             # Use the .o file so that LLVM does not optimize away the marker calls
@@ -152,7 +145,9 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
         elif "-lmpi" == arg[0:5]:
             MPI = True
             CFLAGS = CFLAGS + " " + arg
-
+        elif "-fcilkplus" == arg:
+            CFLAGS = CFLAGS + " " + arg + " "
+            CC = CC + "-cilk"
         # Combine other args into CFLAGS
         else:
             CFLAGS = CFLAGS + " " + arg
@@ -313,8 +308,9 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     pcall([CC, CFLAGS, "-c -o", out + "_ct.o", out + "_ct_inline.bc"])
                     pcall([CC, out + "_ct.o", CFLAGS, "-o", out, "-lpthread", "contech_state.o"])
                 else:
-                    pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-lrt", "-flto", "-lpthread", "contech_state.o"])
-                        
+                    #Cilk runtime requires -ldl?
+                    #Contech runtime requires -lrt and -lpthread
+                    pcall([CC, RUNTIME, ofiles, CFLAGS, "-o", out, "-lrt", "-ldl", "-flto", "-lpthread", "contech_state.o"])
         else:
             passThrough(CC)
 
