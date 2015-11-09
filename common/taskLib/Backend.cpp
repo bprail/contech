@@ -8,6 +8,7 @@ void Backend::initBackend(TaskGraphInfo*) {}
 SimpleBackendWrapper::SimpleBackendWrapper(char* f, Backend* b) : backend(b)
 {
     tg = TaskGraph::initFromFile(f);
+    assert(tg != NULL);
 }
 
 void SimpleBackendWrapper::runBackend()
