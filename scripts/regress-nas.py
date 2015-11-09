@@ -44,7 +44,7 @@ def regressContech(inputs, numthreads, benchmarks):
             x = compilationTimeCompare(b, input)
             compileJobIds.append(x)
             util.waitForJobs(x)
-    time.sleep(1)    #Wait for files to be copied back
+    time.sleep(10)    #Wait for files to be copied back
     buildRoot = scrape_build.processAll([util.getFileNameForJob(j) for j in compileJobIds])
     
     # Run the benchmarks
@@ -76,7 +76,7 @@ def compilationTimeCompare(benchmark, input):
     script += test.format(benchmark, label.format(benchmark+"-llvm"), label.format(benchmark+"-contech"), input)
     
 #     print script
-    return util.quicksub(name="timed_compilation_{}".format(benchmark), code=script, queue="newpasta")
+    return util.quicksub(name="timed_compilation_{}".format(benchmark), code=script, resources=["nodes=1:ppn=1,pmem=1gb"], queue="newpasta")
 
 def nativeRun(benchmark, n, input):
     PARSEC_HOME = util.findParsecInstall()
@@ -92,7 +92,7 @@ def nativeRun(benchmark, n, input):
     script = script.format(benchmark, n, input)
     jobName = "llvm_{}_{}_{}".format(input,  n, benchmark)
     print jobName
-    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24"], queue="newpasta")
+    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24,pmem=1gb"], queue="newpasta")
     
 def statsRun(benchmark, n, input, option):
        
@@ -121,7 +121,7 @@ def statsRun(benchmark, n, input, option):
     script = script.format(benchmark, n, input, options[option])
     jobName = "{}_{}_{}_{}".format(option, input,  n, benchmark)
     print jobName
-    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24"], queue="newpasta")
+    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24,pmem=1gb"], queue="newpasta")
     
     
 if __name__ == "__main__":
