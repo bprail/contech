@@ -18,6 +18,7 @@ def main():
     parser.add_argument("-i", "--inputs", help="The input sets to run", default="simsmall simmedium simlarge") 
     parser.add_argument("-n", "--numthreads", help="The number of threads to run.", default="16")
     parser.add_argument("-b", "--benchmarks", help="The benchmarks to run", default="")
+    parser.add_argument("-r", "--run_only", help="Only run, do not compile", default=False, action='store_true')
     args = parser.parse_args()
     if args.benchmarks == "":
         args.benchmarks = util.Benchmarks.all
@@ -25,14 +26,15 @@ def main():
         args.benchmarks = args.benchmarks.split(" ")
     args.inputs = args.inputs.split(" ")
     
-    regressContech(inputs=args.inputs, numthreads=args.numthreads, benchmarks=args.benchmarks)
+    regressContech(inputs=args.inputs, numthreads=args.numthreads, benchmarks=args.benchmarks, ro=args.run_only)
 
-def regressContech(inputs, numthreads, benchmarks):
+def regressContech(inputs, numthreads, benchmarks, ro):
 
     # Rebuild benchmarks
-    compileJobIds = [compilationTimeCompare(b) for b in benchmarks]
-    util.waitForJobs(compileJobIds)
-    buildRoot = scrape_build.processAll([util.getFileNameForJob(j) for j in compileJobIds])
+    if ro == False:
+        compileJobIds = [compilationTimeCompare(b) for b in benchmarks]
+        util.waitForJobs(compileJobIds)
+        buildRoot = scrape_build.processAll([util.getFileNameForJob(j) for j in compileJobIds])
     
     # Run the benchmarks
     os.environ["TIME"] = '{"real":%e, "user":%U, "sys":%S, "mem":%M }'
@@ -63,7 +65,7 @@ def compilationTimeCompare(benchmark):
     script += test.format(benchmark, label.format(benchmark+"-llvm"), label.format(benchmark+"-contech"))
     
 #     print script
-    return util.quicksub(name="timed_compilation_{}".format(benchmark), code=script, queue="newpasta")
+    return util.quicksub(name="timed_compilation_{}".format(benchmark), code=script, resources=["nodes=1:ppn=1,pmem=1gb"], queue="newpasta")
 
 def nativeRun(benchmark, n, input):
       
@@ -75,7 +77,7 @@ def nativeRun(benchmark, n, input):
     script = script.format(benchmark, n, input)
     jobName = "llvm_{}_{}_{}".format(input,  n, benchmark)
     print jobName
-    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24"], queue="newpasta")
+    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24,pmem=1800mb"], queue="newpasta")
     
 def statsRun(benchmark, n, input, option):
        
@@ -104,7 +106,7 @@ def statsRun(benchmark, n, input, option):
     script = script.format(benchmark, n, input, options[option])
     jobName = "{}_{}_{}_{}".format(option, input,  n, benchmark)
     print jobName
-    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24"], queue="newpasta")
+    return util.quicksub(name=jobName, code=script, resources=["nodes=1:ppn=24,pmem=1800mb"], queue="newpasta")
     
     
 if __name__ == "__main__":
