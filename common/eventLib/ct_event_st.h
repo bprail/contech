@@ -62,7 +62,6 @@ enum _ct_sync_type {
 typedef enum _ct_sync_type ct_sync_type;
 
 #define BBI_FLAG_CONTAIN_CALL 0x1
-
 #define BBI_FLAG_MEM_DUP 0x2
 
 //
