@@ -8,8 +8,8 @@ class Benchmarks:
     parsecApps = ["blackscholes", "bodytrack", "ferret", "fluidanimate", "freqmine", "swaptions", "x264"] # Blacklist: facesim, raytrace, vips
     parsecKernels = ["canneal", "dedup", "streamcluster"]
     # List of all splash2 benchmarks
-    splash2Apps = ["barnes", "fmm", "ocean_cp", "ocean_ncp", "radiosity", "raytrace", "volrend", "water_nsquared", "water_spatial"]
-    splash2Kernels = ["cholesky", "fft", "lu_cb", "lu_ncb", "radix"]
+    splash2Apps = ["raytrace", "water_nsquared", "barnes", "fmm", "ocean_cp", "ocean_ncp", "radiosity", "volrend", "water_spatial"]
+    splash2Kernels = ["radix", "cholesky", "fft", "lu_cb", "lu_ncb"]
     # Splash 2 benchmarks need to be explicitly named
     splash2Apps = map(lambda b: "splash2x." + b, splash2Apps) 
     splash2Kernels = map(lambda b: "splash2x." + b, splash2Kernels) 
@@ -17,7 +17,8 @@ class Benchmarks:
     splash2 = splash2Apps + splash2Kernels
     all = parsec + splash2
     #nas = ["bt", "cg", "dc", "ep", "ft", "is", "lu", "mg", "sp"] #, "ua" <- does not terminate
-    nas = ["cg", "ep", "ft", "is", "mg"]
+    nas = ["mg", "cg", "ep", "ft", "is"]
+    rodinia = ["bfs", "btree", "hotspot", "lavaMD", "leukocyte", "lud", "nn", "nw", "particlefilter", "pathfinder", "srad"]
 
 def print_header(text):
     print '\033[92m' + text + '\033[0m'
