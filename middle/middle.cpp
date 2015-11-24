@@ -350,8 +350,11 @@ reset_middle:
                     {
                         Task* activeT = activeContech.activeTask();
                         taskCreate = activeContech.createContinuation(task_type_create, startTime, endTime);
-                        activeContech.removeTask(activeT);
-                        backgroundQueueTask(activeT);
+                        if (activeT->getType() == task_type_basic_blocks)
+                        {
+                            activeContech.removeTask(activeT);
+                            backgroundQueueTask(activeT);
+                        }
                     }
                     else
                     {
@@ -517,8 +520,11 @@ reset_middle:
                     {
                         Task* activeT = activeContech.activeTask();
                         taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
-                        activeContech.removeTask(activeT);
-                        backgroundQueueTask(activeT);
+                        if (activeT->getType() == task_type_basic_blocks)
+                        {
+                            activeContech.removeTask(activeT);
+                            backgroundQueueTask(activeT);
+                        }
                     }
                     else
                     {
@@ -548,8 +554,11 @@ reset_middle:
                     {
                         Task* activeT = activeContech.activeTask();
                         taskJoin = activeContech.createContinuation(task_type_join, startTime, endTime);
-                        activeContech.removeTask(activeT);
-                        backgroundQueueTask(activeT);
+                        if (activeT->getType() == task_type_basic_blocks)
+                        {
+                            activeContech.removeTask(activeT);
+                            backgroundQueueTask(activeT);
+                        }
                     }
                     else
                     {
@@ -618,15 +627,21 @@ reset_middle:
                     // Make it the active task for this context
                     //activeContech.tasks.push_front(continuation);
                     activeContech.tasks[continuation->getTaskId()] = continuation;
-                    activeContech.removeTask(activeT);
-                    backgroundQueueTask(activeT);
+                    if (activeT->getType() == task_type_basic_blocks)
+                    {
+                        activeContech.removeTask(activeT);
+                        backgroundQueueTask(activeT);
+                    }
                 }
                 else
                 {
                     Task* activeT = activeContech.activeTask();
                     continuation = activeContech.createBasicBlockContinuation();
-                    activeContech.removeTask(activeT);
-                    backgroundQueueTask(activeT);
+                    if (activeT->getType() == task_type_basic_blocks)
+                    {
+                        activeContech.removeTask(activeT);
+                        backgroundQueueTask(activeT);
+                    }
                 }
 
                 // Set continuation as successor of the barrier
@@ -870,7 +885,11 @@ reset_middle:
             ct_tsc_t roiTime = event->roi.start_time - activeContech.timeOffset;
             activeT->setEndTime(roiTime);
             activeContech.createBasicBlockContinuation();
-            updateContextTaskList(activeContech);
+            if (activeT->getType() == task_type_basic_blocks)
+            {
+                activeContech.removeTask(activeT);
+                backgroundQueueTask(activeT);
+            }
             
             activeT = activeContech.activeTask();
             TaskId tid = activeT->getTaskId();
