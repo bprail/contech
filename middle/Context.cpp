@@ -44,6 +44,12 @@ bool Context::removeTask(Task* t)
         if (*it == t) {tasks.erase(it); return true;}
     }*/
     
+    if (t->getType() == task_type_join)
+    {
+        auto tjit = joinCountMap.find(t->getTaskId());
+        assert(tjit == joinCountMap.end() || tjit->second == 0);
+    }
+    
     auto it = tasks.find(t->getTaskId());
     if (it == tasks.end()) return false;
     tasks.erase(it);
@@ -87,6 +93,14 @@ Task* Context::childExits(TaskId childId)
         Task* r = it->second;
         joinMap.erase(it);
         joinCountMap[r->getTaskId()] --;
+        
+        if (tasks.find(r->getTaskId()) == tasks.end())
+        {
+            printf("Child exiting on task that has already been removed: %s at %d\n", 
+                r->getTaskId().toString().c_str(), joinCountMap[r->getTaskId()]);
+            assert(0);
+        }
+        
         return r;
     }
 }
