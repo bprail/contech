@@ -1,4 +1,5 @@
 #include "Context.hpp"
+#include "taskWrite.hpp"
 
 using namespace contech;
 
@@ -142,11 +143,12 @@ Task* Context::createBasicBlockContinuation()
 
 Task* Context::createContinuation(task_type type, ct_tsc_t tStartTime, ct_tsc_t tEndTime)
 {
+    Task* bbContinue = NULL;
     assert(type != task_type_basic_blocks);
     //assert(activeTask()->getType() == task_type_basic_blocks);
     if (activeTask()->getType() != task_type_basic_blocks)
     {
-        createBasicBlockContinuation();
+        bbContinue = createBasicBlockContinuation();
     }
     
     // This context has not exited
@@ -180,5 +182,11 @@ Task* Context::createContinuation(task_type type, ct_tsc_t tStartTime, ct_tsc_t 
     //tasks.push_front(continuation);
     tasks[continuation->getTaskId()] = continuation;
 
+    if (bbContinue != NULL)
+    {
+        removeTask(bbContinue);
+        backgroundQueueTask(bbContinue);
+    }
+    
     return continuation;
 }

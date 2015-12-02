@@ -40,7 +40,6 @@ public:
     
     // Has this contech started running?
     bool hasStarted = false;
-    bool hasExited = false;
 
     // The absolute time when this contech was created.
     // -For contech 0, this must be 0 (the start of the first contech marks the beginning of absolute time)

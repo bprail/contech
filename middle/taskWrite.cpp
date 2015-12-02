@@ -56,18 +56,21 @@ void backgroundQueueTask(Task* t)
 void displayContextTasks(map<ContextId, Context> &context, int id)
 {
     Context tgt = context[id];
-    Task* last;
+    Task* last = NULL;
     
     //for (Task* t : tgt.tasks)
     for (auto it : tgt.tasks)
     {
         Task* t = it.second;
-        last = t;
+        if (last == NULL)
+        {
+            last = t;
+        }
         printf("%llx  ", t->getTaskId());
     }
     if (last != NULL)
     {
-        cout << last->toString() << endl;
+        cout << endl << last->toString() << endl;
         
         if (last->getType() == task_type_join)
         {
@@ -145,6 +148,31 @@ void identifyMaxTaskPerContext(map<ContextId, Context> &context)
         cout << maxBBTask->getTaskId().toString() << " - " << maxBBCount << endl;
         cout << it->first << " C: " << countC << " J: " << countJ << " S: " << countSyn;
         cout << " B: " << countBar << " BB: " << countBB << endl;
+    }
+}
+
+void attemptBackgroundQueueTask(Task* t, Context &c)
+{
+    if (t->getType() == task_type_basic_blocks ||
+        t->getType() == task_type_create)
+    {
+        bool success = c.removeTask(t);
+        assert(success == true);
+        backgroundQueueTask(t);
+    }
+    else if (t->getType() == task_type_join)
+    {
+//        cout << t->getTaskId().toString() << " is join" << endl;
+        if (c.isCompleteJoin(t->getTaskId()))
+        {
+            bool success = c.removeTask(t);
+            assert(success == true);
+            backgroundQueueTask(t);   
+        }
+        else
+        {
+//            cout << "\t Is not complete\n";
+        }
     }
 }
 
