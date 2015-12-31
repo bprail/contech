@@ -210,7 +210,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             {
                 unsigned short bbid_high = 0;
                 fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
-                npe->bb.basic_block_id |= (bbid_high << 7);
+                npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 7);
                 if (npe->bb.basic_block_id >= bb_count)
                 {
                     fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);
