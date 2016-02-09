@@ -2,14 +2,15 @@
 //
 //                     The LLVM Compiler Infrastructure
 //
-// This file is distributed under the University of Illinois Open Source
-// License. See LICENSE.TXT for details.
+// This file is distributed under the University of Illinois Open Source License.
+//   And the license terms of Contech, see LICENSE.
 //
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "Contech"
 
-#include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
+//#include "llvm/Config/config.h"
 #if LLVM_VERSION_MAJOR==2
 #error LLVM Version 3.2 or greater required
 #else
@@ -177,7 +178,11 @@ namespace llvm {
 
         LLVMContext &ctx = M.getContext();
         #if LLVM_VERSION_MINOR>=5
+        #if LLVM_VERSION_MINOR>=7
+        currentDataLayout = &M.getDataLayout();
+        #else
         currentDataLayout = M.getDataLayout();
+        #endif
         #else
         currentDataLayout = new DataLayout(&M);
         #endif
@@ -999,13 +1004,7 @@ cleanup:
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
-            MDNode *N;
-            if (lineNum == 0 && (N = I->getMetadata("dbg"))) 
-            {
-                DILocation Loc(N);
-                
-                lineNum = Loc.getLineNumber();
-            }
+            lineNum = getLineNum(&*I);
         
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
@@ -1557,7 +1556,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     // getElemPtr 0, 0 -> arg 0 of type*
     
     Value* args[2] = {ConstantInt::get(cct.int32Ty, 0), ConstantInt::get(cct.int32Ty, 0)};
-    Instruction* ppid = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
+    Instruction* ppid = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
     MarkInstAsContechInst(ppid);
     
     Instruction* pid = new LoadInst(ppid, "ParentId", soloBlock);
@@ -1565,7 +1564,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     
     // getElemPtr 0, 1 -> arg 1 of type*
     args[1] = ConstantInt::get(cct.int32Ty, 1);
-    Instruction* parg = GetElementPtrInst::Create(addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
+    Instruction* parg = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
     MarkInstAsContechInst(parg);
     
     Instruction* argP = new LoadInst(parg, "Arg", soloBlock);
@@ -1755,6 +1754,42 @@ Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
     }
     
     return v;
+}
+
+GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, BasicBlock* B)
+{
+    #if LLVM_VERSION_MINOR<6
+    return GetElementPtrInst::Create(v, ar, tw, B);
+    #else
+    return GetElementPtrInst::Create(t, v, ar, tw, B);
+    #endif
+}
+
+GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I)
+{
+    #if LLVM_VERSION_MINOR<6
+    return GetElementPtrInst::Create(v, ar, tw, I);
+    #else
+    return GetElementPtrInst::Create(t, v, ar, tw, I);
+    #endif
+}
+
+int Contech::getLineNum(Instruction* I)
+{
+    #if LLVM_VERSION_MINOR<6
+    int lineNum = 0;
+    MDNode *N;
+    if (lineNum == 0 && (N = I->getMetadata("dbg"))) 
+    {
+        DILocation Loc(N);
+        
+        lineNum = Loc.getLineNumber();
+    }
+    return lineNum;
+    #else
+        
+    return 0;
+    #endif 
 }
 
 bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft)

@@ -7,7 +7,7 @@
 //#include "llvm/Module.h"
 
 #include <string>
-#include <ct_event_st.h>
+#include "ct_event_st.h"
 
 //#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
@@ -176,6 +176,9 @@ namespace llvm {
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);
+        int getLineNum(Instruction* I);
+        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, BasicBlock* B);
+        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I);
         Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
@@ -819,7 +822,7 @@ namespace llvm {
                 
                 // Add Store insts here
                 Value* gepArgs[2] = {ConstantInt::get(cct->int32Ty, 0), ConstantInt::get(cct->int32Ty, 0)};
-                Instruction* ppid = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
+                Instruction* ppid = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
                 MarkInstAsContechInst(ppid);
                 
                 debugLog("getThreadNumFunction @" << __LINE__);
@@ -830,7 +833,7 @@ namespace llvm {
                 MarkInstAsContechInst(stPPID);
                 
                 gepArgs[1] = ConstantInt::get(cct->int32Ty, 1);
-                Instruction* parg = GetElementPtrInst::Create(nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
+                Instruction* parg = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
                 MarkInstAsContechInst(parg);
                 
                 Instruction* stPARG = new StoreInst(ci->getArgOperand(1), parg, ci);
