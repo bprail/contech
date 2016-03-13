@@ -193,22 +193,13 @@ namespace llvm {
         }
     };
     
-    // Wrapper for cast
-    inline BasicBlock::iterator& convertInstToIter(Instruction* I)
-    {
-        //auto r = dyn_cast<BasicBlock::iterator>(I);
-        //assert(r != NULL);
-        
-        for (auto it = I->getParent()->begin(), et = I->getParent()->end(); it != et; ++it)
-        {
-            if (I == dyn_cast<Instruction>(it)) return it;
-        }
-        assert(0);
-    }
+    // Using a macro, although a function call would be preferred; however, a function call
+    //   has issues with the "initialization of non-const reference"
+    #define convertInstToIter(I) ((I)->getIterator())
     
     Instruction* convertIterToInst(BasicBlock::iterator& I)
     {
-        auto r = &*I;//dyn_cast<Instruction>(I);
+        auto r = &*I;
         assert(r != NULL);
         return r;
     }
