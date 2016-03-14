@@ -155,15 +155,7 @@ namespace llvm {
         FunctionType* funVoidI32I64I64Ty;
 
         LLVMContext &ctx = M.getContext();
-        #if LLVM_VERSION_MINOR>=5
-        #if LLVM_VERSION_MINOR>=7
         currentDataLayout = &M.getDataLayout();
-        #else
-        currentDataLayout = M.getDataLayout();
-        #endif
-        #else
-        currentDataLayout = new DataLayout(&M);
-        #endif
         cct.int8Ty = Type::getInt8Ty(ctx);
         cct.int32Ty = Type::getInt32Ty(ctx);
         cct.int64Ty = Type::getInt64Ty(ctx);
@@ -263,14 +255,6 @@ namespace llvm {
         funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
         cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
         
-        // This needs to be machine type here
-        //
-        #if LLVM_VERSION_MINOR>=5
-        // LLVM 3.5 removed module::getPointerSize() -> DataLayout::getPointerSize()
-        //   Let's find malloc instead, which takes size_t and size_t is the size we need
-        //auto mFunc = M.getFunction("malloc");
-        //FunctionType* mFuncTy = mFunc->getFunctionType();
-        //pthreadTy = mFuncTy->getParamType(0);
         if (currentDataLayout->getPointerSizeInBits() == 64)
         {
             cct.pthreadTy = cct.int64Ty;
@@ -281,18 +265,6 @@ namespace llvm {
             cct.pthreadTy = cct.int32Ty;
             cct.pthreadSize = 4;
         }
-        #else
-        if (M.getPointerSize() == llvm::Module::Pointer64)
-        {
-            cct.pthreadTy = cct.int64Ty;
-            cct.pthreadSize = 8;
-        }
-        else
-        {
-            cct.pthreadTy = cct.int32Ty;
-            cct.pthreadSize = 4;
-        }
-        #endif
         
         Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
         funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
@@ -1129,7 +1101,8 @@ cleanup:
             sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
             MarkInstAsContechInst(sbb);
         }
-        else {
+        else 
+        {
             Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
             MarkInstAsContechInst(bufV);
             baseBufValue = bufV;
@@ -1180,7 +1153,10 @@ cleanup:
             
             memOpPos ++;
             memOpCount++;
-            if (bi->first_op == NULL) bi->first_op = tMemOp;
+            if (bi->first_op == NULL) 
+            {
+                bi->first_op = tMemOp;
+            }
             else
             {
                 pllvm_mem_op t = bi->first_op;

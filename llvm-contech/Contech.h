@@ -879,7 +879,7 @@ namespace llvm {
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
-                    assert("WILL REPLACE INVOKE with CALL" && 0);
+                    //assert("WILL REPLACE INVOKE with CALL" && 0);
                 }
                 
                 debugLog("ompPopParentFunction @" << __LINE__);
@@ -939,16 +939,40 @@ namespace llvm {
                 MarkInstAsContechInst(callQBF);
                                                         
                 debugLog("kmpc_fork_call @" << __LINE__);
-                CallInst* nForkCall = CallInst::Create(ci->getCalledFunction(),
-                                                       ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
-                                                       ci->getName(), ci);
-                MarkInstAsContechInst(nForkCall);
+                if (isa<CallInst>(ci))
+                {
+                    CallInst* nForkCall = CallInst::Create(ci->getCalledFunction(),
+                                                           ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
+                                                           ci->getName(), ci);
+                    MarkInstAsContechInst(nForkCall);
+                    
+                    ci->replaceAllUsesWith(nForkCall);
+                    // Erase is dangerous, e.g. iPt could point to ci
+                    if (iPt == ci)
+                        iPt = nPushParent;
+                    ci->eraseFromParent();
+                    I = convertInstToIter(nForkCall);
+                }
+                else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
+                {
+                    InvokeInst* nForkCall = InvokeInst::Create(ii->getCalledFunction(),
+                                                           ii->getNormalDest(), ii->getUnwindDest(),
+                                                           ArrayRef<Value*>(cArg, 1 + ii->getNumArgOperands()),
+                                                           ii->getName(), ii);
+                    MarkInstAsContechInst(nForkCall);
+                    
+                    ii->replaceAllUsesWith(nForkCall);
+                    // Erase is dangerous, e.g. iPt could point to ci
+                    if (iPt == ii)
+                        iPt = nPushParent;
+                    ii->eraseFromParent();
+                    I = convertInstToIter(nForkCall);
+                }
+                else
+                {
+                    assert("Invalid OMP_FORK inst, not CALL, not INVOKE" && 0);
+                }
                 
-                ci->replaceAllUsesWith(nForkCall);
-                // Erase is dangerous, e.g. iPt could point to ci
-                if (iPt == ci)
-                    iPt = nPushParent;
-                ci->eraseFromParent();
                 delete [] cArg;
             }
             break;
