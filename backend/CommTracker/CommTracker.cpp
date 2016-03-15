@@ -236,6 +236,23 @@ CommTracker* CommTracker::fromFile(ct_file* taskGraphIn)
                         tracker->addAllocate(mem.addr, s.addr, uid, bbId);
                         break;
                     }
+                    
+                    case action_type_memcpy:
+                    {
+                        uint64_t dstAddr = mem.addr;
+                        ++ff;
+                        mem = *ff;
+                        uint64_t srcAddr = mem.addr;
+                        ++ff;
+                        mem = *ff;
+                        size_t cpySize = mem.addr;
+                        for (size_t i = 0; i < cpySize; i++)
+                        {
+                            tracker->addRead(srcAddr + i, 1, uid, bbId, pos);
+                            tracker->addWrite(dstAddr + i, 1, uid, bbId, pos);
+                        }
+                        break;
+                    }
 
                     default:
                     {
