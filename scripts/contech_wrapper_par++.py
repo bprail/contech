@@ -2,8 +2,8 @@
 
 # C++ Wrapper compiler for contech front end
 
-import contech_wrapper
+import contech_wrapper_par
 
-contech_wrapper.main(isCpp = True)
+contech_wrapper_par.main(isCpp = True)
 	
 
