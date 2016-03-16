@@ -1,0 +1,7 @@
+This directory is provides for the ongoing development of the Contech
+instrumentation pass as operates with LLVM 3.8+.
+
+As LLVM continues to evolve its APIs, the Contech pass has become increasingly
+brittle as it tries to target 3.2 through 3.7.  With 3.9, cmake will also
+be required and therefore this pass version will also have this requirement.
+
