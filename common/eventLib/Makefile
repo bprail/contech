@@ -11,11 +11,5 @@ all: $(PROJECT)
 $(PROJECT): $(OBJECTS)
 	ar rc $(PROJECT) $(OBJECTS)
 
-install: all
-	mkdir -p $(CONTECH_LLVM_HOME)/lib
-	mkdir -p $(CONTECH_LLVM_HOME)/include
-	cp $(PROJECT) $(CONTECH_LLVM_HOME)/lib
-	cp $(HEADERS) $(CONTECH_LLVM_HOME)/include
-
 clean:
 	rm $(PROJECT) $(OBJECTS)
