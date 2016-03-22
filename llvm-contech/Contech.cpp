@@ -944,6 +944,7 @@ cleanup:
         Value* basePosValue = NULL;
         Value* baseBufValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
+        const char* fileName;
         
         auto abadf = B.begin();
         aPhi = convertIterToInst(abadf);
@@ -958,7 +959,12 @@ cleanup:
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
-            lineNum = getLineNum(&*I);
+            if (lineNum == 0)
+            {
+                lineNum = getLineNum(&*I);
+                auto dis = (&*I)->getDebugLoc().getScope();
+                fileName = dyn_cast<DIScope>(dis)->getFilename().str().c_str();
+            }
         
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
@@ -1081,7 +1087,8 @@ cleanup:
         bi->lineNum = lineNum;
         bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
-        bi->fileName = M.getModuleIdentifier().data();
+        bi->fileName = fileName;
+        //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
         bi->critPathLen = getCriticalPathLen(B);
         
         //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
@@ -1725,29 +1732,13 @@ GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, c
 
 GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I)
 {
-    #if LLVM_VERSION_MINOR<6
-    return GetElementPtrInst::Create(v, ar, tw, I);
-    #else
     return GetElementPtrInst::Create(t, v, ar, tw, I);
-    #endif
 }
 
 int Contech::getLineNum(Instruction* I)
 {
-    #if LLVM_VERSION_MINOR<6
-    int lineNum = 0;
-    MDNode *N;
-    if (lineNum == 0 && (N = I->getMetadata("dbg"))) 
-    {
-        DILocation Loc(N);
-        
-        lineNum = Loc.getLineNumber();
-    }
-    return lineNum;
-    #else
-        
-    return 0;
-    #endif 
+    DILocation* dil = I->getDebugLoc();
+    return dil->getLine();
 }
 
 bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft)

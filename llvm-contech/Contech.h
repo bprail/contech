@@ -209,7 +209,6 @@ namespace llvm {
     //
     void MarkInstAsContechInst(Instruction* ii)
     {
-        //return;
         unsigned ctmd = ii->getParent()->getContext().getMDKindID("ContechInst");
         ii->setMetadata(ctmd, MDNode::get(ii->getParent()->getContext(), MDString::get(ii->getParent()->getContext(),"Contech")));
     }
