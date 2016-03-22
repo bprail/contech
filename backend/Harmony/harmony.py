@@ -10,9 +10,10 @@ import time
 import datetime
 import glob
 import numpy as np
+import matplotlib as matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
-import matplotlib as matplotlib
 import json
 import math
 import csv
