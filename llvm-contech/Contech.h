@@ -341,6 +341,7 @@ namespace llvm {
         // TODO: add dynamic check on function called
         if (f == NULL) 
         { 
+            // See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
             Value* v = ci->getCalledValue();
             f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)

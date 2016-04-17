@@ -421,6 +421,15 @@ namespace llvm {
         return tMemOp;
     }
     
+    //
+    // findSimilarMemoryInst
+    //
+    //   A key performance feature, this function will determine whether a given memory operation
+    //     is statically offset from another memory operation within that same basic block.  If so,
+    //     then the later operation's address can be omitted and computed after execution.
+    //   If such a pair is found, then this function will compute the static offset between the two
+    //     memory accesses.
+    //
     Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
     {
         vector<Value*> addrComponents;
@@ -1131,6 +1140,9 @@ cleanup:
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
 
+            // TSC_IN_BB - an optional research feature that adds a timestamp to every basic block
+            //   Including the timestamp slows overall execution and is at such a fine granularity
+            //   that many measurements can be meaningless.
 //#define TSC_IN_BB
 #ifdef TSC_IN_BB
             Instruction* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
@@ -1690,6 +1702,14 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
     return ret;
 }
     
+//
+// findCilkStructInBlock
+//
+//   This routine determines whether a Contech cilk struct has been created in the given basic block
+//     and therefore for that function.  If the struct is not present, then it can be inserted.  As
+//     Cilk can switch which thread is executing a frame, Contech's tracking information must be placed
+//     on the stack instead of in a thread-local as is used with pthreads and OpenMP.
+//
 Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
 {
     Value* v = NULL;
