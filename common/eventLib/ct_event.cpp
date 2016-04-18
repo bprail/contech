@@ -424,19 +424,19 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         
         case (ct_event_task_create):
         {
-            /*const int create_size = 28;
+            const int create_size = sizeof(npe->tc.start_time) +
+                                    sizeof(npe->tc.end_time) + 
+                                    sizeof(npe->tc.other_id) +
+                                    sizeof(npe->tc.approx_skew);
             uint8_t buf[create_size];
             int bytesConsume = 0;
             
             fread_check(buf, sizeof(uint8_t), create_size, fptr);
-            bytesConsume = unpack(buf, "ttlp", &npe->tc.start_time, &npe->tc.end_time, &npe->tc.other_id, &npe->tc.approx_skew);
-            assert(bytesConsume == create_size);*/
-            
-            fread_check(&npe->tc.start_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->tc.end_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->tc.other_id, sizeof(unsigned int), 1, fptr);
-            fread_check(&npe->tc.approx_skew, sizeof(long long), 1, fptr);
-            
+            bytesConsume = unpack(buf, "ttlp", &npe->tc.start_time, 
+                                               &npe->tc.end_time, 
+                                               &npe->tc.other_id, 
+                                               &npe->tc.approx_skew);
+            assert(bytesConsume == create_size);
         }
         break;
         
