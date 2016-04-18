@@ -22,7 +22,7 @@
 namespace llvm {
     class Contech;
     ModulePass* createContechPass();
-    
+
     typedef struct _llvm_mem_op {
         bool isWrite;
         bool isGlobal;
@@ -44,7 +44,7 @@ namespace llvm {
         //const char* fnName;
         const char* fileName;
     } llvm_basic_block, *pllvm_basic_block;
-    
+
     typedef enum _CONTECH_FUNCTION_TYPE {
         NONE,
         MAIN,
@@ -79,15 +79,15 @@ namespace llvm {
         CILK_SYNC,
         NUM_CONTECH_FUNCTION_TYPES
     } CONTECH_FUNCTION_TYPE;
-    
+
     typedef struct _llvm_function_map {
         const char* func_name;
         size_t str_len;
         CONTECH_FUNCTION_TYPE typeID;
     } llvm_function_map, *pllvm_function_map;
-    
+
     extern llvm_function_map functionsInstrument[];
-    
+
     typedef struct _ConstantsCT {
         Constant* storeBasicBlockFunction;
         Constant* storeBasicBlockCompFunction;
@@ -109,14 +109,14 @@ namespace llvm {
         Constant* checkBufferLargeFunction;
         Constant* getBufPosFunction;
         Constant* getBufFunction;
-        
+
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
         Constant* storeMemWriteMarkFunction;
 
         Constant* storeMPITransferFunction;
         Constant* storeMPIWaitFunction;
-        
+
         Constant* ompThreadCreateFunction;
         Constant* ompThreadJoinFunction;
         Constant* ompTaskCreateFunction;
@@ -126,19 +126,19 @@ namespace llvm {
         Constant* ctPeekParentIdFunction;
         Constant* ompProcessJoinFunction;
         Constant* ompGetNestLevelFunction;
-        
+
         Constant* ompGetParentFunction;
         Constant* ompPrepareTaskFunction;
         Constant* ompStoreInOutDepsFunction;
-        
+
         Constant* cilkInitFunction;
         Constant* cilkCreateFunction;
         Constant* cilkSyncFunction;
         Constant* cilkRestoreFunction;
         Constant* cilkParentFunction;
-        
+
         Constant* pthreadExitFunction;
-        
+
         Type* int8Ty;
         Type* int32Ty;
         Type* voidTy;
@@ -146,10 +146,10 @@ namespace llvm {
         Type* int64Ty;
         Type* pthreadTy;
         int pthreadSize;
-        
+
         unsigned ContechMDID;
     } ConstantsCT, *pConstantsCT;
-    
+
     //
     // Contech - First record every load or store in a program
     //
@@ -158,19 +158,18 @@ namespace llvm {
         static char ID; // Pass identification, replacement for typeid
         ConstantsCT cct;
         const DataLayout* currentDataLayout;
-        
+
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
-        
+
         Contech() : ModulePass(ID) {
         }
-        
+
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
         virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
-        void internalAddAllocate(BasicBlock& B);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
@@ -184,26 +183,26 @@ namespace llvm {
         Value* castSupport(Type*, Value*, Instruction*);
         Value* findCilkStructInBlock(BasicBlock& B, bool insert);
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
-        
+
         Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
-        
+
         virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-        
+
         }
     };
-    
+
     // Using a macro, although a function call would be preferred; however, a function call
     //   has issues with the "initialization of non-const reference"
     #define convertInstToIter(I) ((I)->getIterator())
-    
+
     Instruction* convertIterToInst(BasicBlock::iterator& I)
     {
         auto r = &*I;
         assert(r != NULL);
         return r;
     }
-    
+
     //
     // Add Debug info to an instruction to indicate that it has been added by Contech
     //
@@ -212,14 +211,14 @@ namespace llvm {
         unsigned ctmd = ii->getParent()->getContext().getMDKindID("ContechInst");
         ii->setMetadata(ctmd, MDNode::get(ii->getParent()->getContext(), MDString::get(ii->getParent()->getContext(),"Contech")));
     }
-    
+
     template<typename T>
     void insertMPITransfer(bool isSend, bool isBlocking, Value* startTime, T* ci, ConstantsCT* cct, Contech* ctPass)
     {
         Constant* cSend = ConstantInt::get(cct->int8Ty, isSend);
         Constant* cBlock = ConstantInt::get(cct->int8Ty, isBlocking);
         Value* reqArg = NULL;
-        
+
         if (isBlocking == true)
         {
             reqArg = ConstantPointerNull::get(cct->voidPtrTy);
@@ -228,7 +227,7 @@ namespace llvm {
         {
             reqArg = ctPass->castSupport(cct->voidPtrTy, ci->getArgOperand(6), ci);
         }
-        
+
         // Fortran sometimes passes with pointers instead of values
         Value* countArg = NULL;
         Value* destArg = NULL;
@@ -237,10 +236,10 @@ namespace llvm {
         {
             countArg = new LoadInst(ci->getArgOperand(1), "", ci);
             //MarkInstAsContechInst(countArg);
-            
+
             destArg = new LoadInst(ci->getArgOperand(3), "", ci);
             //MarkInstAsContechInst(destArg);
-            
+
             tagArg = new LoadInst(ci->getArgOperand(4), "", ci);
             //MarkInstAsContechInst(tagArg);
         }
@@ -250,37 +249,37 @@ namespace llvm {
             destArg = ci->getArgOperand(3);
             tagArg = ci->getArgOperand(4);
         }
-        
-        Value* argsMPIXF[] = {cSend, 
-                              cBlock, 
-                              countArg,  
+
+        Value* argsMPIXF[] = {cSend,
+                              cBlock,
+                              countArg,
                               ctPass->castSupport(cct->int32Ty, ci->getArgOperand(2), ci), // datatype, constant
-                              destArg, 
-                              tagArg, 
-                              ctPass->castSupport(cct->voidPtrTy, ci->getArgOperand(0), ci), 
+                              destArg,
+                              tagArg,
+                              ctPass->castSupport(cct->voidPtrTy, ci->getArgOperand(0), ci),
                               startTime,
                               reqArg};
-        
+
         errs() << "Adding MPI Transfer call\n";
-        
+
         // Need to insert after ci...
         CallInst* ciStore;
         if (isa<CallInst>(ci))
         {
-            ciStore = CallInst::Create(cct->storeMPITransferFunction, 
-                                                 ArrayRef<Value*>(argsMPIXF, 9), 
+            ciStore = CallInst::Create(cct->storeMPITransferFunction,
+                                                 ArrayRef<Value*>(argsMPIXF, 9),
                                                  "", ci);
             ci->moveBefore(ciStore);
         }
         else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
         {
-            ciStore = CallInst::Create(cct->storeMPITransferFunction, 
-                                                 ArrayRef<Value*>(argsMPIXF, 9), 
+            ciStore = CallInst::Create(cct->storeMPITransferFunction,
+                                                 ArrayRef<Value*>(argsMPIXF, 9),
                                                  "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
         }
         MarkInstAsContechInst(ciStore);
     }
-    
+
     template<typename T>
     void InsertSyncEvent(T* ci, BasicBlock::iterator &I, ConstantsCT* cct, Instruction* &iPt, bool isAcquire, Value* synAddr)
     {
@@ -288,16 +287,16 @@ namespace llvm {
         debugLog("getCurrentTickFunction @" << __LINE__);
         CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
         MarkInstAsContechInst(nGetTick);
-        
+
         Value* con1 = ConstantInt::get(cct->int32Ty, isAcquire);
         // If sync returns int, pass it, else pass 0 - success
         Value* retV;
         if (ci->getType() == cct->int32Ty)
             retV = ci;
-        else 
+        else
             retV = ConstantInt::get(cct->int32Ty, 0);
         Value* cArg[] = {synAddr, con1, retV, nGetTick};
-        
+
         if (isa<CallInst>(ci))
         {
             ++I;
@@ -307,12 +306,12 @@ namespace llvm {
         {
             initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
         }
-        
+
         debugLog("storeSyncFunction @" << __LINE__);
         CallInst* nStoreSync = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,4),
-                                            "", initialPt);  
+                                            "", initialPt);
         MarkInstAsContechInst(nStoreSync);
-        
+
         if (isa<CallInst>(ci))
         {
             I = convertInstToIter(nStoreSync);
@@ -320,10 +319,10 @@ namespace llvm {
             I = convertInstToIter(nStoreSync);
         }
     }
-    
-    template<typename T> 
+
+    template<typename T>
     BasicBlock::iterator InstrumentFunctionCall(T* ci,
-                                                 bool &hasUninstCall, 
+                                                 bool &hasUninstCall,
                                                  bool &containQueueBuf,
                                                  bool hasInstAllMemOps,
                                                  bool ContechMinimal,
@@ -336,17 +335,17 @@ namespace llvm {
     {
         Function *f = ci->getCalledFunction();
         hasUninstCall = true;
-        
+
         // call is indirect
         // TODO: add dynamic check on function called
-        if (f == NULL) 
-        { 
+        if (f == NULL)
+        {
             // See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
             Value* v = ci->getCalledValue();
             f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)
             {
-                return I; 
+                return I;
             }
         }
 
@@ -354,7 +353,7 @@ namespace llvm {
         const char* fmn = f->getName().data();
         char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
         const char* fn = fdn;
-        if (status != 0) 
+        if (status != 0)
         {
             fn = fmn;
         }
@@ -362,13 +361,13 @@ namespace llvm {
         {
             iPt = ci;
         }
-        
+
         bi->callFnName.assign(fn);
         CONTECH_FUNCTION_TYPE funTy = ctPass->classifyFunctionName(fn);
         //errs() << funTy << "\n";
         switch(funTy)
         {
-        
+
             // Check for call to exit(n), replace with pthread_exit(n)
             //  Splash benchmarks like to exit on us which pthread_cleanup doesn't catch
             //  Also check that this "...exit..." is at least a do not return function
@@ -390,13 +389,13 @@ namespace llvm {
                     if (isa<CallInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", convertIterToInst(++I));   
+                                                        "", convertIterToInst(++I));
                         I = convertInstToIter(nStoreME);
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());  
+                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }
                     MarkInstAsContechInst(nStoreME);
                 }
@@ -412,13 +411,13 @@ namespace llvm {
                     if (isa<CallInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", convertIterToInst(++I));   
+                                                        "", convertIterToInst(++I));
                         I = convertInstToIter(nStoreME);
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());  
+                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }
                     MarkInstAsContechInst(nStoreME);
                 }
@@ -432,7 +431,7 @@ namespace llvm {
                     // Memcpy old -> new
                     // Free old
                     Instruction* initialPt = NULL;
-                    
+
                     if (isa<CallInst>(ci))
                     {
                         ++I;
@@ -442,18 +441,18 @@ namespace llvm {
                     {
                         initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                     }
-                
+
                     Value* cArg[] = {ConstantInt::get(cct->int8Ty, 1), ci->getArgOperand(1), ci};
                     debugLog("storeMemoryEventFunction @" << __LINE__);
                     CallInst* nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3), "", initialPt);
                     MarkInstAsContechInst(nStoreME);
-                   
+
                     // TODO: copy min of ci and ci->get(0), btw sizeof(ci get(0)) is unknown
                     Value* cArgS[] = {ci->getArgOperand(1), ci, ci->getArgOperand(0)};
                     debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                     CallInst* nStoreCpy = CallInst::Create(cct->storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", initialPt);
                     MarkInstAsContechInst(nStoreCpy);
-                 
+
                     // TOOD: Only free if ci and ci->get(0) are non-equal
                     Value* cz = ConstantInt::get(cct->int8Ty, 0);
                     Value* cz32 = ConstantInt::get(cct->pthreadTy, 0);
@@ -481,7 +480,7 @@ namespace llvm {
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
                     nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                    "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());  
+                                                    "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                 }
                 MarkInstAsContechInst(nStoreME);
             }
@@ -515,24 +514,24 @@ namespace llvm {
             case (COND_WAIT):
             {
                 Instruction* initialPt = NULL;
-                
+
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 BitCastInst* bciCV = new BitCastInst(ci->getArgOperand(0), cct->voidPtrTy, "locktovoid", ci);
                 MarkInstAsContechInst(bciCV);
-                
+
                 BitCastInst* bciMut = new BitCastInst(ci->getArgOperand(1), cct->voidPtrTy, "locktovoid", ci);
                 MarkInstAsContechInst(bciMut);
-                
+
                 Value* cArg[] = {bciMut, ConstantInt::get(cct->int32Ty, 0), ConstantInt::get(cct->int32Ty, 0), nGetTick};
-                
+
                 // Store the mutex unlock
                 debugLog("storeSyncFunction @" << __LINE__);
                 Instruction* callSF = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,4), "", ci);
                 MarkInstAsContechInst(callSF);
-                
+
                 // ISSUE #63
                 // TODO: By strict semantics, this queue buffer is not required.
                 //   However, processing a trace may require excessive memory if the
@@ -543,7 +542,7 @@ namespace llvm {
                 CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                     "", ci);
                 MarkInstAsContechInst(nQueueBuf);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -553,25 +552,25 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick2 = CallInst::Create(cct->getCurrentTickFunction, "tick2", initialPt);
-                MarkInstAsContechInst(nGetTick2);              
-                
+                MarkInstAsContechInst(nGetTick2);
+
                 Value* retV;
                 if (ci->getType() == cct->int32Ty)
                     retV = ci;
-                else 
-                    retV = ConstantInt::get(cct->int32Ty, 0);                    
+                else
+                    retV = ConstantInt::get(cct->int32Ty, 0);
                 Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 2), retV, nGetTick2};
                 debugLog("storeSyncFunction @" << __LINE__);
                 CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "", initialPt);
                 MarkInstAsContechInst(nStoreCV);
-                
+
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick3 = CallInst::Create(cct->getCurrentTickFunction, "tick3", initialPt);
                 MarkInstAsContechInst(nGetTick3);
-                
+
                 Value* cArgMut[] = {bciMut, ConstantInt::get(cct->int32Ty, 1), ConstantInt::get(cct->int32Ty, 0), nGetTick3};
                 debugLog("storeSyncFunction @" << __LINE__);
                 CallInst* nStoreMut = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgMut, 4), "", initialPt);
@@ -588,21 +587,21 @@ namespace llvm {
             case (COND_SIGNAL):
             {
                 Instruction* initialPt = NULL;
-                
+
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 BitCastInst* bciCV = new BitCastInst(ci->getArgOperand(0), cct->voidPtrTy, "locktovoid", ci);
                 MarkInstAsContechInst(bciCV);
-                
+
                 Value* retV;
                 if (ci->getType() == cct->int32Ty)
                     retV = ci;
-                else 
+                else
                     retV = ConstantInt::get(cct->int32Ty, 0);
                 Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 3), retV, nGetTick};
-                
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -612,12 +611,12 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "", 
+                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "",
                                                       initialPt);
                 MarkInstAsContechInst(nStoreCV);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(nStoreCV);
@@ -631,10 +630,10 @@ namespace llvm {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 BitCastInst* bci = new BitCastInst(ci->getArgOperand(0), cct->voidPtrTy, "locktovoid", convertIterToInst(I));
                 MarkInstAsContechInst(bci);
-                
+
                 Value* c1 = ConstantInt::get(cct->int8Ty, 1);
                 Value* cArgs[] = {c1, bci, nGetTick};
                 // Record the barrier entry
@@ -664,30 +663,27 @@ namespace llvm {
             break;
             case (THREAD_JOIN):
             {
-                //Value* vPtr = new BitCastInst(ci->getOperand(0), voidPtrTy, "hideInPtr", ci);
-                //errs() << *ci->getOperand(0) << "\t" << *ci->getOperand(0)->getType() << "\n";
-                //errs() << *storeThreadJoinFunction->getType() << "\n";
                 Value* c1 = ConstantInt::get(cct->int8Ty, 1);
                 Value* cArgQB[] = {c1};
-                
+
                 // NB This queue buffer call is important, as a join event is often long waiting.
                 //   By queuing, the events before the join are processed, especially ticketed events
                 debugLog("queueBufferFunction @" << __LINE__);
                 CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                     "", ci);
                 MarkInstAsContechInst(nQueueBuf);
-                
+
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 Value* cArg[] = {ci->getOperand(0), nGetTick};
                 CallInst* nStoreJ;
                 debugLog("storeThreadJoinFunction @" << __LINE__);
                 if (isa<CallInst>(ci))
                 {
                     ++I;
-                    nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2), 
+                    nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2),
                                                          Twine(""), convertIterToInst(I));
                     I = convertInstToIter(nStoreJ);
                     iPt = nGetTick;
@@ -695,7 +691,7 @@ namespace llvm {
                 }
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
-                    nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2), 
+                    nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2),
                                                      Twine(""), ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                 }
                 MarkInstAsContechInst(nStoreJ);
@@ -707,17 +703,17 @@ namespace llvm {
             case (THREAD_CREATE):
             {
                 Instruction* cast1 = new BitCastInst(ci->getArgOperand(1), cct->voidPtrTy, "", ci);
-                Value* cTcArg[] = {ci->getArgOperand(0), 
-                                   cast1, 
-                                   ci->getArgOperand(2), 
+                Value* cTcArg[] = {ci->getArgOperand(0),
+                                   cast1,
+                                   ci->getArgOperand(2),
                                    ci->getArgOperand(3)};
                 MarkInstAsContechInst(cast1);
-                                   
+
                 if (/*InvokeInst* ii = */NULL != dyn_cast<InvokeInst>(ci))
                 {
                     assert("WILL REPLACE INVOKE with CALL INST" && 0);
                 }
-                                   
+
                 debugLog("createThreadActualFunction @" << __LINE__);
                 CallInst* nThreadCreate = CallInst::Create(cct->createThreadActualFunction,
                                                            ArrayRef<Value*>(cTcArg, 4), "", ci);
@@ -731,7 +727,7 @@ namespace llvm {
             case (OMP_END):
             {
                 Instruction* initialPt = NULL;
-                
+
                 // End of a parallel region, restore parent stack
                 if (isa<CallInst>(ci))
                 {
@@ -742,19 +738,19 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 debugLog("ompPopParentFunction @" << __LINE__);
                 // Also __ctOMPThreadJoin
                 CallInst* parentId = CallInst::Create(cct->ctPeekParentIdFunction, "", initialPt);
-                MarkInstAsContechInst(parentId); 
-                
+                MarkInstAsContechInst(parentId);
+
                 Value* cArg[] = {parentId};
                 Instruction* oTJF = CallInst::Create(cct->ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", initialPt);
-                MarkInstAsContechInst(oTJF); 
-                
+                MarkInstAsContechInst(oTJF);
+
                 CallInst* nPopParent = CallInst::Create(cct->ompPopParentFunction, "", initialPt);
-                MarkInstAsContechInst(nPopParent); 
-                
+                MarkInstAsContechInst(nPopParent);
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(nPopParent);
@@ -764,7 +760,7 @@ namespace llvm {
             case (OMP_CALL):
             {
                 Instruction* initialPt = NULL;
-                
+
                 // Simple case, push and pop the parent id
                 // And Transform the arguments to the function call
                 // The GOMP_parallel_start has a parallel_end routine, so the master thread
@@ -775,12 +771,12 @@ namespace llvm {
                 debugLog("queueBufferFunction @" << __LINE__);
                 CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                     "", ci);
-                MarkInstAsContechInst(nQueueBuf); 
-                
-                debugLog("ompPushParentFunction @" << __LINE__);                                    
+                MarkInstAsContechInst(nQueueBuf);
+
+                debugLog("ompPushParentFunction @" << __LINE__);
                 CallInst* nPushPar = CallInst::Create(cct->ompPushParentFunction, "", ci);
-                MarkInstAsContechInst(nPushPar); 
-                
+                MarkInstAsContechInst(nPushPar);
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -792,17 +788,17 @@ namespace llvm {
                 }
                 // __ctOMPThreadCreate after entering the parallel region
                 CallInst* parentId = CallInst::Create(cct->ctPeekParentIdFunction, "", initialPt);
-                MarkInstAsContechInst(parentId); 
-                
+                MarkInstAsContechInst(parentId);
+
                 Value* cArg[] = {parentId};
                 CallInst* oTCF = CallInst::Create(cct->ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", initialPt);
-                MarkInstAsContechInst(oTCF); 
-                
+                MarkInstAsContechInst(oTCF);
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(oTCF);
                 }
-                
+
                 // Change the function called to a wrapper routine
                 Value* arg0 = ci->getArgOperand(0);
                 Function* ompMicroTask = NULL;
@@ -825,40 +821,41 @@ namespace llvm {
                     errs() << "Need new casting route for GOMP Parallel call\n";
                 }
                 ctPass->ompMicroTaskFunctions.insert(ompMicroTask);
+
                 // Alloca Type and store pid and arg into alloc'd space
                 Type* strTy[] = {cct->int32Ty, cct->voidPtrTy};
                 Type* t = StructType::create(strTy);
                 Instruction* nArg = new AllocaInst(t, "Wrapper Struct", ci);
                 MarkInstAsContechInst(nArg);
-                
+
                 // Add Store insts here
                 Value* gepArgs[2] = {ConstantInt::get(cct->int32Ty, 0), ConstantInt::get(cct->int32Ty, 0)};
                 Instruction* ppid = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
                 MarkInstAsContechInst(ppid);
-                
+
                 debugLog("getThreadNumFunction @" << __LINE__);
                 Instruction* tNum = CallInst::Create(cct->getThreadNumFunction, "", ci);
                 MarkInstAsContechInst(tNum);
-                
+
                 Instruction* stPPID = new StoreInst(tNum, ppid, ci);
                 MarkInstAsContechInst(stPPID);
-                
+
                 gepArgs[1] = ConstantInt::get(cct->int32Ty, 1);
                 Instruction* parg = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
                 MarkInstAsContechInst(parg);
-                
+
                 Instruction* stPARG = new StoreInst(ci->getArgOperand(1), parg, ci);
                 MarkInstAsContechInst(stPARG);
-                
+
                 Function* wrapMicroTask = ctPass->createMicroTaskWrapStruct(ompMicroTask, t, M);
                 ctPass->contechAddedFunctions.insert(wrapMicroTask);
                 Instruction* cast0 = new BitCastInst(wrapMicroTask, arg0->getType(), "", ci);
                 ci->setArgOperand(0, cast0);
                 MarkInstAsContechInst(cast0);
-                
+
                 Instruction* cast1 = new BitCastInst(nArg, cct->voidPtrTy, "", ci);
                 ci->setArgOperand(1, cast1);
-                MarkInstAsContechInst(cast1);                               
+                MarkInstAsContechInst(cast1);
                 //ci->setArgOperand(2, bci->getWithOperandReplaced(0,wrapMicroTask));
             }
             break;
@@ -870,7 +867,7 @@ namespace llvm {
                 debugLog("ompPushParentFunction @" << __LINE__);
                 CallInst* nPushParent = CallInst::Create(cct->ompPushParentFunction, "", ci);
                 MarkInstAsContechInst(nPushParent);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -881,7 +878,7 @@ namespace llvm {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                     //assert("WILL REPLACE INVOKE with CALL" && 0);
                 }
-                
+
                 debugLog("ompPopParentFunction @" << __LINE__);
                 CallInst* nPopParent = CallInst::Create(cct->ompPopParentFunction, "", initialPt);
                 MarkInstAsContechInst(nPopParent);
@@ -889,14 +886,14 @@ namespace llvm {
                 {
                     I = convertInstToIter(nPopParent);
                 }
-                
+
                 // Add one to the number of arguments
                 //   TODO: Make this a ConstantExpr
                 ci->setArgOperand(1, BinaryOperator::Create(Instruction::Add,
                                             ci->getArgOperand(1),
                                             ConstantInt::get(cct->int32Ty, 1),
                                             "", ci));
-                
+
                 // Change the function called to a wrapper routine
                 Value* arg2 = ci->getArgOperand(2);
                 Function* ompMicroTask = NULL;
@@ -916,7 +913,7 @@ namespace llvm {
                 Function* wrapMicroTask = ctPass->createMicroTaskWrap(ompMicroTask, M);
                 ctPass->contechAddedFunctions.insert(wrapMicroTask);
                 ci->setArgOperand(2, ConstantExpr::getBitCast(wrapMicroTask, bci->getType()));
-                                                          
+
                 // One cannot simply add an argument to an instruction
                 // Instead we have to copy the arguments over and create a new instruction
                 Value** cArg = new Value*[ci->getNumArgOperands() + 1];
@@ -924,20 +921,20 @@ namespace llvm {
                 {
                     cArg[i] = ci->getArgOperand(i);
                 }
-                
+
                 // Now add a new argument
                 debugLog("getThreadNumFunction @" << __LINE__);
                 Instruction* callTNF = CallInst::Create(cct->getThreadNumFunction, "", ci);
                 cArg[ci->getNumArgOperands()] = callTNF;
                 MarkInstAsContechInst(callTNF);
-                
+
                 // Can this queue buffer be removed?
                 Value* cArgQB[] = {ConstantInt::get(cct->int8Ty, 1)};
                 debugLog("queueBufferFunction @" << __LINE__);
                 Instruction* callQBF = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
                                                         "", ci);
                 MarkInstAsContechInst(callQBF);
-                                                        
+
                 debugLog("kmpc_fork_call @" << __LINE__);
                 if (isa<CallInst>(ci))
                 {
@@ -945,7 +942,7 @@ namespace llvm {
                                                            ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
                                                            ci->getName(), ci);
                     MarkInstAsContechInst(nForkCall);
-                    
+
                     ci->replaceAllUsesWith(nForkCall);
                     // Erase is dangerous, e.g. iPt could point to ci
                     if (iPt == ci)
@@ -960,7 +957,7 @@ namespace llvm {
                                                            ArrayRef<Value*>(cArg, 1 + ii->getNumArgOperands()),
                                                            ii->getName(), ii);
                     MarkInstAsContechInst(nForkCall);
-                    
+
                     ii->replaceAllUsesWith(nForkCall);
                     // Erase is dangerous, e.g. iPt could point to ci
                     if (iPt == ii)
@@ -972,7 +969,7 @@ namespace llvm {
                 {
                     assert("Invalid OMP_FORK inst, not CALL, not INVOKE" && 0);
                 }
-                
+
                 delete [] cArg;
             }
             break;
@@ -982,7 +979,7 @@ namespace llvm {
                 debugLog("ompTaskJoinFunction @" << __LINE__);
                 Instruction* callTJF = CallInst::Create(cct->ompTaskJoinFunction, "", ci);
                 MarkInstAsContechInst(callTJF);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -992,12 +989,12 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 Value* cArg[] = {ci};
                 debugLog("ompTaskCreateFunction @" << __LINE__);
                 CallInst* nCreate = CallInst::Create(cct->ompTaskCreateFunction, ArrayRef<Value*>(cArg, 1), "", initialPt);
                 MarkInstAsContechInst(nCreate);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(nCreate);
@@ -1010,23 +1007,23 @@ namespace llvm {
                 debugLog("ompProcessJoinFunction @" << __LINE__);
                 Instruction* callPJF = CallInst::Create(cct->ompProcessJoinFunction, "", ci);
                 MarkInstAsContechInst(callPJF);
-                
+
                 // OpenMP barriers use argument 1 for barrier ID
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 debugLog("ompGetParentFunction @" << __LINE__);
                 CallInst* OGNLF = CallInst::Create(cct->ompGetNestLevelFunction, "", convertIterToInst(I));
                 MarkInstAsContechInst(OGNLF);
-                
+
                 Value* sub1 = BinaryOperator::Create(Instruction::Sub,
                                             OGNLF,
                                             ConstantInt::get(cct->int32Ty, 1), "", convertIterToInst(I));
                 Value* cArgGPF[] = {sub1}; // TODO: add check that this will saturate at 0
                 CallInst* OGPF = CallInst::Create(cct->ompGetParentFunction, ArrayRef<Value*>(cArgGPF), "", convertIterToInst(I));
                 MarkInstAsContechInst(OGPF);
-                
+
                 Value* mul8 = BinaryOperator::Create(Instruction::Mul,
                                             OGPF,
                                             ConstantInt::get(cct->int32Ty, 256), "", convertIterToInst(I));
@@ -1035,14 +1032,14 @@ namespace llvm {
                                             OGNLF, "", convertIterToInst(I));
                 IntToPtrInst* bci = new IntToPtrInst(mergV, cct->voidPtrTy, "locktovoid", convertIterToInst(I));
                 MarkInstAsContechInst(bci);
-                
+
                 // omp_get_active_level
                 Value* c1 = ConstantInt::get(cct->int8Ty, 1);
                 Value* cArgs[] = {c1, bci, nGetTick};
                 // Record the barrier entry
                 debugLog("storeBarrierFunction @" << __LINE__);
                 CallInst* nStoreBarEn = CallInst::Create(cct->storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
-                                                    "", convertIterToInst(I));  
+                                                    "", convertIterToInst(I));
                 MarkInstAsContechInst(nStoreBarEn);
 
                 if (isa<CallInst>(ci))
@@ -1054,14 +1051,14 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 cArgs[0] = ConstantInt::get(cct->int8Ty, 0);
                 // Record the barrier exit
                 debugLog("storeBarrierFunction @" << __LINE__);
                 CallInst* nStoreBarEx = CallInst::Create(cct->storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
                                                     "", initialPt);
                 MarkInstAsContechInst(nStoreBarEx);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(nStoreBarEx);
@@ -1087,11 +1084,11 @@ namespace llvm {
                     FunctionType* funPrepDepsTy = FunctionType::get(cct->voidTy, ArrayRef<Type*>(argsPrepDep, 4), false);
                     cct->ompPrepareTaskFunction = M.getOrInsertFunction("__ctOMPPrepareTask", funPrepDepsTy);
                 }
-                
+
                 CallInst* taskAllocInst = dyn_cast<CallInst>(taskPtr);
-                
+
                 Value* baseTaskSize = taskAllocInst->getArgOperand(3);
-                
+
                 ConstantExpr* bci = NULL;
                 Function* baseTask = NULL;
                 if ((bci = dyn_cast<ConstantExpr>(taskAllocInst->getArgOperand(5))) != NULL)
@@ -1103,33 +1100,33 @@ namespace llvm {
                 }
                 else if ((baseTask = dyn_cast<Function>(taskAllocInst->getArgOperand(5))) != NULL)
                 {
-                    
+
                 }
-                else 
+                else
                 {
                     errs() << "Need new casting route for omp task call\n";
                 }
-                
+
                 Value* castTask = ctPass->castSupport(cct->voidPtrTy, taskPtr, ci);
                 Value* cArgs[] = {castTask, baseTaskSize, depList, nDeps};
                 Instruction* callPTF = CallInst::Create(cct->ompPrepareTaskFunction, ArrayRef<Value*>(cArgs, 4), "", ci);
                 MarkInstAsContechInst(callPTF);
-                
+
                 ConstantInt* cnstTaskSize = dyn_cast<ConstantInt>(baseTaskSize);
                 ConstantInt* cnstNDeps = dyn_cast<ConstantInt>(nDeps);
-                
-                Function* wrapDTask = ctPass->createMicroDependTaskWrap(baseTask, M, 
-                                                                cnstTaskSize->getValue().getLimitedValue(), 
+
+                Function* wrapDTask = ctPass->createMicroDependTaskWrap(baseTask, M,
+                                                                cnstTaskSize->getValue().getLimitedValue(),
                                                                 cnstNDeps->getValue().getLimitedValue());
                 ctPass->contechAddedFunctions.insert(wrapDTask);
-                
+
                 // Add space for depend*, parentID, childID
                 taskAllocInst->setArgOperand(3, BinaryOperator::Create(Instruction::Add,
                                             taskAllocInst->getArgOperand(3),
                                             ConstantInt::get(baseTaskSize->getType(), cct->pthreadSize + 2*4),
                                             "", taskAllocInst));
                 taskAllocInst->setArgOperand(5, wrapDTask);
-                
+
                 // ParentID
                 debugLog("getThreadNumFunction @" << __LINE__);
                 Instruction* callTNF = CallInst::Create(cct->getThreadNumFunction, "", ci);
@@ -1170,9 +1167,9 @@ namespace llvm {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 Value* argWait[] = {ctPass->castSupport(cct->voidPtrTy, ci->getOperand(0), convertIterToInst(I)), nGetTick};
-                
+
                 if (isa<CallInst>(ci))
                 {
                     ++I;
@@ -1182,10 +1179,10 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 CallInst* storeWait = CallInst::Create(cct->storeMPIWaitFunction, ArrayRef<Value*>(argWait, 2), "", initialPt);
                 MarkInstAsContechInst(storeWait);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(storeWait);
@@ -1198,9 +1195,9 @@ namespace llvm {
                 // N.B. LLVM 3.4 does not have getSingleSuccessor, but 3.6 does
                 //   BasicBlock* sucB = ci->getParent()->getSingleSuccessor();
                 BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
-                
+
                 // If Contech has formed the basic blocks, then there should be 1 successor
-                assert(sucB != NULL); 
+                assert(sucB != NULL);
                 TerminatorInst* ti = sucB->getTerminator();
                 bool isSyncFrame = false;
                 for (unsigned i = 0; i < ti->getNumSuccessors(); i++)
@@ -1211,7 +1208,7 @@ namespace llvm {
                         break;
                     }
                 }
-                
+
                 Instruction* initialPt = NULL;
                 if (isa<CallInst>(ci))
                 {
@@ -1222,25 +1219,25 @@ namespace llvm {
                 {
                     initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
                 }
-                
+
                 if (isSyncFrame)
                 {
                     Value* ctCilkStructSync = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), false);
                     Value* argRest[] = {ctCilkStructSync};
                     debugLog("cilkParentFunction @" << __LINE__);
-                    
+
                     CallInst* cilkRest = CallInst::Create(cct->cilkParentFunction, ArrayRef<Value*>(argRest, 1), "", initialPt);
                     MarkInstAsContechInst(cilkRest);
                     break;
                 }
-                
+
                 Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), true);
                 if (ctCilkStruct == NULL)
                 {
                     I = convertInstToIter(ci);
                     break;
                 }
-                
+
                 // Add alloca, if not present, to entry block
                 // cilkCreateFunction(%alloc, getCurrentTick, child, retval)
                 debugLog("allocateCTidFunction @" << __LINE__);
@@ -1249,19 +1246,19 @@ namespace llvm {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
                 MarkInstAsContechInst(nGetTick);
-                
+
                 Value* consZero = ConstantInt::get(cct->int64Ty, 0);
                 Value* argParentCreate[] = {nChildCTID, consZero, nGetTick};
                 debugLog("storeThreadCreateFunction @" << __LINE__);
                 CallInst* parentCreate = CallInst::Create(cct->storeThreadCreateFunction,
                                                           ArrayRef<Value*>(argParentCreate, 3), "", ci);
                 MarkInstAsContechInst(parentCreate);
-                
+
                 Value* argCreate[] = {ctCilkStruct, nGetTick, nChildCTID, ci};
                 debugLog("cilkCreateFunction @" << __LINE__);
                 CallInst* cilkCreate = CallInst::Create(cct->cilkCreateFunction, ArrayRef<Value*>(argCreate, 4), "", initialPt);
                 MarkInstAsContechInst(cilkCreate);
-                
+
                 if (isa<CallInst>(ci))
                 {
                     I = convertInstToIter(cilkCreate);
@@ -1278,25 +1275,25 @@ namespace llvm {
                     Value* cinst = ctPass->castSupport(cct->voidPtrTy, ConstantInt::get(cct->int64Ty, 0), iI);
                     Value* argRest[] = {cinst};
                     debugLog("cilkRestoreFunction @" << __LINE__);
-                    
+
                     CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", ci);
                     MarkInstAsContechInst(cilkRest);
-                    
+
                     break;
                 }
-                
-                
+
+
                 Instruction* iPt = ci;//sucB->getFirstInsertionPt();
-                
+
                 Value* argRest[] = {ctCilkStruct};
                 debugLog("cilkRestoreFunction @" << __LINE__);
-                
+
                 CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", iPt);
                 MarkInstAsContechInst(cilkRest);
-                
+
                 BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
                 iPt = dyn_cast<Instruction>(sucB->getFirstInsertionPt());
-                
+
                 cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", iPt);
                 MarkInstAsContechInst(cilkRest);
             }
@@ -1304,24 +1301,24 @@ namespace llvm {
             case (CILK_SYNC):
             {
                 BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
-                
+
                 Instruction* iPt = dyn_cast<Instruction>(sucB->getFirstInsertionPt());
-                
+
                 Value* ctCilkStruct = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), true);
                 if (ctCilkStruct == NULL)
                 {
                     break;
                 }
-                
+
                 Value* argSync[] = {ctCilkStruct};
                 debugLog("cilkSyncFunction @" << __LINE__);
                 CallInst* cilkSync = CallInst::Create(cct->cilkSyncFunction, ArrayRef<Value*>(argSync, 1), "", iPt);
                 MarkInstAsContechInst(cilkSync);
-                
+
                 // Before syncing, restore to parent's frame
                 Value* argRest[] = {ctCilkStruct};
                 debugLog("cilkRestoreFunction @" << __LINE__);
-                
+
                 CallInst* cilkRest = CallInst::Create(cct->cilkRestoreFunction, ArrayRef<Value*>(argRest, 1), "", ci);
                 MarkInstAsContechInst(cilkRest);
             }
@@ -1387,7 +1384,7 @@ namespace llvm {
         {
             free(fdn);
         }
-        
+
         return I;
     }
 }

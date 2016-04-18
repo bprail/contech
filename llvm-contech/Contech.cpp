@@ -52,14 +52,18 @@ using namespace llvm;
 using namespace std;
 
 map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
+
+// ContechState is required to reconstruct the basic block events from the event trace
 cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current Contech state"), cl::value_desc("filename"));
+
+// MarkFrontEnd and Minimal cover variations of the instrumentation that are used in special cases
 cl::opt<bool> ContechMarkFrontend("ContechMarkFE", cl::desc("Generate a minimal marked output"));
 cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally instrumented output"));
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
 #define FUNCTIONS_INSTRUMENT_SIZE 57
-// NB Order matters in this array.  Put the most specific function names first, then 
+// NB Order matters in this array.  Put the most specific function names first, then
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
                                             // If main has OpenMP regions, the derived functions
@@ -123,11 +127,15 @@ namespace llvm {
                                            {STORE_AND_LEN("llvm.eh.sjlj.setjmp"), CILK_FRAME_CREATE},
                                            {STORE_AND_LEN("__cilkrts_sync"), CILK_SYNC}};
 
-    
+
     ModulePass* createContechPass() { return new Contech(); }
-}    
+}
     //
     // Create any globals required for this module
+    //
+    //  These globals are predominantly setting up the constants for Contech's runtime functions.
+    //    Each constant is effectively the entry point to a function and can be called / invoked.
+    //    The routine also finds the appropriate type definitions and retains them for consistent use.
     //
     bool Contech::doInitialization(Module &M)
     {
@@ -154,6 +162,7 @@ namespace llvm {
         FunctionType* funVoidVoidPtrI64I32I32Ty;
         FunctionType* funVoidI32I64I64Ty;
 
+        // Get the different integer types required by Contech
         LLVMContext &ctx = M.getContext();
         currentDataLayout = &M.getDataLayout();
         cct.int8Ty = Type::getInt8Ty(ctx);
@@ -164,25 +173,25 @@ namespace llvm {
 
         Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
         funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
-        
+
         funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
         cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
-        
+
         Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy};
         funVoidPtrI32I32VoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 3), false);
         cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrTy);
-        
+
         funI32I32I32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 3), false);
         cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrTy);
-        
+
         Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy};
         funVoidVoidPtrI32VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 3), false);
         cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrTy);
-        
+
         funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
         cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
         cct.cilkInitFunction = M.getOrInsertFunction("__ctInitCilkSync", funVoidPtrVoidTy);
-        
+
         // void (void) functions:
         funVoidVoidTy = FunctionType::get(cct.voidTy, false);
         cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
@@ -191,22 +200,22 @@ namespace llvm {
         cct.ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
         cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
         cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
-        
-        
+
+        // Void -> Int32 / 64
         cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
         cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
         cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
-        
+
         cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
         cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
-        
-        
+
+
         Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/};
         funVoidVoidPtrI32I32I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 4), false);
         cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64Ty);
-        
+
         Type* argsTC[] = {cct.int32Ty};
-        
+
         // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
         funVoidI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsTC, 1), false);
         cct.storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
@@ -216,45 +225,45 @@ namespace llvm {
         cct.ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
         cct.checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
         cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
-        
+
         funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
         cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
-       
+
         Type* argsQB[] = {cct.int8Ty};
         funVoidI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsQB, 1), false);
         cct.queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
         cct.ompTaskJoinFunction = M.getOrInsertFunction("__ctOMPTaskJoin", funVoidVoidTy);
-        
+
         Type* argsSB[] = {cct.int8Ty, cct.voidPtrTy, cct.int64Ty};
         funVoidI8VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSB, 3), false);
         cct.storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
-        
+
         Type* argsATI[] = {cct.voidPtrTy, cct.int32Ty};
         funVoidVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsATI, 2), false);
         cct.storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
-        
+
         Type* argsSMPIXF[] = {cct.int8Ty, cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty, cct.voidPtrTy};
         funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
         cct.storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
-        
+
         Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
         funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
         cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
-        
+
         Type* argsCFC[] = {cct.voidPtrTy, cct.int64Ty, cct.int32Ty, cct.int32Ty};
         funVoidVoidPtrI64I32I32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCFC, 4), false);
         cct.cilkCreateFunction = M.getOrInsertFunction("__ctRecordCilkFrame", funVoidVoidPtrI64I32I32Ty);
-        
+
         Type* argsInit[] = {cct.voidPtrTy};
         funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
         cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
         cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
         cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
-        
+
         Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
         funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
         cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
-        
+
         if (currentDataLayout->getPointerSizeInBits() == 64)
         {
             cct.pthreadTy = cct.int64Ty;
@@ -265,36 +274,36 @@ namespace llvm {
             cct.pthreadTy = cct.int32Ty;
             cct.pthreadSize = 4;
         }
-        
+
         Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
         funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
         cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
-        
+
         Type* argsME[] = {cct.int8Ty, cct.pthreadTy, cct.voidPtrTy};
         funVoidI8I64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsME, 3), false);
         cct.storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
         Type* argsBulkMem[] = {cct.pthreadTy, cct.voidPtrTy, cct.voidPtrTy};
         funVoidI64VoidPtrVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
         cct.storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
-        
+
         Type* argsOMPSD[] = {cct.voidPtrTy, cct.pthreadTy, cct.int32Ty, cct.int32Ty};
         FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
         cct.ompStoreInOutDepsFunction = M.getOrInsertFunction("__ctOMPStoreInOutDeps", funVoidVoidPtrI64I32I32);
         cct.ompPrepareTaskFunction = NULL;
-        
+
         Type* pthreadTyPtr = cct.pthreadTy->getPointerTo();
-        Type* argsCTA[] = {pthreadTyPtr, 
-                           cct.voidPtrTy, 
+        Type* argsCTA[] = {pthreadTyPtr,
+                           cct.voidPtrTy,
                            static_cast<Type *>(funVoidPtrVoidPtrTy)->getPointerTo(),
                            cct.voidPtrTy};
         FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
         cct.createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
-		
+
         cct.ContechMDID = ctx.getMDKindID("ContechInst");
-        
+
         return true;
     }
-    
+
     _CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
     {
         for (unsigned int i = 0; i < FUNCTIONS_INSTRUMENT_SIZE; i++)
@@ -304,10 +313,10 @@ namespace llvm {
                 return functionsInstrument[i].typeID;
             }
         }
-    
+
         return NONE;
     }
-    
+
     //
     // addCheckAfterPhi
     //   Adds a check buffer function call after the last Phi instruction in a basic block
@@ -316,7 +325,7 @@ namespace llvm {
     void Contech::addCheckAfterPhi(BasicBlock* B)
     {
         if (B == NULL) return;
-        
+
         for (BasicBlock::iterator I = B->begin(), E = B->end(); I != E; ++I){
             if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) {
                 continue;
@@ -332,7 +341,7 @@ namespace llvm {
             }
         }
     }
-    
+
     //
     // Scan through each instruction in the basic block
     //   For each op used by the instruction, this instruction is 1 deeper than it
@@ -341,17 +350,17 @@ namespace llvm {
     {
         map<Instruction*, unsigned int> depthOfInst;
         unsigned int maxDepth = 0;
-        
+
         for (BasicBlock::iterator it = B.begin(), et = B.end(); it != et; ++it)
         {
             unsigned int currIDepth = 0;
-            for (User::op_iterator itUse = it->op_begin(), etUse = it->op_end(); 
+            for (User::op_iterator itUse = it->op_begin(), etUse = it->op_end();
                                  itUse != etUse; ++itUse)
             {
                 unsigned int tDepth;
                 Instruction* inU = dyn_cast<Instruction>(itUse->get());
                 map<Instruction*, unsigned int>::iterator depI = depthOfInst.find(inU);
-                
+
                 if (depI == depthOfInst.end())
                 {
                     // Dependent on value from a different basic block
@@ -362,35 +371,35 @@ namespace llvm {
                     // The path in this block is 1 more than the dependent instruction's depth
                     tDepth = depI->second + 1;
                 }
-                
+
                 if (tDepth > currIDepth) currIDepth = tDepth;
             }
-            
+
             depthOfInst[&*it] = currIDepth;
             if (currIDepth > maxDepth) maxDepth = currIDepth;
         }
-    
+
         return maxDepth;
     }
-    
+
     //
     //  Wrapper call that appropriately adds the operations to record the memory operation
     //
     pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos)
     {
         pllvm_mem_op tMemOp = new llvm_mem_op;
-        
+
         tMemOp->addr = NULL;
         tMemOp->next = NULL;
         tMemOp->isWrite = isWrite;
         tMemOp->isDep = false;
         tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
-        
+
         if (tMemOp->size > 4)
         {
             errs() << "MemOp of size: " << tMemOp->size << "\n";
         }
-        
+
         if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
         {
             tMemOp->isGlobal = true;
@@ -402,25 +411,25 @@ namespace llvm {
             tMemOp->isGlobal = false;
             //errs() << "Is not global - " << *addr << "\n";
         }
-        
+
         if (li != NULL)
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
             MarkInstAsContechInst(addrI);
-            
+
             Value* argsMO[] = {addrI, cPos, pos};
             debugLog("storeMemOpFunction @" << __LINE__);
             CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
             MarkInstAsContechInst(smo);
-            
+
             assert(smo != NULL);
             smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
         }
-        
+
         return tMemOp;
     }
-    
+
     //
     // findSimilarMemoryInst
     //
@@ -435,11 +444,11 @@ namespace llvm {
         vector<Value*> addrComponents;
         Instruction* addrI = dyn_cast<Instruction>(addr);
         int tOffset = 0, baseOffset = 0;
-        
+
         *offset = 0;
-        
+
         //return NULL;
-        
+
         if (addrI == NULL)
         {
             // No instruction generates the address, it is probably a global value
@@ -449,13 +458,13 @@ namespace llvm {
                 if (LoadInst *li = dyn_cast<LoadInst>(&*it))
                 {
                     Value* addrT = li->getPointerOperand();
-                    
+
                     if (addrT == addr) return li;
                 }
                 else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
                 {
                     Value* addrT = si->getPointerOperand();
-                    
+
                     if (addrT == addr) return si;
                 }
             }
@@ -475,20 +484,20 @@ namespace llvm {
                 if (LoadInst *li = dyn_cast<LoadInst>(&*it))
                 {
                     Value* addrT = li->getPointerOperand();
-                    
+
                     if (addrT == addr) return li;
                 }
                 else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
                 {
                     Value* addrT = si->getPointerOperand();
-                    
+
                     if (addrT == addr) return si;
                 }
             }
 
             return NULL;
         }
-        
+
         // Given addr, find the values that it depends on
         GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
         if (gepAddr == NULL)
@@ -497,15 +506,15 @@ namespace llvm {
             //errs() << "Mem instruction did not come from GEP\n";
             return NULL;
         }
-        
+
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
-            
+
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
-                if (StructType *STy = dyn_cast<StructType>(*itG)) 
+                if (StructType *STy = dyn_cast<StructType>(*itG))
                 {
                     unsigned ElementIdx = aConst->getZExtValue();
                     const StructLayout *SL = currentDataLayout->getStructLayout(STy);
@@ -521,36 +530,36 @@ namespace llvm {
                 // Reset to 0 if there is a variable offset
                 baseOffset = 0;
             }
-            
+
             // TODO: if the value is a constant global, then it matters
             addrComponents.push_back(gepI);
         }
-        
+
         for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
         {
             GetElementPtrInst* gepAddrT = NULL;
             if (memI == dyn_cast<Instruction>(&*it)) break;
-            
+
             if (LoadInst *li = dyn_cast<LoadInst>(&*it))
             {
                 Value* addrT = li->getPointerOperand();
-                
+
                 gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
             }
             else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
             {
                 Value* addrT = si->getPointerOperand();
-                
+
                 gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
             }
-            
+
             if (gepAddrT == NULL) continue;
             if (gepAddrT == gepAddr)
             {
                 *offset = 0;
                 return &*it;
             }
-            
+
             unsigned int i = 0;
             bool constMode = false;
             if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
@@ -559,29 +568,29 @@ namespace llvm {
             for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
             {
                 Value* gepI = itG.getOperand();
-                
+
                 // If the index of GEP is a Constant, then it can vary between mem ops
-                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI)) 
+                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
                 {
-                    if (ConstantInt* aConst = dyn_cast<ConstantInt>(addrComponents[i])) 
+                    if (ConstantInt* aConst = dyn_cast<ConstantInt>(addrComponents[i]))
                     {
                         if (aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
-                        
+
                         //
                         // GetElementPtr supports computing a constant offset; however, it requires
                         //   all fields to be constant.  The code is reproduced here, in order to compute
                         //   a partial constant offset along with the delta from the other GEP inst.
                         //
-                        if (StructType *STy = dyn_cast<StructType>(*itG)) 
+                        if (StructType *STy = dyn_cast<StructType>(*itG))
                         {
                             unsigned ElementIdx = gConst->getZExtValue();
                             const StructLayout *SL = currentDataLayout->getStructLayout(STy);
                             tOffset += SL->getElementOffset(ElementIdx);
                             continue;
                         }
-                        
+
                         tOffset += gConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
-                        
+
                         continue;
                     }
                     else
@@ -595,30 +604,23 @@ namespace llvm {
                     //   or has non-varying constants around it.
                     break;
                 }
-                
+
                 // temp offset remains 0 until a final sequence of constant int offsets
                 tOffset = 0;
                 if (gepI != addrComponents[i]) break;
             }
-            
-            if (i == addrComponents.size()) 
+
+            if (i == addrComponents.size())
             {
                 //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
                 *offset = baseOffset - tOffset;
                 return &*it;
             }
         }
-        
+
         return NULL;
     }
-    
-    void Contech::internalAddAllocate(BasicBlock& B)
-    {
-        auto i = B.begin();
-        debugLog("allocateBufferFunction @" << __LINE__);
-        CallInst::Create(cct.allocateBufferFunction, "", convertIterToInst(i));
-    }
-    
+
     //
     // Go through the module to get the basic blocks
     //
@@ -628,7 +630,7 @@ namespace llvm {
         int length = 0;
         char* buffer = NULL;
         doInitialization(M);
-        
+
         ifstream* icontechStateFile = new ifstream(ContechStateFilename.c_str(), ios_base::in | ios_base::binary);
         if (icontechStateFile != NULL && icontechStateFile->good())
         {
@@ -644,12 +646,12 @@ namespace llvm {
             //errs() << contechStateFile->rdstate() << "\t" << contechStateFile->fail() << "\n";
             //errs() << ContechStateFilename.c_str() << "\n";
         }
-        
+
         // for unknown reasons, a file that does not exist needs to clear all bits and not
         // just eof for writing
         icontechStateFile->close();
         delete icontechStateFile;
-        
+
         for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
             int status;
             const char* fmn = F->getName().data();
@@ -665,7 +667,7 @@ namespace llvm {
             {
                 fmn = fn;
             }
-            
+
             // Replace Main with a different main, if Contech is inserting the runtime
             //   and associated instrumentation
             if (__ctStrCmp(fmn, "main\0") == 0)
@@ -700,7 +702,7 @@ namespace llvm {
                 }
                 continue;
             }
-            
+
             if (F->size() == 0)
             {
                 if (fmn == fn)
@@ -710,7 +712,7 @@ namespace llvm {
                 continue;
             }
             errs() << fmn << "\n";
-        
+
             // "Normalize" every basic block to have only one function call in it
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
                 BasicBlock &pB = *B;
@@ -726,34 +728,34 @@ namespace llvm {
                     #endif
                 }
                 else {
-                    
+
                 }
             }
-        
+
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
-                
+
                 internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
                 bb_count++;
             }
-            
+
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
             {
                 free(fn);
             }
-            
+
             // Renaming invalidates the current name of the function
             if (inMain == true)
             {
                 F->setName(Twine("ct_orig_main"));
             }
         }
-        
+
         if (ContechMarkFrontend == true) goto cleanup;
-        
-cleanup:     
+
+cleanup:
         ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
         //contechStateFile->seekp(0, ios_base::beg);
         if (buffer == NULL)
@@ -769,7 +771,7 @@ cleanup:
             contechStateFile->write(buffer, length);
         }
         //contechStateFile->seekp(0, ios_base::end);
-        
+
         if (ContechMarkFrontend == false && ContechMinimal == false)
         {
             int wcount = 0;
@@ -777,42 +779,42 @@ cleanup:
             for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
             {
                 pllvm_mem_op t = bi->second->first_op;
-                
+
                 // Write out basic block info events
                 //   Then runtime can directly pass the events to the event list
                 contechStateFile->write((char*)&evTy, sizeof(unsigned char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
                 // This is the flags field, which is currently 0 or 1 for containing a call
-                unsigned int flags = ((unsigned int)bi->second->containCall) | 
+                unsigned int flags = ((unsigned int)bi->second->containCall) |
                                      ((unsigned int)bi->second->containGlobalAccess << 1);
                 contechStateFile->write((char*)&flags, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
                 contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
-                
+
                 int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 *contechStateFile << bi->second->fnName;
                 //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
-                
-                
+
+
                 strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
-                
+
                 strLen = bi->second->callFnName.length();
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 *contechStateFile << bi->second->callFnName;
-                
+
                 // Number of memory operations
                 contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
-                
+
                 while (t != NULL)
                 {
                     pllvm_mem_op tn = t->next;
                     char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
                     memFlags |= (t->isWrite)?0x1:0x0;
-                    
+
                     contechStateFile->write((char*)&memFlags, sizeof(char));
                     contechStateFile->write((char*)&t->size, sizeof(char));
                     // Add optional dep mem op info
@@ -833,10 +835,10 @@ cleanup:
         cfgInfoMap.clear();
         contechStateFile->close();
         delete contechStateFile;
-        
+
         return true;
     }
-    
+
     // returns size in bytes
     unsigned int Contech::getSizeofType(Type* t)
     {
@@ -847,7 +849,7 @@ cleanup:
         else if (t->isPtrOrPtrVectorTy()) { errs() << *t << " is pointer vector\n";}
         else if (t->isArrayTy()) { errs() << *t << " is array\n";}
         else if (t->isStructTy()) { errs() << *t << " is struct\n";}
-        
+
         // DataLayout::getStructLayout(StructType*)->getSizeInBytes()
         StructType* st = dyn_cast<StructType>(t);
         if (st == NULL)
@@ -864,10 +866,10 @@ cleanup:
         {
             return stLayout->getSizeInBytes();
         }
-        
+
         return 0;
-    }    
-    
+    }
+
     // base 2 log of a value
     unsigned int Contech::getSimpleLog(unsigned int i)
     {
@@ -888,13 +890,13 @@ cleanup:
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
             // As InvokeInst are already terminator instructions, we do not have to find them here
-            if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+            if (CallInst *ci = dyn_cast<CallInst>(&*I))
             {
                 *tci = ci;
                 if (ci->isTerminator()) {*st = 1; return false;}
                 if (ci->doesNotReturn()) {*st = 2; return false;}
                 Function* f = ci->getCalledFunction();
-                
+
                 //
                 // If F == NULL, then f is indirect
                 //   O.w. this function may just be an annotation and can be ignored
@@ -903,16 +905,16 @@ cleanup:
                 {
                     const char* fn = f->getName().data();
                     if (0 == __ctStrCmp(fn, "llvm.dbg") ||
-                        0 == __ctStrCmp(fn, "llvm.lifetime")) 
+                        0 == __ctStrCmp(fn, "llvm.lifetime"))
                     {
                         *st = 3;
                         continue;
                     }
-                
+
                 }
-                
+
                 I++;
-                
+
                 // At this point, the call instruction returns and was not the last in the block
                 //   If the next instruction is a terminating, unconditional branch then splitting
                 //   is redundant.  (as splits create a terminating, unconditional branch)
@@ -932,10 +934,10 @@ cleanup:
                 return true;
             }
         }
-    
+
         return false;
     }
-    
+
     //
     // For each basic block
     //
@@ -954,18 +956,18 @@ cleanup:
         Value* baseBufValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
         const char* fileName;
-        
+
         auto abadf = B.begin();
         aPhi = convertIterToInst(abadf);
-        
+
         vector<Instruction*> delayedAtomicInsts;
         map<Instruction*, Value*> dupMemOps;
         map<Instruction*, int> dupMemOpOff;
         map<Value*, unsigned short> dupMemOpPos;
-        
+
         //errs() << "BB: " << bbid << "\n";
         debugLog("Enter BBID: " << bbid);
-        
+
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
             if (lineNum == 0)
@@ -974,10 +976,10 @@ cleanup:
                 auto dis = (&*I)->getDebugLoc().getScope();
                 fileName = dyn_cast<DIScope>(dis)->getFilename().str().c_str();
             }
-        
+
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
-            if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) 
+            if (/*PHINode *pn = */dyn_cast<PHINode>(&*I))
             {
                 getNextI = true;
                 numIROps --;
@@ -1000,7 +1002,7 @@ cleanup:
             {
                 int addrOffset = 0;
                 Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
-                
+
                 if (addrSimilar != NULL)
                 {
                     //errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
@@ -1013,11 +1015,11 @@ cleanup:
                     memOpCount ++;
                 }
             }
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
             {
                 int addrOffset = 0;
                 Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
-                
+
                 if (addrSimilar != NULL)
                 {
                     //errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
@@ -1032,10 +1034,10 @@ cleanup:
             }
             else if (ContechMinimal == true)
             {
-                if (CallInst* ci = dyn_cast<CallInst>(&*I)) 
+                if (CallInst* ci = dyn_cast<CallInst>(&*I))
                 {
                     Function *f = ci->getCalledFunction();
-                    
+
                     // call is indirect
                     // TODO: add dynamic check on function called
                     if (f == NULL) { continue; }
@@ -1044,11 +1046,11 @@ cleanup:
                     const char* fmn = f->getName().data();
                     char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
                     const char* fn = fdn;
-                    if (status != 0) 
+                    if (status != 0)
                     {
                         fn = fmn;
                     }
-                    
+
                     CONTECH_FUNCTION_TYPE tID = classifyFunctionName(fn);
                     if (tID == EXIT || // We need to replace exit otherwise the trace is corrupt
                         tID == SYNC_ACQUIRE ||
@@ -1061,15 +1063,15 @@ cleanup:
                     {
                         containKeyCall = true;
                     }
-                    
+
                     if (status == 0)
                     {
                         free(fdn);
                     }
                 }
-            
+
             }
-            
+
             // LLVM won't do insertAfter, so we have to get the instruction after the instruction
             // to insert before it
             if (getNextI == true)
@@ -1078,12 +1080,12 @@ cleanup:
                 getNextI = false;
             }
         }
-        
+
         if (ContechMinimal == true && containKeyCall == false)
         {
             return false;
         }
-        
+
         llvm_basic_block* bi = new llvm_basic_block;
         if (bi == NULL)
         {
@@ -1099,7 +1101,7 @@ cleanup:
         bi->fileName = fileName;
         //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
         bi->critPathLen = getCriticalPathLen(B);
-        
+
         //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
         //debugLog("checkBufferFunction @" << __LINE__);
         //CallInst::Create(checkBufferFunction, "", aPhi);
@@ -1108,7 +1110,7 @@ cleanup:
         CallInst* sbb;
         CallInst* sbbc = NULL;
         unsigned int memOpPos = 0;
-        
+
         if (markOnly == true)
         {
             llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
@@ -1117,26 +1119,26 @@ cleanup:
             sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
             MarkInstAsContechInst(sbb);
         }
-        else 
+        else
         {
             Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
             MarkInstAsContechInst(bufV);
             baseBufValue = bufV;
-            
+
             Value* argsGBF[] = {baseBufValue};
             Instruction* bufPos = CallInst::Create(cct.getBufPosFunction, ArrayRef<Value*>(argsGBF,1), "bufPos", aPhi);
             MarkInstAsContechInst(bufPos);
             basePosValue = bufPos;
-            
+
             llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
             Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue};
             debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
-            sbb = CallInst::Create(cct.storeBasicBlockFunction, 
-                                   ArrayRef<Value*>(argsBB, 3), 
-                                   string("storeBlock") + to_string(bbid), 
+            sbb = CallInst::Create(cct.storeBasicBlockFunction,
+                                   ArrayRef<Value*>(argsBB, 3),
+                                   string("storeBlock") + to_string(bbid),
                                    aPhi);
             MarkInstAsContechInst(sbb);
-            
+
             sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
             posValue = sbb;
 
@@ -1147,32 +1149,32 @@ cleanup:
 #ifdef TSC_IN_BB
             Instruction* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
             MarkInstAsContechInst(stTick);
-            
+
             //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
             pllvm_mem_op tMemOp = new llvm_mem_op;
-        
+
             tMemOp->isWrite = true;
             tMemOp->size = 7;
             tMemOp->isDep = false;
             tMemOp->depMemOp = 0;
             tMemOp->depMemOpDelta = 0;
-            
+
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi);
             Value* argsMO[] = {addrI, cPos, sbb};
             debugLog("storeMemOpFunction @" << __LINE__);
             CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", aPhi);
             MarkInstAsContechInst(smo);
-            
+
             assert(smo != NULL);
             smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
-            
+
             tMemOp->addr = NULL;
             tMemOp->next = NULL;
-            
+
             memOpPos ++;
             memOpCount++;
-            if (bi->first_op == NULL) 
+            if (bi->first_op == NULL)
             {
                 bi->first_op = tMemOp;
             }
@@ -1186,17 +1188,17 @@ cleanup:
                 t->next = tMemOp;
             }
 #endif
-            
+
             // In LLVM 3.3+, switch to Monotonic and not Acquire
             Instruction* fenI = new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
             MarkInstAsContechInst(fenI);
         }
 
-        
+
         bool hasInstAllMemOps = false;
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
-        
+
             // After all of the known memOps have been instrumented, close out the basic
             //   block event based on the number of memOps
             if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
@@ -1212,7 +1214,7 @@ cleanup:
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", aPhi);
                     MarkInstAsContechInst(sbbc);
-                    
+
                     Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, aPhi);
                     MarkInstAsContechInst(fenI);
                     iPt = aPhi;
@@ -1222,7 +1224,7 @@ cleanup:
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", convertIterToInst(I));
                     MarkInstAsContechInst(sbbc);
-                    
+
                     Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, convertIterToInst(I));
                     MarkInstAsContechInst(fenI);
                     iPt = convertIterToInst(I);
@@ -1230,7 +1232,7 @@ cleanup:
                 sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
                 bi->len = memOpCount + dupMemOps.size();
                 hasInstAllMemOps = true;
-                
+
                 // Handle the delayed atomics now
                 for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
                 {
@@ -1251,12 +1253,12 @@ cleanup:
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", atomI);
                     MarkInstAsContechInst(nGetTick);
-                    
+
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
                     Value* cArg[] = {cinst,
-                                     synType, 
+                                     synType,
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
@@ -1277,12 +1279,12 @@ cleanup:
                     debugLog("storeMemReadMarkFunction @" << __LINE__);
                     CallInst::Create(cct.storeMemReadMarkFunction, "", li);
                 }
-                else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+                else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
                 {
                     debugLog("storeMemWriteMarkFunction @" << __LINE__);
                     CallInst::Create(cct.storeMemWriteMarkFunction, "", si);
                 }
-                if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+                if (CallInst *ci = dyn_cast<CallInst>(&*I))
                 {
                     if (ci->doesNotReturn())
                     {
@@ -1291,15 +1293,15 @@ cleanup:
                 }
                 continue;
             }
-            
+
             // <result> = load [volatile] <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>][, !invariant.load !<index>]
             // Load and store are identical except the cIsWrite is set accordingly.
-            // 
-            if (LoadInst *li = dyn_cast<LoadInst>(&*I)) 
+            //
+            if (LoadInst *li = dyn_cast<LoadInst>(&*I))
             {
                 pllvm_mem_op tMemOp = NULL;
-                
-                if (dupMemOps.find(li) != dupMemOps.end()) 
+
+                if (dupMemOps.find(li) != dupMemOps.end())
                 {
                     tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue);
                     tMemOp->isDep = true;
@@ -1314,12 +1316,12 @@ cleanup:
                     tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
                     memOpPos ++;
                 }
-                
+
                 if (tMemOp->isGlobal)
                 {
                     bi->containGlobalAccess = true;
                 }
-                
+
                 unsigned short pos = 0;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
@@ -1335,11 +1337,11 @@ cleanup:
                 }
             }
             //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
             {
                 pllvm_mem_op tMemOp = NULL;
-                
-                if (dupMemOps.find(si) != dupMemOps.end()) 
+
+                if (dupMemOps.find(si) != dupMemOps.end())
                 {
                     tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue);
                     tMemOp->isDep = true;
@@ -1354,12 +1356,12 @@ cleanup:
                     tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
                     memOpPos ++;
                 }
-                
+
                 if (tMemOp->isGlobal)
                 {
                     bi->containGlobalAccess = true;
                 }
-                
+
                 unsigned short pos = 0;
                 if (bi->first_op == NULL) bi->first_op = tMemOp;
                 else
@@ -1381,21 +1383,21 @@ cleanup:
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
                     MarkInstAsContechInst(nGetTick);
-                    
+
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
-                    // ++I moves the insertion point to after the xchg inst 
+                    // ++I moves the insertion point to after the xchg inst
                     Value* cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), convertIterToInst(++I));
                     Value* cArg[] = {cinst,
-                                     synType, 
+                                     synType,
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", convertIterToInst(I)); // Insert after xchg inst
                     MarkInstAsContechInst(nStoreSync);
-                    
+
                     I = convertInstToIter(nStoreSync);
                     iPt = nStoreSync;
                 }
@@ -1411,21 +1413,21 @@ cleanup:
                     debugLog("getCurrentTickFunction @" << __LINE__);
                     CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
                     MarkInstAsContechInst(nGetTick);
-                    
+
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
-                    // ++I moves the insertion point to after the armw inst 
+                    // ++I moves the insertion point to after the armw inst
                     Value* cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), convertIterToInst(++I));
                     Value* cArg[] = {cinst,
-                                     synType, 
+                                     synType,
                                      retV,
                                      nGetTick};
                     debugLog("storeSyncFunction @" << __LINE__);
                     CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
                                                         "", convertIterToInst(I)); // Insert after armw inst
                     MarkInstAsContechInst(nStoreSync);
-                    
+
                     I = convertInstToIter(nStoreSync);
                     iPt = nStoreSync;
                 }
@@ -1434,42 +1436,42 @@ cleanup:
                     delayedAtomicInsts.push_back(armw);
                 }
             }
-            else if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+            else if (CallInst *ci = dyn_cast<CallInst>(&*I))
             {
                 I = InstrumentFunctionCall<CallInst>(ci,
-                                                     hasUninstCall, 
+                                                     hasUninstCall,
                                                      containQueueBuf,
-                                                     hasInstAllMemOps, 
+                                                     hasInstAllMemOps,
                                                      ContechMinimal,
-                                                     I, 
-                                                     iPt, 
-                                                     bi, 
-                                                     &cct, 
+                                                     I,
+                                                     iPt,
+                                                     bi,
+                                                     &cct,
                                                      this,
                                                      M);
             }
-            else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I)) 
+            else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I))
             {
                 I = InstrumentFunctionCall<InvokeInst>(ci,
-                                                     hasUninstCall, 
+                                                     hasUninstCall,
                                                      containQueueBuf,
-                                                     hasInstAllMemOps, 
+                                                     hasInstAllMemOps,
                                                      ContechMinimal,
-                                                     I, 
-                                                     iPt, 
-                                                     bi, 
-                                                     &cct, 
+                                                     I,
+                                                     iPt,
+                                                     bi,
+                                                     &cct,
                                                      this,
                                                      M);
             }
         }
-        
+
         // There could be multiple call instructions in the block, due to intrinsics and
         //   debug "calls".  If any are real calls, then the block contains a call.
         bi->containCall = (bi->containCall)?true:hasUninstCall;
-        
-        
-        
+
+
+
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
         {
@@ -1496,14 +1498,14 @@ cleanup:
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
         }
-        
+
         // Finally record the information about this basic block
         //  into the CFG structure, so that targets can be matched up
         //  once all basic blocks have been parsed
         cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
-        
+
         debugLog("Return from BBID: " << bbid);
-        
+
         return true;
     }
 
@@ -1514,89 +1516,89 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
 {
     FunctionType* baseFunType = ompMicroTask->getFunctionType();
     Type* argTyAr[] = {cct.voidPtrTy};
-    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(),
                                                  ArrayRef<Type*>(argTyAr, 1),
                                                  false);
-    
-    Function* extFun = Function::Create(extFunType, 
+
+    Function* extFun = Function::Create(extFunType,
                                         ompMicroTask->getLinkage(),
                                         Twine("__ct", ompMicroTask->getName()),
                                         &M);
-                                        
+
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
-    
+
     Function::ArgumentListType& argList = extFun->getArgumentList();
-    
+
     Instruction* addrI = new BitCastInst(dyn_cast<Value>(argList.begin()), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
     MarkInstAsContechInst(addrI);
-    
+
     // getElemPtr 0, 0 -> arg 0 of type*
-    
+
     Value* args[2] = {ConstantInt::get(cct.int32Ty, 0), ConstantInt::get(cct.int32Ty, 0)};
     Instruction* ppid = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
     MarkInstAsContechInst(ppid);
-    
+
     Instruction* pid = new LoadInst(ppid, "ParentId", soloBlock);
     MarkInstAsContechInst(pid);
-    
+
     // getElemPtr 0, 1 -> arg 1 of type*
     args[1] = ConstantInt::get(cct.int32Ty, 1);
     Instruction* parg = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
     MarkInstAsContechInst(parg);
-    
+
     Instruction* argP = new LoadInst(parg, "Arg", soloBlock);
     MarkInstAsContechInst(argP);
-    
+
     Instruction* argV = new BitCastInst(argP, baseFunType->getParamType(0), "Cast to ArgTy", soloBlock);
     MarkInstAsContechInst(argV);
-    
+
     Value* cArg[] = {pid};
     Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTCF);
-    
+
     Value* cArgCall[] = {argV};
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgCall, 1), "", soloBlock);
     MarkInstAsContechInst(wrappedCall);
-    
+
     Instruction* callOTJF = CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTJF);
-    
+
     Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
         retI = ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
     else
         retI = ReturnInst::Create(M.getContext(), soloBlock);
     MarkInstAsContechInst(retI);
-    
+
     return extFun;
 }
-    
+
 Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 {
     if (ompMicroTask == NULL) {errs() << "Cannot create wrapper from NULL function\n"; return NULL;}
     FunctionType* baseFunType = ompMicroTask->getFunctionType();
     if (ompMicroTask->isVarArg()) { errs() << "Cannot create wrapper for varg function\n"; return NULL;}
-    
+
     Type** argTy = new Type*[1 + baseFunType->getNumParams()];
     for (unsigned int i = 0; i < baseFunType->getNumParams(); i++)
     {
         argTy[i] = baseFunType->getParamType(i);
     }
     argTy[baseFunType->getNumParams()] = cct.int32Ty;
-    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(),
                                                  ArrayRef<Type*>(argTy, 1 + baseFunType->getNumParams()),
                                                  false);
-    
-    Function* extFun = Function::Create(extFunType, 
+
+    Function* extFun = Function::Create(extFunType,
                                         ompMicroTask->getLinkage(),
                                         Twine("__ct", ompMicroTask->getName()),
                                         &M);
-    
+
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
-    
+
     Function::ArgumentListType& argList = extFun->getArgumentList();
     unsigned argListSize = argList.size();
-    
+
     Value** cArgExt = new Value*[argListSize - 1];
     auto it = argList.begin();
     for (unsigned i = 0; i < argListSize - 1; i ++)
@@ -1604,55 +1606,55 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
         cArgExt[i] = dyn_cast<Value>(it);
         ++it;
     }
-    
+
     Value* cArg[] = {dyn_cast<Value>(--(argList.end()))};
     Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTCF);
-    
+
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize - 1), "", soloBlock);
     MarkInstAsContechInst(wrappedCall);
-    
+
     Instruction* callOTJF = CallInst::Create(cct.ompThreadJoinFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTJF);
-    
+
     Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
         retI = ReturnInst::Create(M.getContext(), wrappedCall, soloBlock);
     else
         retI = ReturnInst::Create(M.getContext(), soloBlock);
     MarkInstAsContechInst(retI);
-    
+
     delete [] argTy;
     delete [] cArgExt;
-    
+
     return extFun;
 }
-    
+
 Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep)
 {
     if (ompMicroTask == NULL) {errs() << "Cannot create wrapper from NULL function\n"; return NULL;}
     FunctionType* baseFunType = ompMicroTask->getFunctionType();
     if (ompMicroTask->isVarArg()) { errs() << "Cannot create wrapper for varg function\n"; return NULL;}
-    
+
     Type** argTy = new Type*[baseFunType->getNumParams()];
     for (unsigned int i = 0; i < baseFunType->getNumParams(); i++)
     {
         argTy[i] = baseFunType->getParamType(i);
     }
-    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(), 
+    FunctionType* extFunType = FunctionType::get(ompMicroTask->getReturnType(),
                                                  ArrayRef<Type*>(argTy, baseFunType->getNumParams()),
                                                  false);
-                                                 
-    Function* extFun = Function::Create(extFunType, 
+
+    Function* extFun = Function::Create(extFunType,
                                         ompMicroTask->getLinkage(),
                                         Twine("__ct", ompMicroTask->getName()),
                                         &M);
-    
+
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
-    
+
     Function::ArgumentListType& argList = extFun->getArgumentList();
     unsigned argListSize = argList.size();
-    
+
     Value** cArgExt = new Value*[argListSize];
     auto it = argList.begin();
     for (unsigned i = 0; i < argListSize; i ++)
@@ -1660,23 +1662,23 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
         cArgExt[i] = dyn_cast<Value>(it);
         ++it;
     }
-    
+
     Constant* c1 = ConstantInt::get(cct.int32Ty, 1);
     Constant* tSize = ConstantInt::get(cct.pthreadTy, taskOffset);
     Constant* nDeps = ConstantInt::get(cct.int32Ty, numDep);
     Value* cArgs[] = {cArgExt[1], tSize, nDeps, c1};
-    
+
     Instruction* callOSDF = CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
     MarkInstAsContechInst(callOSDF);
-    
+
     CallInst* wrappedCall = CallInst::Create(ompMicroTask, ArrayRef<Value*>(cArgExt, argListSize), "", soloBlock);
     MarkInstAsContechInst(wrappedCall);
-    
+
     Constant* c0 = ConstantInt::get(cct.int32Ty, 0);
     cArgs[3] = c0;
     callOSDF = CallInst::Create(cct.ompStoreInOutDepsFunction, ArrayRef<Value*>(cArgs, 4), "", soloBlock);
     MarkInstAsContechInst(callOSDF);
-    
+
     Instruction* retI = NULL;
     if (ompMicroTask->getReturnType() != cct.voidTy)
     {
@@ -1687,12 +1689,12 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
         retI = ReturnInst::Create(M.getContext(), soloBlock);
     }
     MarkInstAsContechInst(retI);
-    
+
     delete [] cArgExt;
-    
+
     return extFun;
 }
-    
+
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
@@ -1701,7 +1703,7 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
     MarkInstAsContechInst(ret);
     return ret;
 }
-    
+
 //
 // findCilkStructInBlock
 //
@@ -1713,31 +1715,31 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
 Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
 {
     Value* v = NULL;
-    
+
     for (auto it = B.begin(), et = B.end(); it != et; ++it)
     {
         Value* iV = dyn_cast<Value>(&*it);
         if (iV == NULL) continue;
-        
+
         if (iV->getName().equals("ctInitCilkStruct"))
         {
             v = iV;
             break;
         }
     }
-    
+
     if (v == NULL && insert == true)
     {
         auto iPt = B.getFirstInsertionPt();
-        
+
         // Call init
         debugLog("cilkInitFunction @" << __LINE__);
         Instruction* cilkInit = CallInst::Create(cct.cilkInitFunction, "ctInitCilkStruct", convertIterToInst(iPt));
         MarkInstAsContechInst(cilkInit);
-        
+
         v = cilkInit;
     }
-    
+
     return v;
 }
 
@@ -1766,11 +1768,11 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     for (BasicBlock::iterator I = B->begin(), E = B->end(); I != E; ++I)
     {
         Function* f = NULL;
-        if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+        if (CallInst *ci = dyn_cast<CallInst>(&*I))
         {
             f = ci->getCalledFunction();
-            if (f == NULL) 
-            { 
+            if (f == NULL)
+            {
                 Value* v = ci->getCalledValue();
                 f = dyn_cast<Function>(v->stripPointerCasts());
                 if (f == NULL)
@@ -1779,11 +1781,11 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
                 }
             }
         }
-        else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I)) 
+        else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I))
         {
             f = ci->getCalledFunction();
-            if (f == NULL) 
-            { 
+            if (f == NULL)
+            {
                 Value* v = ci->getCalledValue();
                 f = dyn_cast<Function>(v->stripPointerCasts());
                 if (f == NULL)
@@ -1793,35 +1795,35 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
             }
         }
         if (f == NULL) continue;
-        
+
         // call is indirect
         // TODO: add dynamic check on function called
-        
+
 
         int status;
         const char* fmn = f->getName().data();
         char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
         const char* fn = fdn;
-        if (status != 0) 
+        if (status != 0)
         {
             fn = fmn;
         }
-        
+
         CONTECH_FUNCTION_TYPE funTy = classifyFunctionName(fn);
-        
+
         if (status == 0)
         {
             free(fdn);
         }
-        
-        if (funTy == cft) 
+
+        if (funTy == cft)
         {
             return true;
         }
     }
     return false;
 }
-    
+
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
 
