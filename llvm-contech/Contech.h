@@ -170,6 +170,7 @@ namespace llvm {
         virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
+        bool attemptTailDuplicate(BasicBlock* bbTail);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);

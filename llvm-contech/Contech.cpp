@@ -37,6 +37,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Instrumentation.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 
 #include <map>
 #include <set>
@@ -430,6 +431,162 @@ namespace llvm {
         return tMemOp;
     }
 
+    bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
+    {
+        // If this block has multiple predecessors
+        //   And each predecessor has an unconditional branch
+        //   Then we can duplicate this block and merge with its predecessors
+        BasicBlock* pred;
+        unsigned predCount = 0;
+        
+        // LLVM already tries to merge returns into a single basic block
+        //   Don't undo this
+        if (dyn_cast<ReturnInst>(bbTail->getTerminator()) != NULL) return false;
+        
+        // Simplication, only duplicate with a single successor.
+        //   TODO: revisit successor update code to remove this assumption.
+        if (bbTail->getTerminator()->getNumSuccessors() > 1) return false;
+        
+        for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
+        {
+            pred = *pit;
+            TerminatorInst* ti = pred->getTerminator();
+            if (dyn_cast<BranchInst>(ti) == NULL) return false;
+            if (ti->getNumSuccessors() != 1) return false;
+            
+            // Furthermore, Contech splits basic blocks for function calls
+            //   Any tail duplication must not undo that split.
+            //   Check if the terminator was introduced by Contech
+            if (ti->getMetadata(cct.ContechMDID)) 
+            {
+                return false;
+            }
+            predCount++;
+        }
+        
+        if (predCount <= 1) return false;
+
+        // Setup new PHINodes in the successor block in preparation for the duplication.
+        //
+        BasicBlock* bbSucc = bbTail->getTerminator()->getSuccessor(0);
+        map <unsigned, PHINode*> phiFixUp;
+        unsigned instPos = 0;
+        for (Instruction &II : *bbTail)
+        {
+            vector<Instruction*> instUsesToUpdate;
+            Value* v = dyn_cast<Value>(&II);
+            
+            //for (User::op_iterator itUse = II.op_begin(), etUse = II.op_end(); itUse != etUse; ++itUse)
+            for (auto itUse = v->user_begin(), etUse = v->user_end(); itUse != etUse; ++itUse)
+            {
+                Instruction* iUse = dyn_cast<Instruction>(*itUse);
+                if (iUse == NULL) continue;
+                
+                //errs() << *iUse << "\n";
+                if (iUse->getParent() == bbTail) continue;
+                
+                instUsesToUpdate.push_back(iUse);
+            }
+            
+            // If the value is not used outside of this block, then it will not converge
+            if (instUsesToUpdate.empty())
+            {
+                instPos++;
+                continue;
+            }
+            
+            // This value is used in another block
+            //   Therefore, its value will converge from each duplicate
+            PHINode* pn = PHINode::Create(II.getType(), 0, "", bbSucc->getFirstNonPHI());
+            II.replaceUsesOutsideBlock(pn, bbTail);
+            pn->addIncoming(&II, bbTail);
+            phiFixUp[instPos] = pn;
+            
+            instPos++;
+        }
+        
+        bool firstPred = true;
+        for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; )
+        {
+            pred = *pit;
+            ++pit;
+            TerminatorInst* ti = pred->getTerminator();
+            
+            if (firstPred)
+            {
+                firstPred = false;
+                continue;
+            }
+            
+            ValueToValueMapTy VMap;
+            // N.B. Clone does not update uses in new block
+            //   Each instruction will still use its old def and not any new instruction.
+            BasicBlock* bbAlt = CloneBasicBlock(bbTail, VMap, bbTail->getName() + "dup", bbTail->getParent(), NULL);
+            if (bbAlt == NULL) return false;
+
+            // Adapted from CloneFunctionInto:CloneFunction.cpp
+            //   This fixes the instruction uses
+            for (Instruction &II : *bbAlt)
+                RemapInstruction(&II, VMap, RF_None, NULL, NULL);
+            
+            // Get all successors into a vector
+            //vector<BasicBlock*> Succs(bbAlt->succ_begin(), bbAlt->succ_end());
+            BasicBlock* bbSucc = bbAlt->getTerminator()->getSuccessor(0);
+            
+            // Fix PHINode
+            //  In duplicating the block, the PHINodes were destroyed.  However, there may still be
+            //  a later point where the blocks converge requiring new PHINodes to be created.
+            //  Probably the successor to this block.
+            // However, at this point, there are only values without uses
+            instPos = 0;
+            for (Instruction &II : *bbAlt)
+            {
+                if (phiFixUp.find(instPos) == phiFixUp.end()) {instPos++; continue;}
+                PHINode* pn = phiFixUp[instPos];
+                pn->addIncoming(&II, bbAlt);
+                instPos++;
+            }
+            
+            ti->setSuccessor(0, bbAlt);;
+            for (auto it = bbAlt->begin(), et = bbAlt->end(); it != et; ++it)
+            {
+                if (PHINode* pn = dyn_cast<PHINode>(&*it))
+                {
+                    for (auto pit = pn->block_begin(), pet = pn->block_end(); pit != pet; ++pit)
+                        if (*pit != pred)
+                            pn->removeIncomingValue(*pit, false);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            
+            // TODO: verify that merge will update the PHIs
+            bool mergeV = MergeBlockIntoPredecessor(bbAlt);
+            assert(mergeV && "Successful merge of bbAlt");
+            for (auto it = bbTail->begin(), et = bbTail->end(); it != et; ++it)
+            {
+                if (PHINode* pn = dyn_cast<PHINode>(&*it))
+                {
+                    pn->removeIncomingValue(pred, false);
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        
+        pred = *(pred_begin(bbTail));
+        assert(firstPred == false);
+        
+        bool mergeV = MergeBlockIntoPredecessor(bbTail);
+        assert(mergeV && "Successful merge of bbTail");
+        
+        return true;
+    }
+    
     //
     // findSimilarMemoryInst
     //
@@ -731,11 +888,23 @@ namespace llvm {
 
                 }
             }
+            
+            bool changed = false;
+            do {
+                changed = false;
+                for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B)
+                {
+                    if (attemptTailDuplicate(&*B))
+                    {
+                        //changed = true;
+                        break;
+                    }
+                }
+            } while (changed);
 
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
-
                 internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
                 bb_count++;
             }
@@ -931,6 +1100,7 @@ cleanup:
                     }
                 }
                 B.splitBasicBlock(I, "");
+                MarkInstAsContechInst(B.getTerminator());
                 return true;
             }
         }
@@ -968,14 +1138,19 @@ cleanup:
         //errs() << "BB: " << bbid << "\n";
         debugLog("Enter BBID: " << bbid);
 
+        if (lineNum == 0)
+        {
+            Instruction* gf = B.getFirstNonPHIOrDbgOrLifetime();
+            lineNum = getLineNum(gf);
+            DILocation* dis = (gf)->getDebugLoc();//.getScope();
+            if (dis != NULL)
+                fileName = dis->getFilename().str().c_str();
+            //dyn_cast<DIScope>(dis)->getFilename().str().c_str();
+        }
+        
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
-            if (lineNum == 0)
-            {
-                lineNum = getLineNum(&*I);
-                auto dis = (&*I)->getDebugLoc().getScope();
-                fileName = dyn_cast<DIScope>(dis)->getFilename().str().c_str();
-            }
+            
 
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
@@ -1760,6 +1935,7 @@ GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, c
 int Contech::getLineNum(Instruction* I)
 {
     DILocation* dil = I->getDebugLoc();
+    if (dil == NULL) return 1;
     return dil->getLine();
 }
 
