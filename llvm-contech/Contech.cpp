@@ -547,14 +547,22 @@ namespace llvm {
                 instPos++;
             }
             
-            ti->setSuccessor(0, bbAlt);;
+            //
+            // Before merging, every PHINode is the successor needs to only have one incoming value
+            //
+            ti->setSuccessor(0, bbAlt);
             for (auto it = bbAlt->begin(), et = bbAlt->end(); it != et; ++it)
             {
                 if (PHINode* pn = dyn_cast<PHINode>(&*it))
                 {
-                    for (auto pit = pn->block_begin(), pet = pn->block_end(); pit != pet; ++pit)
-                        if (*pit != pred)
-                            pn->removeIncomingValue(*pit, false);
+                    // Remove incoming value may invalidate the iterators.
+                    // Instead create a new PHINode
+                    Value* inBlock = pn->getIncomingValueForBlock(pred);
+                    PHINode* pnRepl = PHINode::Create(inBlock->getType(), 1, pn->getName() + "dup", pn);
+                    pnRepl->addIncoming(inBlock, pred);
+                    pn->replaceAllUsesWith(pnRepl);
+                    pn->eraseFromParent();
+                    it = convertInstToIter(pnRepl);
                 }
                 else
                 {
@@ -569,7 +577,13 @@ namespace llvm {
             {
                 if (PHINode* pn = dyn_cast<PHINode>(&*it))
                 {
-                    pn->removeIncomingValue(pred, false);
+                    int idx = pn->getBasicBlockIndex(pred);
+                    if (idx == -1)
+                    {
+                        continue;
+                    }
+                    errs() << idx << "\n";
+                    pn->removeIncomingValue(idx, false);
                 }
                 else
                 {
