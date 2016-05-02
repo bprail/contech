@@ -43,6 +43,7 @@ namespace llvm {
         std::string callFnName;
         //const char* fnName;
         const char* fileName;
+        unsigned int fileNameSize;
     } llvm_basic_block, *pllvm_basic_block;
 
     typedef enum _CONTECH_FUNCTION_TYPE {

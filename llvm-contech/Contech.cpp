@@ -445,14 +445,50 @@ namespace llvm {
         
         // Simplication, only duplicate with a single successor.
         //   TODO: revisit successor update code to remove this assumption.
-        if (bbTail->getTerminator()->getNumSuccessors() > 1) return false;
+        unsigned numSucc = bbTail->getTerminator()->getNumSuccessors();
+        if (numSucc > 1) return false;
         
+        //
+        // If this block's successor has multiple predecessors, then skip
+        //   TODO: Handle this case
+        if (numSucc == 1 && 
+            bbTail->getUniqueSuccessor()->getUniquePredecessor() == NULL) return false;
+        
+        // If something requires this block's address, then it cannot be duplicated away
+        //
+        if (bbTail->hasAddressTaken()) return false;
+        
+        // Code taken from llvm::MergeBlockIntoPredecessor in BasicBlockUtils.cpp
+        // Can't merge if there is PHI loop.
+        for (BasicBlock::iterator BI = bbTail->begin(), BE = bbTail->end(); BI != BE; ++BI) 
+        {
+            if (PHINode *PN = dyn_cast<PHINode>(BI)) 
+            {
+                for (Value *IncValue : PN->incoming_values())
+                {
+                    if (IncValue == PN) return false;
+                }
+            } 
+            else
+            {
+                break;
+            }
+        }
+        
+        //
+        // Go through each predecessor and verify that a tail duplicate can be merged
+        //
         for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
         {
             pred = *pit;
             TerminatorInst* ti = pred->getTerminator();
+            
+            // No self loops
+            if (pred == bbTail) return false;
+            
             if (dyn_cast<BranchInst>(ti) == NULL) return false;
             if (ti->getNumSuccessors() != 1) return false;
+            if (ti->isExceptional()) return false;
             
             // Furthermore, Contech splits basic blocks for function calls
             //   Any tail duplication must not undo that split.
@@ -466,6 +502,7 @@ namespace llvm {
         
         if (predCount <= 1) return false;
 
+        //
         // Setup new PHINodes in the successor block in preparation for the duplication.
         //
         BasicBlock* bbSucc = bbTail->getTerminator()->getSuccessor(0);
@@ -512,6 +549,9 @@ namespace llvm {
             ++pit;
             TerminatorInst* ti = pred->getTerminator();
             
+            //
+            // One predecessor must be left untouched.
+            //
             if (firstPred)
             {
                 firstPred = false;
@@ -527,7 +567,9 @@ namespace llvm {
             // Adapted from CloneFunctionInto:CloneFunction.cpp
             //   This fixes the instruction uses
             for (Instruction &II : *bbAlt)
+            {
                 RemapInstruction(&II, VMap, RF_None, NULL, NULL);
+            }
             
             // Get all successors into a vector
             //vector<BasicBlock*> Succs(bbAlt->succ_begin(), bbAlt->succ_end());
@@ -548,7 +590,9 @@ namespace llvm {
             }
             
             //
-            // Before merging, every PHINode is the successor needs to only have one incoming value
+            // Before merging, every PHINode in the successor needs to only have one incoming value.
+            //   The merge utility assumes that the first value in every PHINode comes from the
+            //   predecessor, which is rarely true in this case.  So new PHINodes are created.
             //
             ti->setSuccessor(0, bbAlt);
             for (auto it = bbAlt->begin(), et = bbAlt->end(); it != et; ++it)
@@ -582,7 +626,6 @@ namespace llvm {
                     {
                         continue;
                     }
-                    errs() << idx << "\n";
                     pn->removeIncomingValue(idx, false);
                 }
                 else
@@ -596,7 +639,19 @@ namespace llvm {
         assert(firstPred == false);
         
         bool mergeV = MergeBlockIntoPredecessor(bbTail);
+        if (!mergeV) {errs() << *pred << "\n" << *bbTail << "\n";}
         assert(mergeV && "Successful merge of bbTail");
+        
+        for (auto it = phiFixUp.begin(), et = phiFixUp.end(); it != et; ++it)
+        {
+            PHINode* pn = it->second;
+            if (pn->getNumIncomingValues() != predCount)
+            {
+                errs() << *pn << "\n";
+                errs() << *(pn->getParent()) << "\n";
+                assert(0);
+            }
+        }
         
         return true;
     }
@@ -980,8 +1035,7 @@ cleanup:
                 *contechStateFile << bi->second->fnName;
                 //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
 
-
-                strLen = (bi->second->fileName != NULL)?strlen(bi->second->fileName):0;
+                strLen = bi->second->fileNameSize;
                 contechStateFile->write((char*)&strLen, sizeof(int));
                 contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
 
@@ -1139,6 +1193,7 @@ cleanup:
         Value* basePosValue = NULL;
         Value* baseBufValue = NULL;
         unsigned int lineNum = 0, numIROps = B.size();
+        unsigned int fileNameSize = 0;
         const char* fileName;
 
         auto abadf = B.begin();
@@ -1158,7 +1213,10 @@ cleanup:
             lineNum = getLineNum(gf);
             DILocation* dis = (gf)->getDebugLoc();//.getScope();
             if (dis != NULL)
+            {
                 fileName = dis->getFilename().str().c_str();
+                fileNameSize = (fileName != NULL)?strlen(fileName):0;
+            }
             //dyn_cast<DIScope>(dis)->getFilename().str().c_str();
         }
         
@@ -1288,6 +1346,7 @@ cleanup:
         bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
         bi->fileName = fileName;
+        bi->fileNameSize = fileNameSize;
         //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
         bi->critPathLen = getCriticalPathLen(B);
 
