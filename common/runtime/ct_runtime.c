@@ -714,9 +714,9 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     //   So non zeros indicate the sync event did not happen
     if (success != 0) {return;}
     
-    unsigned int p = __ctThreadLocalBuffer->pos;
     ct_tsc_t t = rdtsc();
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
+    unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
