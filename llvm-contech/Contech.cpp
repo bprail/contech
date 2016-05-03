@@ -965,7 +965,7 @@ namespace llvm {
                 {
                     if (attemptTailDuplicate(&*B))
                     {
-                        //changed = true;
+                        changed = true;
                         break;
                     }
                 }
@@ -1159,7 +1159,9 @@ cleanup:
                 {
                 	if (BranchInst *bi = dyn_cast<BranchInst>(&*I))
                 	{
-                		if (bi->isUnconditional()) {*st = 4; return false;}
+                        // Contech did not insert this branch, but is should claim it, so the instruction
+                        //   is not later removed.
+                		if (bi->isUnconditional()) {*st = 4; MarkInstAsContechInst(B.getTerminator()); return false;}
                 	}
                     else if (/* ReturnInst *ri = */ dyn_cast<ReturnInst>(&*I))
                     {
@@ -1222,8 +1224,6 @@ cleanup:
         
         for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
         {
-            
-
             // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
             //   compare with getFirstInsertionPt
             if (/*PHINode *pn = */dyn_cast<PHINode>(&*I))
@@ -1438,7 +1438,7 @@ cleanup:
 #endif
 
             // In LLVM 3.3+, switch to Monotonic and not Acquire
-            Instruction* fenI = new FenceInst(M.getContext(), Acquire, SingleThread, sbb);
+            Instruction* fenI = new FenceInst(M.getContext(), Acquire, SingleThread, bufV);
             MarkInstAsContechInst(fenI);
         }
 
