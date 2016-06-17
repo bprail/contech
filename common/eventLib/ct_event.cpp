@@ -9,8 +9,19 @@ using namespace contech;
 
 //#define fread_check(x,y,z,a) do {if (z != (t = fread(x,y,z,a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate();} sum += (t * y);} while(0)
 // Use ct_file
-#define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate(a);} sum += (t);} while(0)
+//#define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate(a);} sum += (t);} while(0)
 
+void EventLib::fread_check(void* x, size_t y, size_t z, ct_file* a)
+{
+    uint32_t t = 0;
+    if ((y * z) != (t = ct_read(x,(y * z),a))) 
+    {
+        fprintf(stderr, "FREAD failure at %d of %lu after %lu\n", __LINE__, z, sum);
+        dumpAndTerminate(a);
+    } 
+    sum += (t);
+}
+    
 EventLib::EventLib()
 {
     sum = 0;
@@ -333,7 +344,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 tStr = (char*) malloc(sizeof(char) * (len + 1));
                 if (tStr == NULL)
                 {
-                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for function name\n", sizeof(char) * (len + 1));
                     free(npe);
                     return NULL;
                 }
@@ -353,7 +364,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 tStr = (char*) malloc(sizeof(char) * (len + 1));
                 if (tStr == NULL)
                 {
-                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for function name\n", sizeof(char) * (len + 1));
                     free(npe->bbi.fun_name);
                     free(npe);
                     return NULL;
@@ -374,7 +385,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
                 tStr = (char*) malloc(sizeof(char) * (len + 1));
                 if (tStr == NULL)
                 {
-                    fprintf(stderr, "ERROR: Failed to allocate %u bytes for function name\n", sizeof(char) * (len + 1));
+                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for function name\n", sizeof(char) * (len + 1));
                     free(npe->bbi.file_name);
                     free(npe->bbi.fun_name);
                     free(npe);
@@ -505,7 +516,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
             }
             else if ((sum - 12) != bufSum)
             {
-                fprintf(stderr, "Marker at %llu bytes, should be at 12 + %llu\n", sum, bufSum);
+                fprintf(stderr, "Marker at %lu bytes, should be at 12 + %lu\n", sum, bufSum);
                 dumpAndTerminate(fptr);
             }
             
@@ -596,7 +607,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         default:
         {
             assert(!isCompressed(fptr));
-            fprintf(stderr, "ERROR: type %d not supported at %llu\n", npe->event_type, sum);
+            fprintf(stderr, "ERROR: type %d not supported at %lu\n", npe->event_type, sum);
             fprintf(stderr, "\tPrevious event - %d with ID - %d\n", lastType, lastID);
             dumpAndTerminate(fptr);
         }
@@ -633,7 +644,7 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
 
     if (sum > bufSum && bufSum > 0) 
     {
-        fprintf(stderr, "ERROR: Missing buffer event at %llx.  Should be after %d bytes.\n", sum, lastBufPos);
+        fprintf(stderr, "ERROR: Missing buffer event at %lx.  Should be after %d bytes.\n", sum, lastBufPos);
         dumpAndTerminate(fptr);
     }
     
@@ -659,8 +670,8 @@ void EventLib::dumpAndTerminate(ct_file *fptr)
     struct stat buf;
     char d = 0;
     fstat(fileno(fh), &buf);
-    fprintf(stderr, "%llx - %d - %d - %llx - %d - %llx\n", 
-                    fh, ferror(fh), feof(fh), ftell(fh), fread(&d, 1, 1, fh), buf.st_size);
+    fprintf(stderr, "%p - %d - %d - %lx - %ld - %lx\n", 
+                    (void*)fh, ferror(fh), feof(fh), ftell(fh), fread(&d, 1, 1, fh), buf.st_size);
     displayContechEventDebugInfo();
     assert(0);
 }
@@ -677,15 +688,15 @@ void EventLib::displayContechEventDiagInfo()
 void EventLib::displayContechEventDebugInfo()
 {
     int i;
-    fprintf(stderr, "Consumed %llu bytes, in buffer of %d to %llu\n", sum, lastBufPos, bufSum);
+    fprintf(stderr, "Consumed %lu bytes, in buffer of %d to %lu\n", sum, lastBufPos, bufSum);
     fprintf(stderr, "\tOFF(ty(id) - data0 data 1\n");
     for (i = cedPos; i >= 0; i--)
     {
-        fprintf(stderr, "\t0x%llx(%d(%d) - %d %d)\n", ced[i].sum, ced[i].type, ced[i].id, ced[i].data0, ced[i].data1);
+        fprintf(stderr, "\t0x%x(%d(%d) - %d %d)\n", ced[i].sum, ced[i].type, ced[i].id, ced[i].data0, ced[i].data1);
     }
     for (i = 64 - 1; i > cedPos; i--)
     {
-        fprintf(stderr, "\t0x%llx(%d(%d) - %d %d)\n", ced[i].sum, ced[i].type, ced[i].id, ced[i].data0, ced[i].data1);
+        fprintf(stderr, "\t0x%x(%d(%d) - %d %d)\n", ced[i].sum, ced[i].type, ced[i].id, ced[i].data0, ced[i].data1);
     }
     //fprintf(stderr, "Last id - %d, type - %d\n", lastID, lastType);
     fflush(stderr);
