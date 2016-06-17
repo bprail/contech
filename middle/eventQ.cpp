@@ -90,7 +90,7 @@ void EventList::rescanMinTicket()
         pct_event event = it->second.front();
         if (event->event_type == ct_event_sync)
         {
-            printf("%u: on ticket %llu\n", event->contech_id, event->sy.ticketNum);
+            printf("%u: on ticket %lu\n", event->contech_id, event->sy.ticketNum);
             if (event->sy.ticketNum < minQueuedTicket)
             {
                 minQueuedTicket = event->sy.ticketNum;
@@ -103,7 +103,7 @@ void EventList::rescanMinTicketDeep()
 {
     for (auto it = queuedEvents.begin(), et = queuedEvents.end(); it != et; ++it)
     {
-        unsigned long long tNum = 0;
+        uint64_t tNum = 0;
         pct_event tevent = NULL;
         
         for (auto ivt = it->second.begin(), evt = it->second.end(); ivt != evt; ++ivt)
@@ -115,7 +115,10 @@ void EventList::rescanMinTicketDeep()
                
                 if (event->sy.ticketNum < tNum)
                 {
-                     printf("%u: non ticket on %llu, as < %llu of %p\n", event->contech_id, event->sy.ticketNum, tevent);
+                     printf("%u: non ticket on %lu, as < %lu of %p\n", event->contech_id, 
+                                                                       event->sy.ticketNum,
+                                                                       tNum,
+                                                                      (void*)tevent);
                      assert(0);
                 }
                 else
@@ -135,7 +138,7 @@ void EventList::barrierTicket()
         pct_event event = it->second.front();
         if (event->event_type == ct_event_barrier)
         {
-            printf("%u: on ticket %u\n", event->contech_id, event->bar.barrierNum);
+            printf("%u: on ticket %lu\n", event->contech_id, event->bar.barrierNum);
 
         }
     }

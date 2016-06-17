@@ -125,7 +125,7 @@ reset_middle:
             // Since every instance should have identical bbinfo, the first create should be
             //   rank 0, and then every other rank
             assert(currentRank == 0);
-            if (DEBUG) printf("Global offset is %llu\n", context[0].timeOffset);
+            if (DEBUG) printf("Global offset is %lu\n", context[0].timeOffset);
             seenFirstEvent = true;
         }
         else if (event->event_type == ct_event_basic_block_info && currentRank == 0)
@@ -231,7 +231,7 @@ reset_middle:
             assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
             if (endTime < startTime)
             {
-                printf("Timestamps reordered on type (%d): %llu <= %llu\n", event->event_type,
+                printf("Timestamps reordered on type (%d): %lu <= %lu\n", event->event_type,
                                                                             startTime,
                                                                             endTime);
             }
@@ -593,7 +593,7 @@ reset_middle:
                     eventDebugPrint(activeContech.activeTask()->getTaskId(), "leaving barrier", barrierTask->getTaskId(), startTime, endTime);
                     if (isFinished == true)
                     {
-                        printf("\tBarrier(%llx) finished\n", barA.data);
+                        printf("\tBarrier(%lx) finished\n", barA.data);
                     }
                 }
 
@@ -706,10 +706,10 @@ reset_middle:
                     firstSend->addSuccessor(recvTask->getTaskId());
                     recvTask->addPredecessor(firstSend->getTaskId());
                     
-                    printf("Send - %d:%d <-> %d:%d\n", firstSend->getContextId(),
-                                                       firstSend->getSeqId(),
-                                                       recvTask->getContextId(),
-                                                       recvTask->getSeqId());
+                    printf("Send - %u:%u <-> %u:%u\n", (uint32_t)firstSend->getContextId(),
+                                                       (uint32_t)firstSend->getSeqId(),
+                                                       (uint32_t)recvTask->getContextId(),
+                                                       (uint32_t)recvTask->getSeqId());
                     
                     if (event->mpixf.isBlocking == true)
                     {
@@ -774,10 +774,10 @@ reset_middle:
                         
                         recvT->addPredecessor(firstSend->getTaskId());
                         firstSend->addSuccessor(recvT->getTaskId());
-                        printf("Recv - %d:%d <-> %d:%d\n", firstSend->getContextId(),
-                                                           firstSend->getSeqId(),
-                                                           recvT->getContextId(),
-                                                           recvT->getSeqId());
+                        printf("Recv - %u:%u <-> %u:%u\n", (uint32_t)firstSend->getContextId(),
+                                                           (uint32_t)firstSend->getSeqId(),
+                                                           (uint32_t)recvT->getContextId(),
+                                                           (uint32_t)recvT->getSeqId());
                         
                         // Remove tuple
                         mpiSendQ[event->mpixf.comm_rank][currentRank].erase(sendIt);
@@ -835,10 +835,10 @@ reset_middle:
                 
                 recvT->addPredecessor(firstSend->getTaskId());
                 firstSend->addSuccessor(recvT->getTaskId());
-                printf("Recv - %d:%d <-> %d:%d\n", firstSend->getContextId(),
-                                                   firstSend->getSeqId(),
-                                                   recvT->getContextId(),
-                                                   recvT->getSeqId());
+                printf("Recv - %u:%u <-> %u:%u\n", (uint32_t)firstSend->getContextId(),
+                                                   (uint32_t)firstSend->getSeqId(),
+                                                   (uint32_t)recvT->getContextId(),
+                                                   (uint32_t)recvT->getSeqId());
                 
                 // Remove tuple
                 mpiSendQ[event->mpixf.comm_rank][currentRank].erase(sendIt);
@@ -872,13 +872,13 @@ reset_middle:
             if (roiEvent == false)
             {
                 setROIStart(tid);
-                printf("DEBUG - ROI Start - %llu - %llu\n", tid, roiTime);
+                printf("DEBUG - ROI Start - %lu - %lu\n", (uint64_t)tid, roiTime);
                 roiEvent = true;
             }
             else
             {
                 setROIEnd(tid);
-                printf("DEBUG - ROI End - %llu - %llu\n", tid, roiTime);
+                printf("DEBUG - ROI End - %lu - %lu\n", (uint64_t)tid, roiTime);
             }
         }
         // End switch block on event type
@@ -891,7 +891,7 @@ reset_middle:
 
     // TODO: for every context if endtime == 0, then join?
     
-    if (DEBUG) printf("Processed %llu events.\n", eventCount);
+    if (DEBUG) printf("Processed %lu events.\n", eventCount);
     // Write out all tasks that are ready to be written
     
     char* d = NULL;

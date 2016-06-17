@@ -66,7 +66,7 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
         {
             last = t;
         }
-        printf("%llx  ", t->getTaskId());
+        printf("%lx  ", (uint64_t)t->getTaskId());
     }
     if (last != NULL)
     {
@@ -321,8 +321,8 @@ void findPredInTaskMap(map<TaskId, TaskWrapper> &writeTaskMap, int c, int s)
         {
             if (succ == tid)
             {
-                printf("Found in %u:%u that is at %u\n", it->first.getContextId(),
-                                                         it->first.getSeqId(),
+                printf("Found in %u:%u that is at %u\n", (uint32_t)it->first.getContextId(),
+                                                         (uint32_t)it->first.getSeqId(),
                                                          it->second.p);
                 return;
             }
@@ -374,7 +374,7 @@ void* backgroundTaskWriter(void* v)
             {
                 struct timeb tp;
                 ftime(&tp);
-                printf("MIDDLE_DEQUE: %d.%03d\t%u\n", (unsigned int)tp.time, tp.millitm, taskWriteCount);
+                printf("MIDDLE_DEQUE: %d.%03d\t%lu\n", (unsigned int)tp.time, tp.millitm, taskWriteCount);
             }
         }
         pthread_mutex_unlock(&taskQueueLock);
@@ -451,7 +451,7 @@ void* backgroundTaskWriter(void* v)
         ftime(&tp);
         printf("MIDDLE_TASK: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
     }
-    printf("Writing index for %d at %lld\n", taskWriteCount, pos);
+    printf("Writing index for %lu at %ld\n", taskWriteCount, pos);
     size_t t = ct_write(&taskWriteCount, sizeof(taskWriteCount), out);
     
     priority_queue<pair<ct_tsc_t, pair<TaskId, uint64> >, vector<pair<ct_tsc_t, pair<TaskId, uint64> > >, first_compare > taskSort;
@@ -550,7 +550,7 @@ void* backgroundTaskWriter(void* v)
     printf("Tasks Written: %ld\n", taskWriteCount);
     if (taskQueue != NULL)
         printf("Tasks Left: %ld\n", taskQueue->size());
-    printf("Tasks Remaining: %u\n", writeTaskQueue.size());
+    printf("Tasks Remaining: %lu\n", writeTaskQueue.size());
         
     return NULL;
 }
