@@ -355,7 +355,7 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     }
  
     g = __ctCleanupThread;
-    pthread_cleanup_push(g, (void*)p);
+    pthread_cleanup_push(g, (void*)(uint64_t)p);
     
     #ifdef CT_OVERHEAD_TRACK
     {
@@ -863,7 +863,7 @@ void __ctStoreMPITransfer(bool isSend, bool isBlocking, int count, int datatype,
     }
     else
     {
-        printf("|%llx < %llx|\n", start_t, t);
+        printf("|%lx < %lx|\n", start_t, t);
         assert(0);
     }
     
