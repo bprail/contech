@@ -16,6 +16,7 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 
+#include <signal.h>
 
 #include <sched.h>
 
@@ -65,6 +66,11 @@ void __ctCleanupThreadMain(void* v)
     pthread_join((pthread_t) v, (void**)&d);
 }
 
+void sigsegv_handler(int num, siginfo_t * sigI, void * ucontext)
+{
+    
+}
+
 #ifdef CT_MAIN
 int main(int argc, char** argv)
 {
@@ -93,6 +99,25 @@ int main(int argc, char** argv)
                 printf("CT_MEM: %llu\t%u\n", mem_size, __ctMaxBuffers);
             }
         }
+        
+        {
+            struct sigaction siga, old_siga;
+            int sig_ret;
+            siga.sa_sigaction = sigsegv_handler;
+            sig_ret = sigemptyset(&siga.sa_mask);
+            assert(sig_ret == 0);
+            siga.sa_flags = SA_SIGINFO;
+            //if (signal(SIGSEGV, sigsegv_handler) == SIG_ERR)
+            if (sigaction(SIGSEGV, &siga, &old_siga))
+            {
+                // do nothing if this fails to install
+            }
+            else
+            {
+                // do something with old_siga
+            }
+        }
+
         
         pthread_mutex_init(&__ctQueueBufferLock, NULL);
         pthread_cond_init(&__ctQueueSignal, NULL);
