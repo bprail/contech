@@ -4,6 +4,11 @@ using namespace contech;
 
 void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
 {
+    initTaskGraphInfo(getUncompressedHandle(in));
+}
+
+void TaskGraphInfo::initTaskGraphInfo(FILE* in)
+{
     int numBasicBlock = 0;
     
     ct_read(&numBasicBlock, sizeof(int), in);
@@ -86,6 +91,11 @@ void TaskGraphInfo::addRawBasicBlockInfo(uint bbid,
 }
 
 void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
+{
+    writeTaskGraphInfo(getUncompressedHandle(out));
+}
+
+void TaskGraphInfo::writeTaskGraphInfo(FILE* out)
 {
     int numBasicBlock = bbInfo.size();
     ct_write(&numBasicBlock, sizeof(int), out);

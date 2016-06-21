@@ -44,13 +44,13 @@ bool isCompressed(ct_file* handle);
 void close_ct_file(ct_file* handle);
 
 //wrapper to read from a ct_file handle. Abstracts the details of compressesion
-size_t ct_read(void * ptr, size_t size, ct_file* handle);
+size_t ct_read(void * ptr, size_t size, FILE* handle);
 
 //wrapper to write to a ct_file handle. Abstracts the details of compression
-size_t ct_write(const void * ptr, size_t size, ct_file* handle);
+size_t ct_write(const void * ptr, size_t size, FILE* handle);
 
 //returns the value of feof or gzeof depending on whether the handle is compressed or not.
-int ct_eof(ct_file* handle);
+int ct_eof(FILE* handle);
 
 //fast forward the handle to the specified offset (absolute, from start of file) in raw data stream bytes
 int ct_seek( ct_file* handle, unsigned long long offset);

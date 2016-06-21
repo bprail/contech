@@ -26,7 +26,7 @@ namespace contech {
 class TaskGraph
 {
 private:
-    ct_file* inputFile;
+    FILE* inputFile;
     TaskGraphInfo* tgi;
     
     // Use an index to find each task in the graph
@@ -47,11 +47,13 @@ private:
     void initTaskIndex(uint64);
     
     TaskGraph(ct_file*);
+    TaskGraph(FILE*);
 
 public:
     static TaskGraph* initFromFile(char*);
     static TaskGraph* initFromFile(const char*);
     static TaskGraph* initFromFile(ct_file*);
+    static TaskGraph* initFromFile(FILE*);
     
     Task* getNextTask();
     Task* getTaskById(TaskId id);

@@ -37,7 +37,7 @@ ct_file* create_ct_file_blank()
     return newHandle;
 }
 
-ct_file* create_ct_file_w(const char* fileName,bool compressed)
+ct_file* create_ct_file_w(const char* fileName, bool compressed)
 {
     ct_file* newHandle = create_ct_file_blank();
     FILE* tempFileHandle = fopen (fileName,"wb");
@@ -60,7 +60,7 @@ ct_file* create_ct_file_r(const char* fileName)
     
     //read whether file is compressed or uncompressed.
     bool compressed;
-    unsigned char zipTest[2];
+    unsigned char zipTest[2] = {0};
     if (tempFileHandle == NULL)
     {
         return NULL;
@@ -134,25 +134,15 @@ void close_ct_file(ct_file* handle)
     }
 }
 
-size_t ct_read(void * ptr, size_t size, ct_file* handle)
+size_t ct_read(void * ptr, size_t size, FILE* handle)
 {
     size_t read = 0;
-    if (isCompressed(handle)) 
-    {
-        do {
-            size_t r = gzread (getCompressedHandle(handle), ptr + read, size - read);
-            read += r;
-            if (r == 0 && ct_eof(handle)) break;
-        } while (read < size);
-    } 
-    else 
-    {
-        do {
-            size_t r = fread(ptr + read, 1, size - read, getUncompressedHandle(handle));
-            read += r * 1; // fread returns the number of items read
-            if (r == 0 && ct_eof(handle)) break;
-        } while (read < size);
-    }
+    
+    do {
+        size_t r = fread((char*)ptr + read, 1, size - read, handle);
+        read += r * 1; // fread returns the number of items read
+        if (r == 0 && ct_eof(handle)) break;
+    } while (read < size);
     
     if (scanTraceFlag != 0)
     {
@@ -163,37 +153,23 @@ size_t ct_read(void * ptr, size_t size, ct_file* handle)
 }
 
 
-size_t ct_write(const void * ptr, size_t size, ct_file* handle)
+size_t ct_write(const void * ptr, size_t size, FILE* handle)
 {
     size_t written = 0;
-    if( isCompressed(handle))
-    {
-        do {
-            size_t w = gzwrite (getCompressedHandle(handle), ptr + written, size - written);
-            written += w;
-        } while (written < size);
-    } 
-    else 
-    {
-        do {
-            size_t w = fwrite(ptr + written, 1, size - written, getUncompressedHandle(handle));
-            written += w * 1;
-        } while (written < size);
-    }
+    
+    do {
+        size_t w = fwrite((char*)ptr + written, 1, size - written, handle);
+        written += w * 1;
+    } while (written < size);
     return written;
 }
 
-int ct_eof(ct_file* handle)
+int ct_eof(FILE* handle)
 {
     int result;
-    if (isCompressed(handle))
-    {
-        result = gzeof (getCompressedHandle(handle));
-    } 
-    else 
-    {
-        result = feof (getUncompressedHandle(handle));
-    }
+    
+    result = feof (handle);
+
     return result;
 }
 

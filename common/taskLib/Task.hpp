@@ -37,6 +37,7 @@ class Task
 friend class TaskGraph;
 protected:
     static Task* readContechTaskUnlock(ct_file* in);
+    static Task* readContechTaskUnlock(FILE* in);
 
 private:
 
@@ -114,6 +115,7 @@ public:
     
     //returns the record size written
     static size_t writeContechTask(Task& task, ct_file* out);
+    static size_t writeContechTask(Task& task, FILE* out);
 
     // Wraps the internal list of actions, presenting it as an iterable collection of only memory reads and writes
     // Internally, we skip past actions that we don't care about on increment
