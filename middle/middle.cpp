@@ -40,8 +40,8 @@ reset_middle:
     
     for (int argPos = 1; argPos <= lastInPos; argPos++, totalRanks++)
     {
-        ct_file* in;
-        in = create_ct_file_r(argv[argPos]);
+        FILE* in;
+        in = fopen(argv[argPos], "rb");
         assert(in != NULL && "Could not open input file");
         eventQ.registerEventList(in);
     }
@@ -49,10 +49,10 @@ reset_middle:
     // Open output file
     // Use command line argument or stdout
     //FILE* out;
-    ct_file* out;
+    FILE* out;
     int outArgPos = argc - 1;
     if (DEBUG == true) outArgPos--;
-    out = create_ct_file_w(argv[outArgPos],false);
+    out = fopen(argv[outArgPos], "wb");
     assert(out != NULL && "Could not open output file");
     
     int taskGraphVersion = TASK_GRAPH_VERSION;
@@ -935,7 +935,7 @@ reset_middle:
 ==1157==    by 0x4189F1: contech::EventQ::registerEventList(_ct_file*) (eventQ.cpp:75)
 ==1157==    by 0x40A481: main (middle.cpp:48)
     */
-    close_ct_file(out);
+    fclose(out);
     
     return 0;
 }
