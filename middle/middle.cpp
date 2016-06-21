@@ -10,9 +10,6 @@ void* backgroundTaskWriter(void*);
 
 int main(int argc, char* argv[])
 {
-    // Open input file
-    // Use command line argument or stdin
-    ct_file* in;
     bool parallelMiddle = true;
     pthread_t backgroundT;
     EventQ eventQ;
@@ -43,6 +40,7 @@ reset_middle:
     
     for (int argPos = 1; argPos <= lastInPos; argPos++, totalRanks++)
     {
+        ct_file* in;
         in = create_ct_file_r(argv[argPos]);
         assert(in != NULL && "Could not open input file");
         eventQ.registerEventList(in);
