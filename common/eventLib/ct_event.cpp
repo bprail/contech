@@ -3,15 +3,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "../taskLib/ct_file.h"
 
 using namespace contech;
 
-//#define fread_check(x,y,z,a) do {if (z != (t = fread(x,y,z,a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate();} sum += (t * y);} while(0)
-// Use ct_file
-//#define fread_check(x,y,z,a) do {if ((y * z) != (t = ct_read(x,(y * z),a))) {fprintf(stderr, "FREAD failure at %d of %d after %llu\n", __LINE__, z, sum);dumpAndTerminate(a);} sum += (t);} while(0)
-
 void EventLib::fread_check(void* x, size_t y, size_t z, ct_file* a)
+{
+    fread_check(x, y, z, getUncompressedHandle(a));
+}
+
+void EventLib::fread_check(void* x, size_t y, size_t z, FILE* a)
 {
     uint32_t t = 0;
     if ((y * z) != (t = ct_read(x,(y * z),a))) 
@@ -136,6 +136,11 @@ void EventLib::resetEventLib()
 // Deserialize a CT_EVENT from a FILE stream
 //
 pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
+{
+    return createContechEvent(getUncompressedHandle(fptr));
+}
+
+pct_event EventLib::createContechEvent(FILE* fptr)
 {
     unsigned int t;
     pct_event npe;
@@ -606,7 +611,6 @@ pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
         
         default:
         {
-            assert(!isCompressed(fptr));
             fprintf(stderr, "ERROR: type %d not supported at %lu\n", npe->event_type, sum);
             fprintf(stderr, "\tPrevious event - %d with ID - %d\n", lastType, lastID);
             dumpAndTerminate(fptr);
@@ -666,7 +670,11 @@ void EventLib::deleteContechEvent(pct_event e)
 
 void EventLib::dumpAndTerminate(ct_file *fptr)
 {
-    FILE* fh = getUncompressedHandle(fptr);
+    dumpAndTerminate(getUncompressedHandle(fptr));
+}
+
+void EventLib::dumpAndTerminate(FILE *fh)
+{
     struct stat buf;
     char d = 0;
     fstat(fileno(fh), &buf);
