@@ -46,13 +46,11 @@ private:
     TaskGraphInfo* readTaskGraphInfo();
     void initTaskIndex(uint64);
     
-    TaskGraph(ct_file*);
     TaskGraph(FILE*);
 
 public:
     static TaskGraph* initFromFile(char*);
     static TaskGraph* initFromFile(const char*);
-    static TaskGraph* initFromFile(ct_file*);
     static TaskGraph* initFromFile(FILE*);
     
     Task* getNextTask();

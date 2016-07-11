@@ -7,7 +7,7 @@ using namespace contech;
 //
 TaskGraph* TaskGraph::initFromFile(char* fname)
 {
-    ct_file* f = create_ct_file_r(fname);
+    FILE* f = fopen(fname, "rb");
     
     if (f == NULL) { return NULL;}
     else {return new TaskGraph(f);}
@@ -15,14 +15,8 @@ TaskGraph* TaskGraph::initFromFile(char* fname)
 
 TaskGraph* TaskGraph::initFromFile(const char* fname)
 {
-    ct_file* f = create_ct_file_r(fname);
+    FILE* f = fopen(fname, "rb");
     
-    if (f == NULL) { return NULL;}
-    else {return new TaskGraph(f);}
-}
-
-TaskGraph* TaskGraph::initFromFile(ct_file* f)
-{
     if (f == NULL) { return NULL;}
     else {return new TaskGraph(f);}
 }
@@ -36,11 +30,6 @@ TaskGraph* TaskGraph::initFromFile(FILE* f)
 //
 // Construct a task graph from the file
 //
-TaskGraph::TaskGraph(ct_file* f)
-{
-    TaskGraph(getUncompressedHandle(f));
-}
-
 TaskGraph::TaskGraph(FILE* f)
 {
     uint version = 0;

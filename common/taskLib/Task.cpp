@@ -282,11 +282,6 @@ sync_type Task::getSyncType() const { return syncType; }
 void Task::setSyncType(sync_type e) { syncType = e; }
 
 // Deserialize a Task from a file
-Task* Task::readContechTaskUnlock(ct_file* in)
-{
-    return readContechTaskUnlock(getUncompressedHandle(in));
-}
-
 Task* Task::readContechTaskUnlock(FILE* in)
 {
     Task* task = new Task();
@@ -297,7 +292,7 @@ Task* Task::readContechTaskUnlock(FILE* in)
     uint64 compLength;
     ct_read(&compLength, sizeof(uint64), in);
 
-    if (ct_eof(in)) { delete task; return NULL;}
+    if (feof(in) != 0) { delete task; return NULL;}
     
     unsigned char* comp = (unsigned char*) malloc(compLength);
     
@@ -399,11 +394,6 @@ Task* Task::readContechTaskUnlock(FILE* in)
 }
 
 // Serialize a Task to a file
-size_t Task::writeContechTask(Task& task, ct_file* out)
-{
-    return writeContechTask(task, getUncompressedHandle(out));
-}
-
 size_t Task::writeContechTask(Task& task, FILE* out)
 {
     // Calculate record length

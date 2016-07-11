@@ -2,11 +2,6 @@
 
 using namespace contech;
 
-void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
-{
-    initTaskGraphInfo(getUncompressedHandle(in));
-}
-
 void TaskGraphInfo::initTaskGraphInfo(FILE* in)
 {
     int numBasicBlock = 0;
@@ -88,11 +83,6 @@ void TaskGraphInfo::addRawBasicBlockInfo(uint bbid,
     bbi.callsFunction = inokFun;
     
     bbInfo[bbid] = bbi;
-}
-
-void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
-{
-    writeTaskGraphInfo(getUncompressedHandle(out));
 }
 
 void TaskGraphInfo::writeTaskGraphInfo(FILE* out)
