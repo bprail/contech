@@ -196,14 +196,11 @@ namespace contech
             pinternal_basic_block_info bb_info_table;
             
             int unpack(uint8_t *buf, char const fmt[], ...);
-            void dumpAndTerminate(ct_file *fptr);
             void dumpAndTerminate(FILE *fptr);
-            void fread_check(void* x, size_t y, size_t z, ct_file* a);
             void fread_check(void* x, size_t y, size_t z, FILE* a);
     
         public:
             EventLib();
-            pct_event createContechEvent(ct_file*);
             pct_event createContechEvent(FILE*);
             static void deleteContechEvent(pct_event);
             void displayContechEventDebugInfo();

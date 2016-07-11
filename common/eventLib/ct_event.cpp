@@ -6,11 +6,6 @@
 
 using namespace contech;
 
-void EventLib::fread_check(void* x, size_t y, size_t z, ct_file* a)
-{
-    fread_check(x, y, z, getUncompressedHandle(a));
-}
-
 void EventLib::fread_check(void* x, size_t y, size_t z, FILE* a)
 {
     uint32_t t = 0;
@@ -135,11 +130,6 @@ void EventLib::resetEventLib()
 //
 // Deserialize a CT_EVENT from a FILE stream
 //
-pct_event EventLib::createContechEvent(ct_file *fptr)//FILE* fptr)
-{
-    return createContechEvent(getUncompressedHandle(fptr));
-}
-
 pct_event EventLib::createContechEvent(FILE* fptr)
 {
     unsigned int t;
@@ -666,11 +656,6 @@ void EventLib::deleteContechEvent(pct_event e)
         if (e->bbi.callFun_name != NULL) free(e->bbi.callFun_name);
     }    
     free(e);
-}
-
-void EventLib::dumpAndTerminate(ct_file *fptr)
-{
-    dumpAndTerminate(getUncompressedHandle(fptr));
 }
 
 void EventLib::dumpAndTerminate(FILE *fh)
