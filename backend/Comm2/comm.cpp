@@ -33,7 +33,7 @@ int main(int argc, const char *argv[])
         exit(1);
     }
 
-    ct_file* taskGraphFile = create_ct_file_r(argv[1]);
+    FILE* taskGraphFile = fopen(argv[1], "rb");
     if(taskGraphFile == NULL){
         perror("create_ct_file_r");
         cerr << "ERROR: Couldn't open input file: " << argv[1] << endl;
@@ -90,7 +90,7 @@ int main(int argc, const char *argv[])
 //    threadCommunicationAnalysis(tracker);
     */
 
-    close_ct_file(taskGraphFile);
+    fclose(taskGraphFile);
     delete tracker;
     return 0;
 }

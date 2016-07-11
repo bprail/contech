@@ -11,7 +11,7 @@
 #include <queue>
 
 
-void hbRaceDetector(ct_file* taskGraphIn);
+void hbRaceDetector(FILE* taskGraphIn);
 
 void addTaskToGraphMap(unordered_map<contech::TaskId,vector<contech::TaskId> >& graphMap, contech::Task* t);
 bool hbPathExists(unordered_map<contech::TaskId, vector<contech::TaskId> >& graphMap, contech::TaskId start, contech::TaskId end);

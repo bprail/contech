@@ -5,6 +5,7 @@
 #include "markedCodeContainer.hpp"
 #include <inttypes.h>
 #include <string.h>
+#include <stdio.h>
 #include "IFrontEnd.hpp"
 
 #define DEBUG true
@@ -27,7 +28,7 @@ private:
     void convert(const markedInstruction& m, IFrontEnd::Instruction& dst);
 
     // Maintain position within the task graph
-    ct_file* taskGraphFile;
+    FILE* taskGraphFile;
     contech::TaskGraph* tg;
     contech::Task* currentTask;
     contech::Task::basicBlockActionCollection blocksInTask;
