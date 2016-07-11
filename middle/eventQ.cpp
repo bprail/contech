@@ -27,11 +27,6 @@ EventQ::~EventQ()
     }
 }
 
-void EventQ::registerEventList(ct_file* f)
-{
-    registerEventList(getUncompressedHandle(f));
-}
-
 void EventQ::registerEventList(FILE* f)
 {
     traces.push_back(new EventList(f));
@@ -74,10 +69,6 @@ pct_event EventQ::getNextContechEvent(int* rank)
     return event;
 }
 
-EventList::EventList(ct_file* f)
-{
-    EventList(getUncompressedHandle(f));
-}
 EventList::EventList(FILE* f)
 {
     file = f;

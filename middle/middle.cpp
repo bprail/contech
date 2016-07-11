@@ -884,7 +884,6 @@ reset_middle:
         // Free memory for the processed event
         EventLib::deleteContechEvent(event);
     }
-    //close_ct_file(in);
     //displayContechEventDiagInfo();
 
     // TODO: for every context if endtime == 0, then join?
@@ -924,17 +923,6 @@ reset_middle:
         printf("MIDDLE_END: %d.%03d\n", (unsigned int)tp.time, tp.millitm);
     }
     
-    if (DEBUG)
-    {
-        //displayContechEventStats();
-    }
-    
-    // TODO: Other memory cleanup here (in, out):
-    /*
-    ==1157==    at 0x480831B: operator new(unsigned long) (vg_replace_malloc.c:319)
-==1157==    by 0x4189F1: contech::EventQ::registerEventList(_ct_file*) (eventQ.cpp:75)
-==1157==    by 0x40A481: main (middle.cpp:48)
-    */
     fclose(out);
     
     return 0;
