@@ -57,12 +57,12 @@ private:
     //map <uint, FunctionInfo> funInfo;
     //map <uint, string> fileName;
     
-public:    
-    void initTaskGraphInfo(ct_file*);
+public:
+    void initTaskGraphInfo(FILE*);
     TaskGraphInfo();
     
     void addRawBasicBlockInfo(uint bbid, uint flags, uint lineNum, uint numMemOps, uint numOps, uint critPathLen, string function, string file, string);
-    void writeTaskGraphInfo(ct_file*);
+    void writeTaskGraphInfo(FILE*);
     
     BasicBlockInfo& getBasicBlockInfo(uint bbid);
 };

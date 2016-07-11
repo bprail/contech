@@ -29,11 +29,11 @@ namespace contech {
         void barrierTicket();
         
         public:
-        EventList(ct_file*);
+        EventList(FILE*);
         pct_event getNextContechEvent();
         void readyEvents(unsigned int);
         int mpiRank;
-        ct_file* file;
+        FILE* file;
     };
 
     class EventQ
@@ -50,8 +50,7 @@ namespace contech {
             ~EventQ();
             pct_event getNextContechEvent(int*);
             void readyEvents(int, unsigned int);
-            void registerEventList(ct_file*);
-    
+            void registerEventList(FILE*);
     };
 
 }

@@ -332,13 +332,13 @@ void findPredInTaskMap(map<TaskId, TaskWrapper> &writeTaskMap, int c, int s)
 
 void* backgroundTaskWriter(void* v)
 {
-    ct_file* out = *(ct_file**)v;
+    FILE* out = *(FILE**)v;
 
     deque<Task*> writeTaskQueue;
     map<TaskId, TaskWrapper> writeTaskMap;
     uint64 taskCount = 0, taskWriteCount = 0;
     
-    uint64 bytesWritten = ct_tell(out);
+    uint64 bytesWritten = ftell(out);
     long pos;
     bool firstTime = true;
     unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
@@ -398,7 +398,7 @@ void* backgroundTaskWriter(void* v)
             // Task will be null if it has already been handled
             assert(t != NULL);
             // Write out the task
-            pos = ct_tell(out);
+            pos = ftell(out);
             
             // TaskIndex is a graph, then use the graph to
             //   determine the bfs order, this way tasks can be written out
@@ -440,7 +440,7 @@ void* backgroundTaskWriter(void* v)
     
     // Write how many entries are in the index
     //   The write each index entry pair
-    pos = ct_tell(out);
+    pos = ftell(out);
     if (pos == -1)
     {
         //int esav = errno;
@@ -528,7 +528,7 @@ void* backgroundTaskWriter(void* v)
     assert(indexWriteCount == taskWriteCount);
     
     // Now write the position of the index
-    ct_seek(out, 4);
+    fseek(out, 4, SEEK_SET);
     
     // With ftell, we use long, rather than the uint64 type which we track positions
     ct_write(&pos, sizeof(pos), out);

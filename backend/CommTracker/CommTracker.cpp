@@ -186,7 +186,7 @@ std::ostream& operator<<(std::ostream &out, const CommTracker &rhs)
 }
 
 
-CommTracker* CommTracker::fromFile(ct_file* taskGraphIn)
+CommTracker* CommTracker::fromFile(FILE* taskGraphIn)
 {
     CommTracker* tracker = new CommTracker();
     TaskGraph* taskGraph = TaskGraph::initFromFile(taskGraphIn);

@@ -7,7 +7,7 @@ using namespace contech;
 //
 TaskGraph* TaskGraph::initFromFile(char* fname)
 {
-    ct_file* f = create_ct_file_r(fname);
+    FILE* f = fopen(fname, "rb");
     
     if (f == NULL) { return NULL;}
     else {return new TaskGraph(f);}
@@ -15,13 +15,13 @@ TaskGraph* TaskGraph::initFromFile(char* fname)
 
 TaskGraph* TaskGraph::initFromFile(const char* fname)
 {
-    ct_file* f = create_ct_file_r(fname);
+    FILE* f = fopen(fname, "rb");
     
     if (f == NULL) { return NULL;}
     else {return new TaskGraph(f);}
 }
 
-TaskGraph* TaskGraph::initFromFile(ct_file* f)
+TaskGraph* TaskGraph::initFromFile(FILE* f)
 {
     if (f == NULL) { return NULL;}
     else {return new TaskGraph(f);}
@@ -30,17 +30,17 @@ TaskGraph* TaskGraph::initFromFile(ct_file* f)
 //
 // Construct a task graph from the file
 //
-TaskGraph::TaskGraph(ct_file* f)
+TaskGraph::TaskGraph(FILE* f)
 {
     uint version = 0;
     uint64 taskIndexOffset = 0;
     inputFile = f;
     
-    ct_seek(f, 0);
+    // This is to ensure the file is at the start
+    fseek(f, 0, SEEK_SET);
     
     // First is the version number
-    ct_read(&version, sizeof(uint), f);
-    if (false /*sizeof(uint) != ct_read(&version, sizeof(uint), f)*/)
+    if (sizeof(uint32_t) != ct_read(&version, sizeof(uint32_t), f))
     {
         fprintf(stderr, "TASK GRAPH - Error reading from input file\n");
         return;
@@ -73,12 +73,11 @@ TaskGraph::~TaskGraph()
 //
 Task* TaskGraph::getNextTask()
 {
-    int e;
     if (nextTask == taskOrder.end()) return NULL;
     
-    if ((e = ct_lock(inputFile))) return NULL;
+    //if ((e = ct_lock(inputFile))) return NULL;
     
-    ct_seek(inputFile, *nextTask);
+    fseek(inputFile, *nextTask, SEEK_SET);
     ++nextTask;
     
     return Task::readContechTaskUnlock(inputFile);
@@ -109,8 +108,8 @@ Task* TaskGraph::getTaskById(TaskId id)
     
     if (it == taskIdx.end()) return NULL;
     
-    if (ct_lock(inputFile)) return NULL;
-    ct_seek(inputFile, it->second);
+    //if (ct_lock(inputFile)) return NULL;
+    fseek(inputFile, it->second, SEEK_SET);
     
     return Task::readContechTaskUnlock(inputFile);
 }
@@ -134,9 +133,9 @@ TaskGraphInfo* TaskGraph::getTaskGraphInfo()
 
 void TaskGraph::initTaskIndex(uint64 off)
 {
-    if (0 != ct_seek(inputFile, off))
+    if (0 != fseek(inputFile, off, SEEK_SET))
     {
-        fprintf(stderr, "Failed to seek to specified offset for Task Graph Index - %llu\n", off);
+        fprintf(stderr, "Failed to seek to specified offset for Task Graph Index - %lu\n", off);
         return;
     }
     //printf("At %lld, ready to read index\n", off);

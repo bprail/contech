@@ -60,7 +60,7 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
-    ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
+    FILE* taskGraphIn  = fopen(argv[1], "rb");
     if (taskGraphIn == NULL) {
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
@@ -444,6 +444,6 @@ int main(int argc, char const *argv[])
         fprintf(stdout, "0\n");
     }
 
-    close_ct_file(taskGraphIn);
+    fclose(taskGraphIn);
     return 0;
 }

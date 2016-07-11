@@ -16,7 +16,7 @@ int main(int argc, char const *argv[])
         exit(1);
     }
 
-    ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
+    FILE* taskGraphIn  = fopen(argv[1], "rb");
     if(taskGraphIn == NULL)
     {
         cerr << "ERROR: Couldn't open input file" << endl;
@@ -50,7 +50,10 @@ int main(int argc, char const *argv[])
 
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
     
-    if (tg == NULL) {}
+    if (tg == NULL) 
+    {
+        fprintf(stderr, "Failure to open task graph\n");
+    }
     
     TaskGraphInfo* tgi = tg->getTaskGraphInfo();
     if (modelROI) tg->setTaskOrderCurrent(tg->getROIStart());
@@ -175,6 +178,6 @@ int main(int argc, char const *argv[])
     printf("Join tasks: %u\n", joinCount);
     printf("\n");
 
-    close_ct_file(taskGraphIn);
+    fclose(taskGraphIn);
     return 0;
 }

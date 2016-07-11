@@ -32,7 +32,7 @@ int main(int argc, char const *argv[])
     map<uint64_t, task_type> basicBlockType;
 
     // Count the number of times each basic block ran
-    ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
+    FILE* taskGraphIn  = fopen(argv[1], "rb");
     if(taskGraphIn == NULL){
         cerr << "Error: Couldn't open input file" << endl;
         exit(1);
@@ -205,7 +205,7 @@ int main(int argc, char const *argv[])
         agset (graph_edge, (char*)"style", (char*)"dashed");
     }
     delete tracker;
-    close_ct_file(taskGraphIn);
+    fclose(taskGraphIn);
 
     // Write out the graph
     FILE* cfgOut = fopen(argv[2],"wb");

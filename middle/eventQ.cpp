@@ -22,12 +22,12 @@ EventQ::~EventQ()
 {
     for (auto it = traces.begin(), et = traces.end(); it != et; ++it)
     {
-        close_ct_file((*it)->file);
+        fclose((*it)->file);
         delete *it;
     }
 }
 
-void EventQ::registerEventList(ct_file* f)
+void EventQ::registerEventList(FILE* f)
 {
     traces.push_back(new EventList(f));
 }
@@ -54,7 +54,7 @@ pct_event EventQ::getNextContechEvent(int* rank)
         
         if (event == NULL)
         {
-            close_ct_file((*currentTrace)->file);
+            fclose((*currentTrace)->file);
             delete *currentTrace;
             currentTrace = traces.erase(currentTrace);
         }
@@ -69,7 +69,7 @@ pct_event EventQ::getNextContechEvent(int* rank)
     return event;
 }
 
-EventList::EventList(ct_file* f)
+EventList::EventList(FILE* f)
 {
     file = f;
     el = new EventLib;

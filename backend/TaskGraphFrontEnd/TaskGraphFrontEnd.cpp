@@ -26,7 +26,7 @@ TaskGraphFrontEnd::TaskGraphFrontEnd(string basename, unsigned int cpuId)
     this->cpuId = cpuId;
     // Load the task graph
     string taskGraphFileName(basename + ".taskgraph");
-    taskGraphFile = create_ct_file_r(taskGraphFileName.c_str());
+    taskGraphFile = fopen(taskGraphFileName.c_str(), "rb");
     if (taskGraphFile == NULL) { cerr << "Could not open " << taskGraphFileName << endl; exit(1); }
     if (DEBUG) cerr << "TaskGraphFrontEnd (cpuId=" << cpuId << "): Opened " << taskGraphFileName << endl;
     // Find my first task

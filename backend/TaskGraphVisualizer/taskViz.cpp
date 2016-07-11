@@ -37,7 +37,7 @@ int main(int argc, char const *argv[])
 
     //Create file handles for input and output
     FILE* taskGraphOut = fopen("taskGraph.png","wb");
-    ct_file* taskGraphIn  = create_ct_file_r(argv[1]);
+    FILE* taskGraphIn  = fopen(argv[1], "rb");
     if (taskGraphIn == NULL){
         cerr << "ERROR: Couldn't open input file" << endl;
         exit(1);
@@ -194,5 +194,5 @@ int main(int argc, char const *argv[])
     agclose(g);
     gvFreeContext(gvc);
     fclose(taskGraphOut);
-    close_ct_file(taskGraphIn);
+    fclose(taskGraphIn);
 }

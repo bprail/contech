@@ -34,7 +34,7 @@ int main(int argc, char const *argv[])
     
     //Create file handles for input and output
     //taskGraphIn is for fetching tasks and iterating through all the memOps
-    ct_file* taskGraphIn  = create_ct_file_r(filename.c_str());
+    FILE* taskGraphIn  = fopen(filename.c_str(), "rb");
     if (taskGraphIn == NULL) {
         cerr << "Error: Couldn't open input file" << endl;
         exit(1);
@@ -45,7 +45,7 @@ int main(int argc, char const *argv[])
     hbRaceDetector(taskGraphIn);
 
     //cleanup
-    close_ct_file(taskGraphIn);
+    fclose(taskGraphIn);
 }
 
 /*
@@ -122,7 +122,7 @@ bool hbPathCheck(map<ContextId, map<SeqId, map<ContextId, SeqId> > > &vecClock, 
     return false;
 }
 
-void hbRaceDetector(ct_file* taskGraphIn)
+void hbRaceDetector(FILE* taskGraphIn)
 {
     
     //map of the last access to a specific address, read or write

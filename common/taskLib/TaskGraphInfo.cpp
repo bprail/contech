@@ -2,7 +2,7 @@
 
 using namespace contech;
 
-void TaskGraphInfo::initTaskGraphInfo(ct_file* in)
+void TaskGraphInfo::initTaskGraphInfo(FILE* in)
 {
     int numBasicBlock = 0;
     
@@ -85,7 +85,7 @@ void TaskGraphInfo::addRawBasicBlockInfo(uint bbid,
     bbInfo[bbid] = bbi;
 }
 
-void TaskGraphInfo::writeTaskGraphInfo(ct_file* out)
+void TaskGraphInfo::writeTaskGraphInfo(FILE* out)
 {
     int numBasicBlock = bbInfo.size();
     ct_write(&numBasicBlock, sizeof(int), out);

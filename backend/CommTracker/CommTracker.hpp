@@ -65,7 +65,7 @@ public:
     static char* getSharersString(ct_sharers_t m);
     static ct_sharers_t getSharersMask(contech::TaskId id);
 
-    static CommTracker* fromFile(ct_file* taskGraphIn);
+    static CommTracker* fromFile(FILE* taskGraphIn);
     friend std::ostream& operator<<(std::ostream &out, const CommTracker &rhs);
 
 private:
