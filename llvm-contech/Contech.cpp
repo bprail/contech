@@ -1081,9 +1081,13 @@ cleanup:
     {
         unsigned int r = t->getPrimitiveSizeInBits();
         if (r > 0) return r / 8;
-        else if (t->isPointerTy()) { return 8;}
+        else if (t->isPointerTy()) { return cct.pthreadSize;}
+        else if (t->isPtrOrPtrVectorTy()) 
+        { 
+            errs() << *t << " is pointer vector\n";
+            return t->getVectorNumElements * cct.pthreadSize;}
+        }
         else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
-        else if (t->isPtrOrPtrVectorTy()) { errs() << *t << " is pointer vector\n";}
         else if (t->isArrayTy()) { errs() << *t << " is array\n";}
         else if (t->isStructTy()) { errs() << *t << " is struct\n";}
 
