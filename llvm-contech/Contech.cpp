@@ -1085,7 +1085,7 @@ cleanup:
         else if (t->isPtrOrPtrVectorTy()) 
         { 
             errs() << *t << " is pointer vector\n";
-            return t->getVectorNumElements * cct.pthreadSize;}
+            return t->getVectorNumElements() * cct.pthreadSize;
         }
         else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
         else if (t->isArrayTy()) { errs() << *t << " is array\n";}
