@@ -1442,7 +1442,7 @@ cleanup:
 #endif
 
             // In LLVM 3.3+, switch to Monotonic and not Acquire
-            Instruction* fenI = new FenceInst(M.getContext(), Acquire, SingleThread, bufV);
+            Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SingleThread, bufV);
             MarkInstAsContechInst(fenI);
         }
 
@@ -1467,7 +1467,7 @@ cleanup:
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", aPhi);
                     MarkInstAsContechInst(sbbc);
 
-                    Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, aPhi);
+                    Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
                     MarkInstAsContechInst(fenI);
                     iPt = aPhi;
                 }
@@ -1477,7 +1477,7 @@ cleanup:
                     sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", convertIterToInst(I));
                     MarkInstAsContechInst(sbbc);
 
-                    Instruction* fenI = new FenceInst(M.getContext(), Release, SingleThread, convertIterToInst(I));
+                    Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
                     MarkInstAsContechInst(fenI);
                     iPt = convertIterToInst(I);
                 }
