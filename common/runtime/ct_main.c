@@ -11,6 +11,7 @@
 #include <sys/timeb.h>
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <assert.h>
 
 #include <sys/time.h>
