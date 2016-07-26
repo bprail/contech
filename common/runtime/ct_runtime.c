@@ -95,7 +95,6 @@ unsigned int __ctStoreThreadJoinInternalPos(bool, unsigned int, unsigned int, ct
 // pass can easily access ct_runtime's data without being tied to the internals.
 unsigned int __ctGetLocalNumber()
 {
-    //printf("Requested %d\n", __ctThreadLocalNumber);
     return __ctThreadLocalNumber;
 }
 
@@ -153,7 +152,6 @@ void __ctAllocateLocalBuffer()
                 // This may be a bad thing, but we're already failing memory allocations
                 pthread_exit(NULL);
             }
-            //fprintf(stdout, "%p\n", __ctThreadLocalBuffer);
             
             // Buffer was malloc, so set the length
             __ctThreadLocalBuffer->pos = 0;
@@ -272,12 +270,9 @@ int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
     
     // Parent, store the create event before creating
     __ctStoreThreadCreate(child_ctid, 0, start);
-    //__ctQueueBuffer(true);
-    //printf("Parent creates %u, pos now %u. buf c %u\n", child_ctid, __ctThreadLocalBuffer->pos, __ctCurrentBuffers);
     
+    // This wrapper exists primarily to check for the error on pthread_create
     ret = pthread_create(thread, attr, __ctInitThread, ptc);
-    
-   // printf("Created with ret %d\n", ret);
     
     if (ret != 0) 
     {
@@ -315,18 +310,6 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     p = ptc->parent_ctid;
     start = rdtsc();
     
-    //printf("Thread %u alive\n", ptc->child_ctid);
-    
-    // HACK -- REMOVE!!!
-    #if 0
-    printf("Hello!\n"); fflush(stdout);
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(24 - (ptc->child_ctid % 16), &cpuset);
-    int r = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
-    printf("%d - %d - %llx\n", ptc->child_ctid, r, cpuset);
-    #endif
-    
     //
     // Now compute the skew
     //
@@ -341,7 +324,7 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     skew = 1;
 #endif
     
-    __ctThreadLocalNumber = ptc->child_ctid;//__sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
+    __ctThreadLocalNumber = ptc->child_ctid;
     __ctAllocateLocalBuffer();
     
     __ctThreadInfoList = NULL;
@@ -568,8 +551,6 @@ microbuf_exit:
     __sync_fetch_and_add(&__ctTotalThreadQueue, (qend - qstart));
     int d = __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
     
-    //printf("XYZ, %llx, %llx, %d\n", (end - start), localBuffer, d);
-    
     if (__ctLastQueueBuffer != 0)
     {
         __sync_fetch_and_add(&__ctTotalTimeBetweenQueueBuffers, (start - __ctLastQueueBuffer));
@@ -719,7 +700,6 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start_t;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
@@ -738,8 +718,7 @@ void __ctStoreThreadCreate(unsigned int ptc, long long skew, ct_tsc_t start)
     
     unsigned int p = __ctThreadLocalBuffer->pos;
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_create /*<<24*/;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_create;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = rdtsc();
     *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = ptc;
@@ -758,8 +737,7 @@ void __ctStoreMemoryEvent(bool isAlloc, size_t size, void* a)
     unsigned int p = __ctThreadLocalBuffer->pos;
     uint64_t s = size;
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_memory/*<<24*/;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_memory;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isAlloc;
     *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)]) = s;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char) + sizeof(unsigned long long)]) = (ct_addr_t) a;
@@ -777,8 +755,7 @@ void __ctStoreBulkMemoryEvent(size_t s, void* dst, void* src)
     unsigned int p = __ctThreadLocalBuffer->pos;
     unsigned long long size = s;
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_bulk_memory_op/*<<24*/;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_bulk_memory_op;
     *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = size;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(unsigned long long)]) = (ct_addr_t) dst;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(unsigned long long) + sizeof(ct_addr_t)]) = (ct_addr_t) src;
@@ -797,8 +774,7 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalBarrierNumber, 1);
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_barrier/*<<24*/;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_barrier;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = enter;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();

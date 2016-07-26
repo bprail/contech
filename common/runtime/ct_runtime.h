@@ -2,9 +2,7 @@
 #define CT_RUNTIME_H
 
 #include "../eventLib/ct_event_st.h"
-//#include "../taskLib/ct_file.h"
 #include <pthread.h>
-#include <zlib.h>
 #include <stdint.h>
 
 // Used to store serial data
@@ -22,8 +20,6 @@ typedef struct _ct_serial_buffer
 // - size of base fields - malloc overhead
 //   Thus the final allocation is 1MB
 #define SERIAL_BUFFER_SIZE (1024 * 1024 * 1)
-//32768
-//(1024 * 1024 * 1)
 
 typedef struct _contech_thread_create {
     void* (*func)(void*);
