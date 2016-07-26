@@ -96,6 +96,7 @@ void __ctStoreMemOp(void*, unsigned int, char*);
 unsigned int __ctStoreBasicBlockComplete(unsigned int, unsigned int, pct_serial_buffer);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);
+void __ctStoreThreadJoinInternal(bool ie, unsigned int id, ct_tsc_t start);
 void __ctStoreSync(void*, int, int, ct_tsc_t);
 void __ctStoreBarrier(bool, void*, ct_tsc_t);
 void __ctStoreMemoryEvent(bool, size_t, void*);

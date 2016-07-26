@@ -229,7 +229,7 @@ void __parsec_bench_end()
 
 void __ctCleanupThread(void* v)
 {
-    unsigned int parent_ctid = (unsigned int) v;
+    unsigned int parent_ctid = (unsigned int)(uint64_t) v;
     // A thread has exited
     // TODO: Verify whether the atomic add should be before the queue buffer
     #ifdef CT_OVERHEAD_TRACK
