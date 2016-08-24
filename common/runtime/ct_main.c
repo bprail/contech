@@ -283,20 +283,38 @@ void* __ctBackgroundThreadWriter(void* d)
     //   Write queued buffer to disk until program terminates
     pthread_mutex_lock(&__ctQueueBufferLock);
     do {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 30;
         int condRetVal = 0;
         
-        // Check for queued buffer, i.e. is the program generating events
-        while (__ctQueuedBuffers == NULL && condRetVal == 0)
-        {
-            condRetVal = pthread_cond_timedwait(&__ctQueueSignal, &__ctQueueBufferLock, &ts);
-        }
-        if (condRetVal == 0)
-        {
-            pthread_mutex_unlock(&__ctQueueBufferLock);
-        }
+        do {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 30;
+            
+            // Check for queued buffer, i.e. is the program generating events
+            while (__ctQueuedBuffers == NULL && condRetVal == 0)
+            {
+                condRetVal = pthread_cond_timedwait(&__ctQueueSignal, &__ctQueueBufferLock, &ts);
+            }
+            
+            // condRetVal can be:
+            //   0 - success, which implies __ctQueueBuffers != NULL
+            //   ETIMEDOUT - recompute the time to wait, if we should still be waiting
+            //   EINVAL - Invalid argument (i.e., time), or mutex / cond var mismatch
+            //   EPERM - Not owner of the mutex
+            // Assert that we are the owner of the mutex
+            
+            if (condRetVal == ETIMEDOUT && 
+                (__ctThreadExitNumber == __ctThreadGlobalNumber || 
+                 __ctQueuedBuffers != NULL))
+            {
+                // In this set of cases, execution should still proceed
+                break;
+            }
+            
+            assert(condRetVal != EPERM);
+        } while (condRetVal != 0);
+        
+        pthread_mutex_unlock(&__ctQueueBufferLock);
     
         // The thread writer will likely sit in this loop except when the memory limit is triggered
         while (__ctQueuedBuffers != NULL)
@@ -323,7 +341,6 @@ void* __ctBackgroundThreadWriter(void* d)
                 } while  (tl < 3);
 
                 totalWritten += 3 * sizeof(unsigned int);
-                
             }
             
             // TODO: fully integrate into debug framework
