@@ -12,7 +12,6 @@
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
 #include <assert.h>
-
 #include <sched.h>
 
 
@@ -682,7 +681,11 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     // With a little endian machine, we write 8 bytes and then will overwrite the highest two
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
     // void __builtin_ia32_movnti64 (di *, di)
+    #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
+    #else
+        #error "Compiling for big endian machine"
+    #endif
 }
 
 void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
