@@ -37,6 +37,7 @@ EventLib::EventLib()
 }
 
 /* unpack: unpack packed items from buf, return length */
+// This code is derived from a description in Practice of Programming
 int EventLib::unpack(uint8_t *buf, char const fmt[], ...)
 {
     va_list args;
