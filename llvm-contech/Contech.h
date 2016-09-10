@@ -101,6 +101,7 @@ namespace llvm {
         Constant* queueBufferFunction;
         Constant* storeBarrierFunction;
         Constant* allocateCTidFunction;
+        Constant* allocateTicketFunction;
         Constant* getThreadNumFunction;
         Constant* storeThreadJoinFunction;
         Constant* storeThreadInfoFunction;
@@ -297,7 +298,14 @@ namespace llvm {
             retV = ci;
         else
             retV = ConstantInt::get(cct->int32Ty, 0);
-        Value* cArg[] = {synAddr, con1, retV, nGetTick};
+        
+        Value* ordNum;
+        if (isAcquire)
+            ordNum = ConstantInt::get(cct->int64Ty, 0);
+        else
+            ordNum = CallInst::Create(cct->allocateTicketFunction, "ticket", ci);
+        
+        Value* cArg[] = {synAddr, con1, retV, nGetTick, ordNum};
 
         if (isa<CallInst>(ci))
         {
@@ -310,7 +318,7 @@ namespace llvm {
         }
 
         debugLog("storeSyncFunction @" << __LINE__);
-        CallInst* nStoreSync = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,4),
+        CallInst* nStoreSync = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,5),
                                             "", initialPt);
         MarkInstAsContechInst(nStoreSync);
 
@@ -527,11 +535,15 @@ namespace llvm {
                 BitCastInst* bciMut = new BitCastInst(ci->getArgOperand(1), cct->voidPtrTy, "locktovoid", ci);
                 MarkInstAsContechInst(bciMut);
 
-                Value* cArg[] = {bciMut, ConstantInt::get(cct->int32Ty, 0), ConstantInt::get(cct->int32Ty, 0), nGetTick};
+                Value* cArg[] = {bciMut, 
+                                 ConstantInt::get(cct->int32Ty, 0), 
+                                 ConstantInt::get(cct->int32Ty, 0), 
+                                 nGetTick,
+                                 ConstantInt::get(cct->int64Ty, 0)};
 
                 // Store the mutex unlock
                 debugLog("storeSyncFunction @" << __LINE__);
-                Instruction* callSF = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,4), "", ci);
+                Instruction* callSF = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,5), "", ci);
                 MarkInstAsContechInst(callSF);
 
                 // ISSUE #63
@@ -564,18 +576,18 @@ namespace llvm {
                     retV = ci;
                 else
                     retV = ConstantInt::get(cct->int32Ty, 0);
-                Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 2), retV, nGetTick2};
+                Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 2), retV, nGetTick2, ConstantInt::get(cct->int64Ty, 0)};
                 debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "", initialPt);
+                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 5), "", initialPt);
                 MarkInstAsContechInst(nStoreCV);
 
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick3 = CallInst::Create(cct->getCurrentTickFunction, "tick3", initialPt);
                 MarkInstAsContechInst(nGetTick3);
 
-                Value* cArgMut[] = {bciMut, ConstantInt::get(cct->int32Ty, 1), ConstantInt::get(cct->int32Ty, 0), nGetTick3};
+                Value* cArgMut[] = {bciMut, ConstantInt::get(cct->int32Ty, 1), ConstantInt::get(cct->int32Ty, 0), nGetTick3, ConstantInt::get(cct->int64Ty, 0)};
                 debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreMut = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgMut, 4), "", initialPt);
+                CallInst* nStoreMut = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgMut, 5), "", initialPt);
                 MarkInstAsContechInst(nStoreMut);
 
                 if (isa<CallInst>(ci))
@@ -602,7 +614,7 @@ namespace llvm {
                     retV = ci;
                 else
                     retV = ConstantInt::get(cct->int32Ty, 0);
-                Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 3), retV, nGetTick};
+                Value* cArgCV[] = {bciCV, ConstantInt::get(cct->int32Ty, 3), retV, nGetTick, ConstantInt::get(cct->int64Ty, 0)};
 
                 if (isa<CallInst>(ci))
                 {
@@ -615,7 +627,7 @@ namespace llvm {
                 }
 
                 debugLog("storeSyncFunction @" << __LINE__);
-                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 4), "",
+                CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 5), "",
                                                       initialPt);
                 MarkInstAsContechInst(nStoreCV);
 

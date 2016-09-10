@@ -143,7 +143,7 @@ namespace llvm {
         // Function types are named fun(Return type)(arg1 ... argN)Ty
         FunctionType* funVoidPtrI32I32VoidPtrTy;
         FunctionType* funVoidVoidPtrI32VoidPtrTy;
-        FunctionType* funVoidVoidPtrI32I32I64Ty;
+        FunctionType* funVoidVoidPtrI32I32I64I64Ty;
         FunctionType* funVoidPtrVoidPtrTy;
         FunctionType* funVoidPtrVoidTy;
         FunctionType* funVoidVoidTy;
@@ -206,14 +206,15 @@ namespace llvm {
         cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
         cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
         cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
+        cct.allocateTicketFunction =  M.getOrInsertFunction("__ctAllocateTicket", FunctionType::get(cct.int64Ty, false));
 
         cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
         cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
 
 
-        Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/};
-        funVoidVoidPtrI32I32I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 4), false);
-        cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64Ty);
+        Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/, cct.int64Ty};
+        funVoidVoidPtrI32I32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 5), false);
+        cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64I64Ty);
 
         Type* argsTC[] = {cct.int32Ty};
 
