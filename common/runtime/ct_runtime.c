@@ -111,6 +111,11 @@ unsigned int __ctAllocateCTid()
     return r;
 }
 
+uint64_t __ctAllocateTicket()
+{
+    return __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
+}
+
 void __ctAllocateLocalBuffer()
 {
     pthread_mutex_lock(&__ctFreeBufferLock);
@@ -688,7 +693,7 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     #endif
 }
 
-void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
+void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t, uint64_t ordNum)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -699,7 +704,8 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     if (success != 0) {return;}
     
     ct_tsc_t t = rdtsc();
-    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
+    if (ordNum == 0)
+        ordNum = __ctAllocateTicket();
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_sync;
@@ -707,7 +713,7 @@ void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t)
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2]) = syncType;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(int)]) = (ct_addr_t) addr;
-    *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
+    *((uint64_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t) + sizeof(int)]) = ordNum;
     #ifdef POS_USED
     __ctThreadLocalBuffer->pos = p + sizeof(unsigned int) + sizeof(ct_tsc_t) * 2 + sizeof(ct_addr_t)+ sizeof(int) + sizeof(unsigned long long);
     #endif
@@ -1153,7 +1159,7 @@ void __ctOMPStoreInOutDeps(void* task, size_t offset, int32_t numDeps, int32_t i
         {
             if (inDep == 1 && dCopy[i].flags.in == 0) continue;
             if (inDep == 0 && dCopy[i].flags.out == 0) continue;
-            __ctStoreSync(dCopy[i].base_addr, ct_task_depend, 0, rdtsc());
+            __ctStoreSync(dCopy[i].base_addr, ct_task_depend, 0, rdtsc(), 0);
         }
         
         if (inDep == 0) free(dCopy);
