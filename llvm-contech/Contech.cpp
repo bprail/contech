@@ -39,6 +39,8 @@
 #include "llvm/Transforms/Instrumentation.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+#include "llvm/Analysis/Interval.h"
+
 #include <map>
 #include <set>
 #include <vector>
@@ -449,6 +451,7 @@ namespace llvm {
         unsigned numSucc = bbTail->getTerminator()->getNumSuccessors();
         if (numSucc > 1) return false;
         
+        
         //
         // If this block's successor has multiple predecessors, then skip
         //   TODO: Handle this case
@@ -465,6 +468,7 @@ namespace llvm {
         {
             if (PHINode *PN = dyn_cast<PHINode>(BI)) 
             {
+                
                 for (Value *IncValue : PN->incoming_values())
                 {
                     if (IncValue == PN) return false;
@@ -475,11 +479,18 @@ namespace llvm {
                 break;
             }
         }
+        //return false;
         
         //
         // Go through each predecessor and verify that a tail duplicate can be merged
         //
+    #if LLVM_VERSION_MINOR>=9
+        std::vector<BasicBlock*>::iterator pit =  Interval(bbTail).Predecessors.begin();
+        std::vector<BasicBlock*>::iterator pet =  Interval(bbTail).Predecessors.end();
+        for (; pit != pet; ++pit)
+    #else
         for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
+    #endif
         {
             pred = *pit;
             TerminatorInst* ti = pred->getTerminator();
@@ -1510,12 +1521,14 @@ cleanup:
                     Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
                      // If sync_acquire returns int, pass it, else pass 0 - success
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
+                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
                     Value* cArg[] = {cinst,
                                      synType,
                                      retV,
-                                     nGetTick};
+                                     nGetTick,
+                                     nTicket};
                     debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
                                                                 "", iPt);
                     MarkInstAsContechInst(nStoreSync);
                 }
@@ -1642,12 +1655,14 @@ cleanup:
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
                     // ++I moves the insertion point to after the xchg inst
                     Value* cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), convertIterToInst(++I));
+                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
                     Value* cArg[] = {cinst,
                                      synType,
                                      retV,
-                                     nGetTick};
+                                     nGetTick,
+                                     nTicket};
                     debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
                                                         "", convertIterToInst(I)); // Insert after xchg inst
                     MarkInstAsContechInst(nStoreSync);
 
@@ -1672,12 +1687,14 @@ cleanup:
                     Value* retV = ConstantInt::get(cct.int32Ty, 0);
                     // ++I moves the insertion point to after the armw inst
                     Value* cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), convertIterToInst(++I));
+                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
                     Value* cArg[] = {cinst,
                                      synType,
                                      retV,
-                                     nGetTick};
+                                     nGetTick,
+                                     nTicket};
                     debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,4),
+                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
                                                         "", convertIterToInst(I)); // Insert after armw inst
                     MarkInstAsContechInst(nStoreSync);
 
