@@ -254,7 +254,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                 # As the result of link will be instrumented, do not include RUNTIME, etc
                 pcall(["llvm-link", ofiles, oFromAFiles, "-o", out + ".link.bc"])
                 pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", out + ".link.bc", "-o", out + "_ct.link.bc", "-ContechState", stateFile])
-                pcall(["llvm-link", out + "_ct.link.bc", RUNTIME, "-o", out + "_ct.fin.bc"]);
+                pcall(["llvm-link", out + "_ct.link.bc", "-o", out + "_ct.fin.bc"]);
                 pcall(["rm",  "-rf", TMPARDIR])
 
             # Link in basic block table
@@ -275,7 +275,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             else:
                 #Cilk runtime requires -ldl?
                 #Contech runtime requires -lrt and -lpthread
-                pcall([CC, out + "_ct.fin.bc", CFLAGS, "-o", out, "-lrt", "-ldl", "-lpthread",  "contech_state.o"])
+                pcall([CC, out + "_ct.fin.bc", RUNTIME, CFLAGS, "-o", out, "-lrt", "-ldl", "-lpthread",  "contech_state.o"])
         else:
             passThrough(CC)
 
