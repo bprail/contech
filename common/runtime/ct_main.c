@@ -26,6 +26,7 @@ void* (__ctBackgroundThreadDiscard)(void*);
 
 bool __ctIsROIEnabled = false;
 bool __ctIsROIActive = false;
+bool __ctSegFaultObs = false;
 
 extern int ct_orig_main(int, char**);
 
@@ -69,7 +70,7 @@ void __ctCleanupThreadMain(void* v)
 
 void sigsegv_handler(int num, siginfo_t * sigI, void * ucontext)
 {
-    
+    __ctSegFaultObs = true;
 }
 
 #ifdef CT_MAIN
@@ -193,14 +194,14 @@ int main(int argc, char** argv)
 }
 #endif
 
-
+static size_t totalWritten = 0;
+static unsigned int maxBuffersAlloc = 0;
 void* __ctBackgroundThreadWriter(void* d)
 {
     FILE* serialFile;
     char* fname = getenv("CONTECH_FE_FILE");
     unsigned int wpos = 0;
-    unsigned int maxBuffersAlloc = 0, memLimitBufCount = 0;
-    size_t totalWritten = 0;
+    unsigned int memLimitBufCount = 0;
     pct_serial_buffer memLimitQueue = NULL;
     pct_serial_buffer memLimitQueueTail = NULL;
     unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
@@ -642,4 +643,43 @@ void* __ctBackgroundThreadDiscard(void* d)
             pthread_exit(NULL);            
         }
     } while (1);
+}
+
+void __ctDebugAndTestLock(pthread_mutex_t* m, const char* s)
+{
+    int ret = pthread_mutex_trylock(m);
+    fprintf(stderr, "Status of %s: ", s);
+    if (ret == EBUSY)
+    {
+        fprintf(stderr, "Already acquired.\n");
+    }
+    else if (ret == 0)
+    {
+        fprintf(stderr, "Unlocked.\n");
+        pthread_mutex_unlock(m);
+    }
+    else
+    {
+        fprintf(stderr, "Failed with %s\n", strerror(ret));
+    }
+}
+
+//
+//  This routine attempts to report possible details as to the current status of the
+//    program and instrumentation.  Use only in GDB or other debugger, as it does
+//    not acquire the necessary locks to protect data structures.
+void __ctReportAndDiagnose()
+{
+    int lock = 0, ret;
+    fprintf(stderr, "Total bytes written by background thread: %lu\n", totalWritten);
+    fprintf(stderr, "Creation thread count: %u\n", __ctThreadGlobalNumber);
+    fprintf(stderr, "Exit thread count: %u\n", __ctThreadExitNumber);
+    fprintf(stderr, "Created threads <= Exit.  If equal, then background should terminate.\n");
+    fprintf(stderr, "Current buffers allocated: %u\n", __ctCurrentBuffers);
+    fprintf(stderr, "Maximum buffers allocated: %u\n", maxBuffersAlloc);
+    fprintf(stderr, "Allocation limit by memory: %u\n", __ctMaxBuffers);
+    fprintf(stderr, "If current equals limit, then inst is paused while writing.\n");
+    fprintf(stderr, "Has a segfault been caught: %s\n", (__ctSegFaultObs)?"yes":"no");
+    __ctDebugAndTestLock(&__ctQueueBufferLock, "__ctQueueBufferLock");
+    __ctDebugAndTestLock(&__ctFreeBufferLock, "__ctFreeBufferLock");
 }

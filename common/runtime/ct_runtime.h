@@ -127,6 +127,7 @@ extern ct_serial_buffer_sized initBuffer;
 
 extern bool __ctIsROIEnabled;
 extern bool __ctIsROIActive;
+extern bool __ctSegFaultObs;
 
 extern ct_tsc_t __ctTotalTimeBetweenQueueBuffers;
 extern ct_tsc_t __ctTotalThreadOverhead;
