@@ -1237,6 +1237,12 @@ namespace llvm {
                 if (isSyncFrame)
                 {
                     Value* ctCilkStructSync = ctPass->findCilkStructInBlock(ci->getParent()->getParent()->getEntryBlock(), false);
+                    if (ctCilkStructSync == NULL)
+                    {
+                        errs() << "Searched block for existing cilk struct\n" << *(ci->getParent()) << "\n";
+                        errs() << (ci->getParent()->getParent()->getEntryBlock()) << "\n";
+                        assert(0 && "Failed to find, not insert, cilk struct");
+                    }
                     Value* argRest[] = {ctCilkStructSync};
                     debugLog("cilkParentFunction @" << __LINE__);
 
