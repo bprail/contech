@@ -14,6 +14,7 @@
 #error LLVM Version 3.8 or greater required
 #else
 #if LLVM_VERSION_MINOR>=8
+#define NDEBUG
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -62,6 +63,8 @@ cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current
 // MarkFrontEnd and Minimal cover variations of the instrumentation that are used in special cases
 cl::opt<bool> ContechMarkFrontend("ContechMarkFE", cl::desc("Generate a minimal marked output"));
 cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally instrumented output"));
+
+uint64_t tailCount = 0;
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
@@ -451,7 +454,6 @@ namespace llvm {
         unsigned numSucc = bbTail->getTerminator()->getNumSuccessors();
         if (numSucc > 1) return false;
         
-        
         //
         // If this block's successor has multiple predecessors, then skip
         //   TODO: Handle this case
@@ -479,20 +481,21 @@ namespace llvm {
                 break;
             }
         }
-        //return false;
         
         //
         // Go through each predecessor and verify that a tail duplicate can be merged
         //
+        
+    // If the basic for loop is used with 3.9, the module fails with undefined symbol, unless NDEBUG matches
+    //    compiled value.
     #if LLVM_VERSION_MINOR>=9
-        std::vector<BasicBlock*>::iterator pit =  Interval(bbTail).Predecessors.begin();
-        std::vector<BasicBlock*>::iterator pet =  Interval(bbTail).Predecessors.end();
-        for (; pit != pet; ++pit)
+        for (BasicBlock *pred : predecessors(bbTail))
+        {
     #else
         for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
-    #endif
         {
             pred = *pit;
+    #endif
             TerminatorInst* ti = pred->getTerminator();
             
             // No self loops
@@ -513,7 +516,7 @@ namespace llvm {
         }
         
         if (predCount <= 1) return false;
-
+        return false;
         //
         // Setup new PHINodes in the successor block in preparation for the duplication.
         //
@@ -664,6 +667,8 @@ namespace llvm {
                 assert(0);
             }
         }
+        errs() << *pred;
+        tailCount++;
         
         return true;
     }
@@ -1085,6 +1090,8 @@ cleanup:
         contechStateFile->close();
         delete contechStateFile;
 
+        errs() << "Tail Dup Count: " << tailCount << "\n";
+        
         return true;
     }
 
@@ -1092,7 +1099,7 @@ cleanup:
     unsigned int Contech::getSizeofType(Type* t)
     {
         unsigned int r = t->getPrimitiveSizeInBits();
-        if (r > 0) return r / 8;
+        if (r > 0) return (r + 7) / 8;  //Round up to the nearest byte
         else if (t->isPointerTy()) { return cct.pthreadSize;}
         else if (t->isPtrOrPtrVectorTy()) 
         { 
@@ -1985,7 +1992,7 @@ Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* ins
 Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
 {
     Value* v = NULL;
-
+    
     for (auto it = B.begin(), et = B.end(); it != et; ++it)
     {
         Value* iV = dyn_cast<Value>(&*it);
