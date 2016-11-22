@@ -516,7 +516,7 @@ namespace llvm {
         }
         
         if (predCount <= 1) return false;
-        return false;
+        //return false;
         //
         // Setup new PHINodes in the successor block in preparation for the duplication.
         //
