@@ -330,6 +330,37 @@ namespace llvm {
         }
     }
 
+    // Insert a normal dest for the Invoke inst
+    //   This gives us a single path target to instrument
+    template<typename T>
+    BasicBlock* InsertNormalDest(T* ci, ConstantsCT* cct, Module &M)
+    {
+        InvokeInst* ii = dyn_cast<InvokeInst>(ci);
+        if (ii == NULL) return NULL;
+        
+        BasicBlock* bb = BasicBlock::Create(M.getContext(), "InvokeNormalInstTarget", ii->getParent()->getParent(),
+                                            ii->getNormalDest());
+        if (bb == NULL) return NULL;
+        BranchInst* bi = BranchInst::Create(ii->getNormalDest(), bb);
+        ii->setNormalDest(bb);
+        
+        // Cannot just replace all uses of ii->parent, as it has two uses normal and exceptions
+        //   Need to replace all uses on just the normal target
+        //   The following code is adapted form BasicBlock.cpp
+        BasicBlock* nDest = bi->getSuccessor(0);
+        for (auto II = nDest->begin(), IE = nDest->end(); II != IE; ++II) 
+        {
+            PHINode *PN = dyn_cast<PHINode>(II);
+            if (!PN)
+                break;
+            int i;
+            while ((i = PN->getBasicBlockIndex(ii->getParent())) >= 0)
+                PN->setIncomingBlock(i, bb);
+        }
+        
+        return bb;
+    }
+    
     template<typename T>
     BasicBlock::iterator InstrumentFunctionCall(T* ci,
                                                  bool &hasUninstCall,
@@ -404,6 +435,7 @@ namespace llvm {
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
+                        BasicBlock* bb = InsertNormalDest(ii, cct, M);
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
                                                         "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }

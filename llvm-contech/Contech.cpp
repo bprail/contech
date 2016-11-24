@@ -516,7 +516,7 @@ namespace llvm {
         }
         
         if (predCount <= 1) return false;
-        //return false;
+        return false;
         //
         // Setup new PHINodes in the successor block in preparation for the duplication.
         //
@@ -1766,7 +1766,8 @@ cleanup:
         //   requires disabling the dominator tree traversal in the runOnModule routine
         //
         //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
-        else if (B.getTerminator()->getNumSuccessors() != 1 && markOnly == false)
+        else if ((B.getTerminator()->getNumSuccessors() != 1 && markOnly == false) ||
+                 (&B == &(B.getParent()->getEntryBlock())))
         {
             // Since calls terminate basic blocks
             //   These blocks would have only 1 successor
