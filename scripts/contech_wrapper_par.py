@@ -148,7 +148,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             CFLAGS = CFLAGS + " " + arg
         elif "-fcilkplus" == arg:
             CFLAGS = CFLAGS + " " + arg + " "
-            CC = CC + "-cilk"
+            #CC = CC + "-cilk"
         # Combine other args into CFLAGS
         else:
             CFLAGS = CFLAGS + " " + arg
@@ -229,6 +229,8 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
 
             # But first extract .o files hiding in .a libraries
             TMPARDIR = tempfile.mkdtemp()
+            oFromARaw = ""
+            oAltLib = ""
             if os.path.isdir(TMPARDIR):
                 pcall(["mkdir",  "-p", TMPARDIR])
 
@@ -250,11 +252,17 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                     oFromAType = head.stdout.read()
                     if oFromAType.startswith("BC"):
                         oFromAFiles = oFromAFiles + " " + f 
+                    else:
+                        oFromARaw = oFromARaw + " "  + f
 
                 # As the result of link will be instrumented, do not include RUNTIME, etc
-                pcall(["llvm-link", ofiles, oFromAFiles, "-o", out + ".link.bc"])
+                pcall(["llvm-link", "-v", ofiles, oFromAFiles, "-o", out + ".link.bc"])
                 pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", out + ".link.bc", "-o", out + "_ct.link.bc", "-ContechState", stateFile])
-                pcall(["llvm-link", out + "_ct.link.bc", "-o", out + "_ct.fin.bc"]);
+                
+                if oFromARaw != "":
+                    pcall(["ar", "crsu", "ct_" + remFlags[0], oFromARaw])
+                    oAltLib = oAltLib + " " + "ct_" + remFlags[0]
+                
                 pcall(["rm",  "-rf", TMPARDIR])
 
             # Link in basic block table
@@ -275,7 +283,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
             else:
                 #Cilk runtime requires -ldl?
                 #Contech runtime requires -lrt and -lpthread
-                pcall([CC, out + "_ct.fin.bc", RUNTIME, CFLAGS, "-o", out, "-lrt", "-ldl", "-lpthread",  "contech_state.o"])
+                pcall([CC, "-flto", oAltLib, out + "_ct.link.bc", oAltLib, RUNTIME, CFLAGS, "-o", out, "-lrt", "-ldl", "-lpthread",  "contech_state.o"])
         else:
             passThrough(CC)
 
