@@ -516,7 +516,7 @@ namespace llvm {
         }
         
         if (predCount <= 1) return false;
-        return false;
+        //return false;
         //
         // Setup new PHINodes in the successor block in preparation for the duplication.
         //
@@ -714,11 +714,11 @@ namespace llvm {
 
             return NULL;
         }
-        else if (addrI->getParent() != memI->getParent())
+        /*else if (addrI->getParent() != memI->getParent())
         {
             // Address is computed in a different basic block
             return NULL;
-        }
+        }*/
         else if (CastInst* bci = dyn_cast<CastInst>(addr))
         {
             for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
@@ -781,6 +781,7 @@ namespace llvm {
         for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
         {
             GetElementPtrInst* gepAddrT = NULL;
+            // If the search has reached the current memory operation, then no match exists
             if (memI == dyn_cast<Instruction>(&*it)) break;
 
             if (LoadInst *li = dyn_cast<LoadInst>(&*it))
@@ -804,8 +805,8 @@ namespace llvm {
             }
 
             unsigned int i = 0;
-            bool constMode = false;
-            if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
+            bool constMode = false, finConst = false, isMatch = true;
+            //if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
             if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
             tOffset = 0;
             for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
@@ -815,10 +816,23 @@ namespace llvm {
                 // If the index of GEP is a Constant, then it can vary between mem ops
                 if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
                 {
-                    if (ConstantInt* aConst = dyn_cast<ConstantInt>(addrComponents[i]))
+                    if (i == addrComponents.size())
                     {
-                        if (aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
-
+                        finConst = true;
+                        // Last field was not a constant, but that can be alright
+                        if (constMode == false)
+                        {
+                            
+                        }
+                    }
+                    ConstantInt* aConst = NULL;
+                    if (finConst == true ||
+                        (aConst = dyn_cast<ConstantInt>(addrComponents[i])))
+                    {
+                        if (!finConst &&
+                            aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
+                        isMatch = true;
+                        
                         //
                         // GetElementPtr supports computing a constant offset; however, it requires
                         //   all fields to be constant.  The code is reproduced here, in order to compute
@@ -838,6 +852,7 @@ namespace llvm {
                     }
                     else
                     {
+                        isMatch = false;
                         break;
                     }
                 }
@@ -845,15 +860,22 @@ namespace llvm {
                 {
                     // Only can handle cases where a varying constant is at the end of the calculation
                     //   or has non-varying constants around it.
+                    isMatch = false;
                     break;
                 }
 
                 // temp offset remains 0 until a final sequence of constant int offsets
                 tOffset = 0;
-                if (gepI != addrComponents[i]) break;
+                if (i >= addrComponents.size() || 
+                    gepI != addrComponents[i])
+                {
+                    isMatch = false;
+                    break;
+                }
             }
 
-            if (i == addrComponents.size())
+            if (isMatch ||
+                (i == addrComponents.size() && (gepAddrT->getNumIndices() != gepAddr->getNumIndices())))
             {
                 //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
                 *offset = baseOffset - tOffset;
