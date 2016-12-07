@@ -279,6 +279,10 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             /*
                              * The following code verified that the duplicate memory addresses were being
                              * computed correctly.
+                             *
+                             * This also requires changing the driver to not omit the operations and
+                             * also including the duplicate operations in the count.
+                            ct_memory_op tmo;
                             tmo.data = 0;
                             fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
                             fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
