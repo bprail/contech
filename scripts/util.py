@@ -1,6 +1,7 @@
 import subprocess
 import os
 import sys
+import stat
 
 # List of all parsec benchmarks 
 class Benchmarks:
@@ -136,6 +137,45 @@ def quicksub(name, code, resources = [], queue = "batch"):
     # Return the job ID
     return o.split(".")[0]
 
+# Submits a script file to the job queue. Returns the job id that was assigned by the scheduler.
+def quicklocal(name, code, resources = [], queue = "batch"):
+    # Write code to a temporary script file
+    scriptFileName = "/tmp/util_py_temp_{0}.sh".format(name)
+    shell = ""
+    with open(scriptFileName, "w") as scriptFile:
+        # Write the script to file
+        if os.environ.has_key("SHELL"):
+            shell = os.environ["SHELL"]
+            scriptFile.write("#!{}\n".format(shell))
+            if shell == "/bin/csh":
+                scriptFile.write(""" setenv TIME '{"real":%e, "user":%U, "sys":%S, "mem":%M }'\n""")
+            else:
+                scriptFile.write("""TIME='{"real":%e, "user":%U, "sys":%S, "mem":%M }'\n""")
+        else:
+            shell = "/bin/bash"
+            scriptFile.write("#!{}\n".format(shell))
+            scriptFile.write("""TIME='{"real":%e, "user":%U, "sys":%S, "mem":%M }'\n""")
+        scriptFile.write(code)
+    
+    # Prepare and print the command
+    
+    command = "{}".format(scriptFileName)
+    os.chmod(scriptFileName, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+    print command
+    outputFileName = "{}.o00000".format(name)
+    with open(outputFileName, "w") as outputFile:
+        # Open a process to run the command
+        p = subprocess.Popen(command, stdout = outputFile, stderr = subprocess.STDOUT, shell = True)
+        p.wait()
+    #o, e = p.communicate()
+    
+    # Don't submit jobs too fast
+    time.sleep(0.5)
+    # Clean up
+    os.remove(scriptFileName)  
+    # Return the job ID
+    return outputFileName
+    
 import xml.etree.ElementTree as ET
 
 def quickstat():
