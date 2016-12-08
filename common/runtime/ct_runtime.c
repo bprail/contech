@@ -312,7 +312,6 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     f = ptc->func;
     a = ptc->arg;
     p = ptc->parent_ctid;
-    start = rdtsc();
     
     //
     // Now compute the skew
@@ -332,7 +331,8 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
     __ctAllocateLocalBuffer();
     
     __ctThreadInfoList = NULL;
-
+    start = rdtsc();
+    
     free(ptc);
     
     __ctStoreThreadCreate(p, skew, start);
@@ -725,11 +725,12 @@ void __ctStoreThreadCreate(unsigned int ptc, long long skew, ct_tsc_t start)
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
+    ct_tsc_t end_t = rdtsc();
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_create;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = rdtsc();
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = end_t;
     *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = ptc;
     *((long long*)&__ctThreadLocalBuffer->data[p + 2 * sizeof(unsigned int) + 2*sizeof(ct_tsc_t)]) = skew;
     #ifdef POS_USED
@@ -779,14 +780,14 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
 
-    unsigned int p = __ctThreadLocalBuffer->pos;
-    
     unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalBarrierNumber, 1);
+    ct_tsc_t end_t = rdtsc();
+    unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_barrier;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = enter;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = end_t;
     *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char)]) = (ct_addr_t) a;
     *((unsigned long long*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + 2*sizeof(ct_tsc_t)+ sizeof(char) + sizeof(ct_addr_t)]) = ordNum;
     #ifdef POS_USED
@@ -805,13 +806,14 @@ void __ctStoreThreadJoinInternal(bool ie, unsigned int id, ct_tsc_t start)
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
     
+    ct_tsc_t end_t = rdtsc();
     unsigned int p = __ctThreadLocalBuffer->pos;
     
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_join/*<<24*/;
     //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = ie;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
-    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = rdtsc();
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = end_t;
     *((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)+ 2*sizeof(ct_tsc_t)]) = id;
     #ifdef POS_USED
     __ctThreadLocalBuffer->pos += 2 * sizeof(unsigned int) + sizeof(bool)+ 2*sizeof(ct_tsc_t);
