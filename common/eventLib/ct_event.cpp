@@ -89,7 +89,7 @@ int EventLib::unpack(uint8_t *buf, char const fmt[], ...)
                 *pll = *bp++;
                 *pll += *bp++ << 8;
                 *pll += *bp++ << 16;
-                *pll += *bp++ << 24;
+                *pll += ((uint64_t)(*bp++)) << 24; // If adding 0x80, compiler would set high bits to ff..
                 *pll += ((uint64_t)(*bp++)) << 32;
                 *pll += ((uint64_t)(*bp++)) << 40;
                 *pll += ((uint64_t)(*bp++)) << 48;
@@ -453,29 +453,35 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         case (ct_event_task_join):
         {
-            /*const int join_size = 21;
+            const int join_size = sizeof(npe->tj.isExit) + 
+                                  sizeof(npe->tj.start_time) + 
+                                  sizeof(npe->tj.end_time) + 
+                                  sizeof(npe->tj.other_id);
             uint8_t buf[join_size];
             int bytesConsume = 0;
             
             fread_check(buf, sizeof(uint8_t), join_size, fptr);
             bytesConsume = unpack(buf, "bttl", &npe->tj.isExit, &npe->tj.start_time, &npe->tj.end_time, &npe->tj.other_id);
-            assert(bytesConsume == join_size);*/
-            
-            fread_check(&npe->tj.isExit, sizeof(bool), 1, fptr);
-            fread_check(&npe->tj.start_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->tj.end_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->tj.other_id, sizeof(unsigned int), 1, fptr);
+            assert(bytesConsume == join_size);
             
         }
         break;
         
         case (ct_event_sync):
         {
-            fread_check(&npe->sy.start_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->sy.end_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->sy.sync_type, sizeof(int), 1, fptr);
-            fread_check(&npe->sy.sync_addr, sizeof(ct_addr_t), 1, fptr);
-            fread_check(&npe->sy.ticketNum, sizeof(unsigned long long), 1, fptr);
+            const int sync_size = sizeof(npe->sy.start_time) + 
+                                  sizeof(npe->sy.end_time) + 
+                                  sizeof(npe->sy.sync_type) + 
+                                  sizeof(npe->sy.sync_addr) +
+                                  sizeof(npe->sy.ticketNum);
+            uint8_t buf[sync_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), sync_size, fptr);
+            bytesConsume = unpack(buf, "ttlpp", &npe->sy.start_time, 
+                                                &npe->sy.end_time, 
+                                                &npe->sy.sync_type, 
+                                                &npe->sy.sync_addr, 
+                                                &npe->sy.ticketNum);
         }
         break;
         
