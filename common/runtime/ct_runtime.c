@@ -690,6 +690,9 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
     #else
         #error "Compiling for big endian machine"
+    // TODO:
+    // #include <endian.h>
+    // uint64_t htole64(uint64_t host_64bits);
     #endif
 }
 
