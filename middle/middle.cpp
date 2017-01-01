@@ -226,6 +226,11 @@ reset_middle:
         if (hasTime)
         {
             // TODO: Why does NAS-is fail on this assert?
+            if (event->event_type != ct_event_task_create && 
+                startTime <= activeContech.timeOffset)
+            {
+                printf("Event: %p of type %d is too early (%lu <= %lu)\n", event, event->event_type, startTime, activeContech.timeOffset);
+            }
             assert(event->event_type == ct_event_task_create || startTime > activeContech.timeOffset);
             if (endTime < startTime)
             {
