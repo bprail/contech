@@ -68,7 +68,7 @@ uint64_t tailCount = 0;
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 57
+#define FUNCTIONS_INSTRUMENT_SIZE 60
 // NB Order matters in this array.  Put the most specific function names first, then
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -100,6 +100,9 @@ namespace llvm {
                                            {STORE_AND_LEN("pthread_spin_lock"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("pthread_spin_trylock"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("pthread_spin_unlock"), SYNC_RELEASE},
+                                           {STORE_AND_LEN("sem_post"), SYNC_RELEASE},
+                                           {STORE_AND_LEN("sem_wait"), SYNC_ACQUIRE},
+                                           {STORE_AND_LEN("sem_trywait"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("_mutex_lock_"), SYNC_ACQUIRE},
                                            {STORE_AND_LEN("_mutex_unlock_"), SYNC_RELEASE},
                                            {STORE_AND_LEN("pthread_cond_wait"), COND_WAIT},
@@ -697,6 +700,7 @@ namespace llvm {
             // No instruction generates the address, it is probably a global value
             for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
             {
+                // Stop iterating at self
                 if (memI == dyn_cast<Instruction>(&*it)) break;
                 if (LoadInst *li = dyn_cast<LoadInst>(&*it))
                 {
@@ -714,11 +718,6 @@ namespace llvm {
 
             return NULL;
         }
-        /*else if (addrI->getParent() != memI->getParent())
-        {
-            // Address is computed in a different basic block
-            return NULL;
-        }*/
         else if (CastInst* bci = dyn_cast<CastInst>(addr))
         {
             for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
@@ -806,7 +805,6 @@ namespace llvm {
 
             unsigned int i = 0;
             bool constMode = false, finConst = false, isMatch = true;
-            //if (gepAddrT->getNumIndices() != gepAddr->getNumIndices()) continue;
             if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
             tOffset = 0;
             for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
