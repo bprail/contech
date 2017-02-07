@@ -383,7 +383,14 @@ void __ctQueueBuffer(bool alloc)
         return;
     }
     
-    
+    // N.B. OVERHEAD Tracking only
+    #ifndef POS_USED
+    if (alloc) 
+    {
+        __ctThreadLocalBuffer->pos = 0;
+        return;
+    }
+    #endif
     
     //assert(__ctThreadLocalBuffer->data[0] != 0x13 && __ctThreadLocalBuffer->data[1] != 0x1);
     
