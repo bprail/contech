@@ -659,7 +659,7 @@ void __ctSetBufferPos(unsigned int pos)
 }
 
 // (contech_id, basic block id, num of ops)
-__attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsigned int pos, pct_serial_buffer t)
+__attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsigned int pos, pct_serial_buffer t, char elide)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -669,22 +669,32 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     
     __ctCheckBufferSizeDebug(bbid);
     
-    // Shift 1 bit of 0s, which is the basic block event
-    *((unsigned int*)r) = ((bbid & 0x7fff80) << 1 ) | (bbid & 0x7f);
-    
+    if (!elide)
+    {
+        // Shift 1 bit of 0s, which is the basic block event
+        *((unsigned int*)r) = ((bbid & 0x7fff80) << 1 ) | (bbid & 0x7f);
+    }
+           
     return r;
 }
 
-__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t)
+__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide)
 {
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int (-1 byte) for id + event
-    (t->pos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char));
+    if (elide)
+    {
+        (t->pos = p + numMemOps * 6 * sizeof(char));
+    }
+    else
+    {
+        (t->pos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char));
+    }
     #endif
     return t->pos;
 }
 
-__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r)
+__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r, char elide)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -694,7 +704,14 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
     // void __builtin_ia32_movnti64 (di *, di)
     #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
+    if (elide)
+    {
+        *((uint64_t*)(r + c * 6 * sizeof(char))) = (uint64_t)addr;
+    }
+    else
+    {
+        *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
+    }
     #else
         #error "Compiling for big endian machine"
     // TODO:
