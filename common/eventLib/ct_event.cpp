@@ -25,6 +25,7 @@ EventLib::EventLib()
     lastID = 0;
     lastBBID = 0;
     lastType = 0;
+    next_basic_block_id = -1;
     
     cedPos = 0;
     debug_file = NULL;
@@ -166,6 +167,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         fread_check(&npe->event_type, sizeof(unsigned int), 1, fptr);
     }
+    else if (this->next_basic_block_id != -1)
+    {
+        //fprintf(stderr, "Implicit ID: %d\n", this->next_basic_block_id);
+        npe->contech_id = currentID;
+        npe->event_type = ct_event_basic_block;
+        npe->bb.basic_block_id = this->next_basic_block_id;
+    }
     else
     {
         // Problem here is that event_type is of size int, 
@@ -208,12 +216,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
     {
         case (ct_event_basic_block):
         {
+            unsigned int id;
             if (version == 0)
             {
                 fread_check(&npe->bb.basic_block_id, sizeof(unsigned int), 1, fptr);
                 fread_check(&npe->bb.len, sizeof(unsigned int), 1, fptr);
             }
-            else
+            else if (this->next_basic_block_id == -1)
             {
                 unsigned short bbid_high = 0;
                 fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
@@ -224,6 +233,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                     dumpAndTerminate(fptr);
                 }
                 
+                npe->bb.len = bb_info_table[npe->bb.basic_block_id].len;
+            }
+            else
+            {
+                this->next_basic_block_id = -1;
                 npe->bb.len = bb_info_table[npe->bb.basic_block_id].len;
             }
             //fscanf(fptr, "%ud", &npe->bb.len);
@@ -240,7 +254,12 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 fprintf(stderr, "BB_COUNT: %d  LEN: %d\n", bb_count, bb_info_table[npe->bb.basic_block_id].len);
                 dumpAndTerminate();
             }*/
-            
+            id = npe->bb.basic_block_id;
+            this->next_basic_block_id = bb_info_table[id].next_basic_block_id;
+            if (this->next_basic_block_id != -1)
+            {
+                //fprintf(stderr, "%d -> %d\n", id, this->next_basic_block_id);
+            }
             if (npe->bb.len > 0)
             {
                 npe->bb.mem_op_array = (pct_memory_op) malloc(npe->bb.len * sizeof(ct_memory_op));
@@ -261,9 +280,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                     fread_check(npe->bb.mem_op_array, sizeof(ct_memory_op), npe->bb.len, fptr);
                 }
                 else
-                {
-                    unsigned int id = npe->bb.basic_block_id;
-                    for (int i = 0; i < npe->bb.len; i++)
+                {for (int i = 0; i < npe->bb.len; i++)
                     {
                         npe->bb.mem_op_array[i].data = 0;
                         
@@ -316,6 +333,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         case (ct_event_basic_block_info):
         {
             unsigned int id, len, line;
+            int32_t nbi;
             char* tStr = NULL;
             fread_check(&id, sizeof(unsigned int), 1, fptr);
             if (id >= bb_count)
@@ -324,6 +342,12 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 dumpAndTerminate(fptr);
             }
             npe->bbi.basic_block_id = id;
+            
+            fread_check(&nbi, sizeof(int32_t), 1, fptr);
+            npe->bbi.next_basic_block_id = nbi;
+            bb_info_table[id].next_basic_block_id = nbi;
+            if (nbi != -1)
+                fprintf(stderr, "NBI: %u -> %d\n", id, nbi);
             
             fread_check(&line, sizeof(unsigned int), 1, fptr);
             npe->bbi.flags = line;

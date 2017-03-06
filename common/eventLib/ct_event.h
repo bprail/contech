@@ -14,6 +14,7 @@ namespace contech
     typedef struct _ct_basic_block_info
     {
         uint32_t basic_block_id, fun_name_len, file_name_len, callFun_name_len, num_mem_ops, line_num, num_ops, crit_path_len;
+        int32_t next_basic_block_id;
         uint32_t flags;
         char* file_name;
         char* fun_name;
@@ -154,6 +155,7 @@ namespace contech
             unsigned int lastID;
             unsigned int lastBBID;
             unsigned int lastType;
+            uint32_t next_basic_block_id;
             
             typedef struct _ct_event_debug
             {
@@ -190,6 +192,7 @@ namespace contech
             typedef struct _internal_basic_block_info
             {
                 unsigned int len;
+                int32_t next_basic_block_id;
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
 
