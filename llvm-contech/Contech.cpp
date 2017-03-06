@@ -149,8 +149,8 @@ namespace llvm {
     bool Contech::doInitialization(Module &M)
     {
         // Function types are named fun(Return type)(arg1 ... argN)Ty
-        FunctionType* funVoidPtrI32I32VoidPtrTy;
-        FunctionType* funVoidVoidPtrI32VoidPtrTy;
+        FunctionType* funVoidPtrI32I32VoidPtrI8Ty;
+        FunctionType* funVoidVoidPtrI32VoidPtrI8Ty;
         FunctionType* funVoidVoidPtrI32I32I64I64Ty;
         FunctionType* funVoidPtrVoidPtrTy;
         FunctionType* funVoidPtrVoidTy;
@@ -166,7 +166,7 @@ namespace llvm {
         FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
         FunctionType* funI32I32Ty;
         FunctionType* funI32VoidPtrTy;
-        FunctionType* funI32I32I32VoidPtrTy;
+        FunctionType* funI32I32I32VoidPtrI8Ty;
         FunctionType* funVoidVoidPtrI64Ty;
         FunctionType* funVoidVoidPtrI64I32I32Ty;
         FunctionType* funVoidI32I64I64Ty;
@@ -186,16 +186,16 @@ namespace llvm {
         funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
         cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
 
-        Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy};
-        funVoidPtrI32I32VoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 3), false);
-        cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrTy);
+        Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty};
+        funVoidPtrI32I32VoidPtrI8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 4), false);
+        cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8Ty);
 
-        funI32I32I32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 3), false);
-        cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrTy);
+        funI32I32I32VoidPtrI8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 4), false);
+        cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8Ty);
 
-        Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy};
-        funVoidVoidPtrI32VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 3), false);
-        cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrTy);
+        Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty};
+        funVoidVoidPtrI32VoidPtrI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 4), false);
+        cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8Ty);
 
         funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
         cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
@@ -395,7 +395,7 @@ namespace llvm {
     //
     //  Wrapper call that appropriately adds the operations to record the memory operation
     //
-    pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos)
+    pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide)
     {
         pllvm_mem_op tMemOp = new llvm_mem_op;
 
@@ -425,12 +425,13 @@ namespace llvm {
         if (li != NULL)
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
+            Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
             Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
             MarkInstAsContechInst(addrI);
 
-            Value* argsMO[] = {addrI, cPos, pos};
+            Value* argsMO[] = {addrI, cPos, pos, cElide};
             debugLog("storeMemOpFunction @" << __LINE__);
-            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", li);
+            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
             MarkInstAsContechInst(smo);
 
             assert(smo != NULL);
@@ -440,6 +441,70 @@ namespace llvm {
         return tMemOp;
     }
 
+    //
+    // Check each predecessor for whether current block's ID can be elided
+    //   - All predecessors have no function calls or atomics (that require events)
+    //   - All predecessors have unconditional branches to current block
+    //
+    bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid)
+    {
+        bool elideBasicBlockId = false;
+        BasicBlock* pred;
+        int predCount = 0;
+        
+    #if LLVM_VERSION_MINOR>=9
+        for (BasicBlock *pred : predecessors(B))
+        {
+    #else
+        for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
+        {
+            pred = *pit;
+    #endif
+            TerminatorInst* ti = pred->getTerminator();
+            
+            // No self loops
+            if (pred == B) {return false;}
+            
+            if (dyn_cast<BranchInst>(ti) == NULL) return false;
+            if (ti->getNumSuccessors() != 1) {return false;}
+            if (ti->isExceptional()) return false;
+            
+            // Furthermore, Contech splits basic blocks for function calls
+            //   Any tail duplication must not undo that split.
+            //   Check if the terminator was introduced by Contech
+            if (ti->getMetadata(cct.ContechMDID)) 
+            {
+                return false;
+            }
+            
+            // Is it possible to record eliding ID?
+            auto bbInfo = cfgInfoMap.find(pred);
+            if (bbInfo == cfgInfoMap.end()) {return false;}
+            
+            if (bbInfo->second->containCall == true) return false;
+            if (bbInfo->second->containAtomic == true) return false;
+            predCount++;
+        }
+        
+        if (predCount == 0) return false;
+        elideBasicBlockId = true;
+        errs() << "BBID: " << bbid << " has ID elided.\n";
+        
+    #if LLVM_VERSION_MINOR>=9
+        for (BasicBlock *pred : predecessors(B))
+        {
+    #else
+        for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
+        {
+            pred = *pit;
+    #endif
+            auto bbInfo = cfgInfoMap.find(pred);
+            bbInfo->second->next_id = (int32_t)bbid;
+        }
+        
+        return elideBasicBlockId;
+    }
+    
     bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     {
         // If this block has multiple predecessors
@@ -1015,6 +1080,8 @@ namespace llvm {
                 bb_count++;
             }
 
+            
+
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
             {
@@ -1059,6 +1126,7 @@ cleanup:
                 //   Then runtime can directly pass the events to the event list
                 contechStateFile->write((char*)&evTy, sizeof(unsigned char));
                 contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->next_id, sizeof(int32_t));
                 // This is the flags field, which is currently 0 or 1 for containing a call
                 unsigned int flags = ((unsigned int)bi->second->containCall) |
                                      ((unsigned int)bi->second->containGlobalAccess << 1);
@@ -1234,6 +1302,7 @@ cleanup:
         bool containQueueBuf = false;
         bool hasUninstCall = false;
         bool containKeyCall = false;
+        bool elideBasicBlockId = false;
         Value* posValue = NULL;
         Value* basePosValue = NULL;
         Value* baseBufValue = NULL;
@@ -1382,9 +1451,19 @@ cleanup:
             errs() << "Cannot record CFG in Contech\n";
             return true;
         }
+        
+        //
+        // Large blocks cannot have their IDs elided.
+        // TODO: permament value or different approach to checks
+        //
+        if (memOpCount < 160)
+            elideBasicBlockId = checkAndApplyElideId(&B, bbid);
+        
         bi->id = bbid;
+        bi->next_id = -1;
         bi->first_op = NULL;
         bi->containGlobalAccess = false;
+        bi->containAtomic = false;
         bi->lineNum = lineNum;
         bi->numIROps = numIROps;
         bi->fnName.assign(fnName);
@@ -1421,11 +1500,12 @@ cleanup:
             MarkInstAsContechInst(bufPos);
             basePosValue = bufPos;
 
+            Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
             llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-            Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue};
+            Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue, cElide};
             debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
             sbb = CallInst::Create(cct.storeBasicBlockFunction,
-                                   ArrayRef<Value*>(argsBB, 3),
+                                   ArrayRef<Value*>(argsBB, 4),
                                    string("storeBlock") + to_string(bbid),
                                    aPhi);
             MarkInstAsContechInst(sbb);
@@ -1494,8 +1574,9 @@ cleanup:
             //   block event based on the number of memOps
             if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
             {
+                Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
                 llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
-                Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue};
+                Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide};
                 #ifdef TSC_IN_BB
                 if (memOpCount == 1)
                 #else
@@ -1503,7 +1584,7 @@ cleanup:
                 #endif
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", aPhi);
+                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", aPhi);
                     MarkInstAsContechInst(sbbc);
 
                     Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
@@ -1513,7 +1594,7 @@ cleanup:
                 else
                 {
                     debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 3), "", convertIterToInst(I));
+                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", convertIterToInst(I));
                     MarkInstAsContechInst(sbbc);
 
                     Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
@@ -1596,7 +1677,7 @@ cleanup:
 
                 if (dupMemOps.find(li) != dupMemOps.end())
                 {
-                    tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue);
+                    tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
                     tMemOp->isDep = true;
                     tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                     tMemOp->depMemOpDelta = dupMemOpOff[li];
@@ -1606,7 +1687,7 @@ cleanup:
                     assert(memOpPos < memOpCount);
                     // Skip globals for testing
                     //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
-                    tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue);
+                    tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
                     memOpPos ++;
                 }
 
@@ -1636,7 +1717,7 @@ cleanup:
 
                 if (dupMemOps.find(si) != dupMemOps.end())
                 {
-                    tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue);
+                    tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
                     tMemOp->isDep = true;
                     tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                     tMemOp->depMemOpDelta = dupMemOpOff[si];
@@ -1646,7 +1727,7 @@ cleanup:
                     assert(memOpPos < memOpCount);
                     // Skip globals for testing
                     //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                    tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue);
+                    tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
                     memOpPos ++;
                 }
 
@@ -1671,6 +1752,7 @@ cleanup:
             }
             else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(&*I))
             {
+                bi->containAtomic = true;
                 if (hasInstAllMemOps == true)
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
@@ -1703,6 +1785,7 @@ cleanup:
             }
             else if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(&*I))
             {
+                bi->containAtomic = true;
                 if (hasInstAllMemOps == true)
                 {
                     debugLog("getCurrentTickFunction @" << __LINE__);
@@ -1767,8 +1850,6 @@ cleanup:
         //   debug "calls".  If any are real calls, then the block contains a call.
         bi->containCall = (bi->containCall)?true:hasUninstCall;
 
-
-
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
         {
@@ -1801,6 +1882,10 @@ cleanup:
         //  into the CFG structure, so that targets can be matched up
         //  once all basic blocks have been parsed
         cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
+        if (elideBasicBlockId)
+        {
+            
+        }
 
         debugLog("Return from BBID: " << bbid);
 

@@ -36,8 +36,10 @@ namespace llvm {
 
     typedef struct _llvm_basic_block {
         unsigned int id, len, lineNum, numIROps, critPathLen;
+        int32_t next_id;
         bool containCall;
         bool containGlobalAccess;
+        bool containAtomic;
         pllvm_mem_op first_op;
         std::string fnName;
         std::string callFnName;
@@ -172,8 +174,9 @@ namespace llvm {
         virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
+        bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid);
         bool attemptTailDuplicate(BasicBlock* bbTail);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*);
+        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);
