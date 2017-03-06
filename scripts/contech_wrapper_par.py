@@ -260,7 +260,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
                 pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", out + ".link.bc", "-o", out + "_ct.link.bc", "-ContechState", stateFile])
                 
                 if oFromARaw != "":
-                    pcall(["ar", "crsu", "ct_" + remFlags[0], oFromARaw])
+                    pcall(["llvm-ar", "crsu", "ct_" + remFlags[0], oFromARaw])
                     oAltLib = oAltLib + " " + "ct_" + remFlags[0]
                 
                 pcall(["rm",  "-rf", TMPARDIR])
