@@ -232,7 +232,16 @@ CommTracker* CommTracker::fromFile(FILE* taskGraphIn)
                     {
                         // Size of allocation is stored in next memop
                         MemoryAction s = *(++ff);
-                        if (s.type != action_type_size) { cerr << "Invalid data in memory action stream: Missing size of allocation." << endl; for (auto& z : f.getMemoryActions()) {cerr << z.toString();} cerr << endl;exit(1); }
+                        if (s.type != action_type_size) 
+                        { 
+                            cerr << "Invalid data in memory action stream: Missing size of allocation." << endl;
+                            for (auto& z : f.getMemoryActions()) 
+                            {
+                                cerr << z.toString();
+                            } 
+                            cerr << endl;
+                            exit(1); 
+                        }
                         tracker->addAllocate(mem.addr, s.addr, uid, bbId);
                         break;
                     }
