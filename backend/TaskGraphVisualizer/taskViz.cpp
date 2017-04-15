@@ -1,5 +1,5 @@
-#include "gvc.h"
-#include "cgraph.h"
+#include "graphviz/gvc.h"
+#include "graphviz/cgraph.h"
 #include "../../common/taskLib/Task.hpp"
 #include "../CommTracker/CommTracker.hpp"
 #include <iostream>
@@ -154,12 +154,12 @@ int main(int argc, char const *argv[])
             catch(...) { continue;}
         }
     }
-
+#if 0
     else if (dataArrowsEnabled)
     {
         // Create additional edges for communication
-        close_ct_file(taskGraphIn);
-        taskGraphIn = create_ct_file_r(argv[1]);
+        fclose(taskGraphIn);
+        taskGraphIn = fopen(argv[1], "rb");
         CommTracker* tracker = CommTracker::fromFile(taskGraphIn);
         set< pair<TaskId, TaskId> > commEdgeSet;
         for (CommRecord r : tracker->getRecords())
@@ -180,6 +180,7 @@ int main(int argc, char const *argv[])
         }
         delete tracker;
     }
+    #endif
 
     printf("Done reading taskgraph file \n");
     printf("Graph Built. Nodes: %d\n",agnnodes(g));
