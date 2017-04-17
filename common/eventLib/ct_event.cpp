@@ -485,7 +485,10 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             int bytesConsume = 0;
             
             fread_check(buf, sizeof(uint8_t), join_size, fptr);
-            bytesConsume = unpack(buf, "bttl", &npe->tj.isExit, &npe->tj.start_time, &npe->tj.end_time, &npe->tj.other_id);
+            bytesConsume = unpack(buf, "bttl", &npe->tj.isExit, 
+                                               &npe->tj.start_time, 
+                                               &npe->tj.end_time, 
+                                               &npe->tj.other_id);
             assert(bytesConsume == join_size);
             
         }
@@ -511,11 +514,19 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         case (ct_event_barrier):
         {
-            fread_check(&npe->bar.onEnter, sizeof(bool), 1, fptr);
-            fread_check(&npe->bar.start_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->bar.end_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->bar.sync_addr, sizeof(ct_addr_t), 1, fptr);
-            fread_check(&npe->bar.barrierNum, sizeof(unsigned long long), 1, fptr);
+            const int bar_size = sizeof(npe->bar.onEnter) + 
+                                 sizeof(npe->bar.start_time) +
+                                 sizeof(npe->bar.end_time) +
+                                 sizeof(npe->bar.sync_addr) +
+                                 sizeof(npe->bar.barrierNum);
+            uint8_t buf[bar_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), bar_size, fptr);
+            bytesConsume = unpack(buf, "btttt", &npe->bar.onEnter, 
+                                                &npe->bar.start_time,
+                                                &npe->bar.end_time, 
+                                                &npe->bar.sync_addr, 
+                                                &npe->bar.barrierNum);
         }
         break;
         
