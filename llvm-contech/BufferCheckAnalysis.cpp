@@ -1,18 +1,12 @@
-#include <stdio.h>
-#include <iostream>
-#include <queue>
-#include <list>
-#include <vector>
-#include <map>
-#include <set>
 
-#include "llvm/IR/Instructions.h"
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/ValueMap.h"
 #include "llvm/IR/CFG.h"
+
+#include "BufferCheckAnalysis.h"
 
 using namespace llvm;
 
@@ -27,7 +21,9 @@ namespace llvm {
 		blockMemOps{ blockMemOps_ },
 		blockElide{ blockElide_ },
 		loopExits{loopExits_}
-	{}
+	{
+		outs() << "check\n";
+	}
 
 	// initialize all basic blocks with 0 memOps
 	int BufferCheckAnalysis::blockInitialization()
@@ -65,9 +61,9 @@ namespace llvm {
 	// (1) the map locating the number of memops
 	// (2) whether the basic block id can be elided
 	// to calculate the mem used
-	int BufferCheckAnalysis::getMemUsed(BasicBlock& bb)
+	int BufferCheckAnalysis::getMemUsed(BasicBlock* bb)
 	{
-		std::string bb_name{ bb.getName().str() };
+		std::string bb_name{ bb->getName().str() };
 		bool isElide = blockElide[bb_name];
 		int memCnt = blockMemOps[bb_name];
 	
@@ -80,7 +76,7 @@ namespace llvm {
 	{
 		int cnt = 0;
 		for (auto BIt = lp->block_begin(), BEIt = lp->block_end(); BIt != BEIt; ++BIt) {
-			BasicBlock B = **BIt;
+			BasicBlock* B = *BIt;
 			cnt += getMemUsed(B);
 		}
 		return cnt;
@@ -89,15 +85,15 @@ namespace llvm {
 	// flow function runs on basic block
 	// this function returns the memOps
 	// and calculates the bytes used in this basic block
-	int BufferCheckAnalysis::flowFunction(int curr, BasicBlock& bb)
+	int BufferCheckAnalysis::flowFunction(int curr, BasicBlock* bb)
 	{
-		static int FUNCTION_REMAIN{ 0 };
-		static int LOOP_EXIT_REMAIN{ 1024 };
+		static const int FUNCTION_REMAIN{ 0 };
+		static const int LOOP_EXIT_REMAIN{ 1024 };
 		// it should distinguish whether the terminator is a function
 		// or is the end of a loop
 		// or is a normal branch 
-		Instruction* last = bb.end();
-		std::string bb_name{ bb.getName().str() };
+		auto last = bb->end();
+		std::string bb_name{ bb->getName().str() };
 		if (isa<CallInst>(last)) {
 			// if it is a function, return 0
 			// TODO: distinguish library function call
@@ -120,6 +116,9 @@ namespace llvm {
 	// (2) loop, assume return with 1024 - loop path
 	void BufferCheckAnalysis::runAnalysis(Function& fblock)
 	{
+
+		outs() << "buffer check\n";
+
 		// recording the state of the last iteration
 		std::map<std::string, int> lastFlow{};
 		// recording the state of the current iteration
@@ -128,19 +127,20 @@ namespace llvm {
 		bool change = true;
 		while (change) {
 			change = false;
-			for (auto B = fblock.begin(), BE = fblock.end(); B != BE; ++B) {
+			for (auto B = fblock.begin(); B != fblock.end(); ++B) {
+				BasicBlock* bb = &*B;
 				// the name of current basic block
-				std::string bb_name{ B->getName().str() };
+				std::string bb_name{ bb->getName().str() };
 				// collect all previous states
 				// prepare to merge
 				std::vector<int> pred_bb_states{};
-				for (auto pred_bb = pred_begin(bb), pred_bb_end = pred_end(bb);
-					pred_bb != pred_bb_end; ++pred_bb) {
+				for (auto pred_bb = pred_begin(bb);
+					pred_bb != pred_end(bb); ++pred_bb) {
 					pred_bb_states.push_back(getMemUsed(*pred_bb));
 				}
 				// get the initial current state
 				int currState{};
-				if (bb_name == entry_block || pred_bb_states.size() == 1) {
+				if (bb_name == "TODO" || pred_bb_states.size() == 1) {
 					// we do not need to merge
 					currState = currFlow[bb_name];
 				}
@@ -150,7 +150,7 @@ namespace llvm {
 				}
 				// get the state for this iteration
 				// and update the curr flow map
-				int nextState = flowFunction(currState, *B);
+				int nextState = flowFunction(currState, bb);
 				currFlow[bb_name] = nextState;
 				// see if the state changes
 				if (lastFlow[bb_name] != currFlow[bb_name]) {

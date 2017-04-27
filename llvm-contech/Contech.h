@@ -193,7 +193,11 @@ namespace llvm {
     Value* findSimilarMemoryInst(Instruction*, Value*, int*);
     _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
+            
+        //AU.addRequired<DominatorTreeWrapperPass>();
+        AU.addRequired<LoopInfoWrapperPass>();
+        AU.addPreserved<LoopInfoWrapperPass>();
     }
 
     std::map<std::string, bool> collectBlockElide(Function& fblock);

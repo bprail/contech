@@ -18,4 +18,5 @@ include(AddLLVM)
 
 add_llvm_loadable_module( LLVMContech
   Contech.cpp
+  BufferCheckAnalysis.cpp
   )

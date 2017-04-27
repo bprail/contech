@@ -1075,8 +1075,29 @@ namespace llvm {
                 }
             } while (changed);
 
+
+            outs() << "before gg\n";
+
             Function &pF = *F;
-            BufferCheckAnalysis bufferCheckAnalysis{collectMemOps(pF), collectBlockElide(pF), collectLoopExits(pF)};
+
+            outs() << "before constructor\n";
+
+            std::map<std::string, bool> blockElide{collectBlockElide(pF)};
+
+            outs() << "after elide\n";
+
+            std::map<std::string, int> blockMemOps{collectMemOps(pF)};
+
+            outs() << "after memops\n";
+
+            std::map<std::string, Loop*> loopExits{collectLoopExits(pF)};
+
+            outs() << "after loop exits\n";
+
+            BufferCheckAnalysis 
+              bufferCheckAnalysis{std::move(blockMemOps), 
+                          std::move(blockElide), 
+                          std::move(loopExits)};
 
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
@@ -2243,15 +2264,29 @@ std::map<std::string, bool> Contech::collectBlockElide(Function& fblock)
   std::map<std::string, Loop*> Contech::collectLoopExits(Function& fblock)
   {
     std::map<std::string, Loop*> loopExits{};
-    LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+
+    outs() << "entry\n";
+
+    auto tmp = &getAnalysis<LoopInfoWrapperPass>(fblock);
+
+    outs() << "half\n";
+    
+    LoopInfo& LI = tmp->getLoopInfo();
+    //LoopInfo* LI = new LoopInfo();
+    // LoopInfo &LI = getAnalysis<LoopInfo>(fblock);
+
+    outs() << "after wrapper\n";
+
     for (Function::iterator bb = fblock.begin(); bb != fblock.end(); ++bb) {
       std::string bb_name{ bb->getName().str() };
       BasicBlock &basic_block = *bb;
-      Loop* motherLoop = LI->getLoopFor(&basic_block);
+      Loop* motherLoop = LI.getLoopFor(&basic_block);
       if (motherLoop != nullptr && motherLoop->isLoopExiting(&basic_block)) {
         loopExits[bb_name] = motherLoop;
       }
     }
+
+    outs() << "before reeturn\n";
 
     return std::move(loopExits);
   }

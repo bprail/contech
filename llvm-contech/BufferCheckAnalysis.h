@@ -10,13 +10,23 @@
 #include <map>
 #include <set>
 
-#include "llvm/IR/Instructions.h"
-
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/IR/ValueMap.h"
 #include "llvm/IR/CFG.h"
+
+
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/Pass.h"
+#include "llvm/Analysis/LoopPass.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Transforms/Utils/LoopUtils.h"
+
 
 using namespace llvm;
 
@@ -34,11 +44,11 @@ class BufferCheckAnalysis
     int entryInitialization();
     int copy(int);
     int merge(int, int);
-    int flowFunction(int, BasicBlock&);
+    int flowFunction(int, BasicBlock*);
     // the analysis usage
     void runAnalysis(Function&);
     // helper function
-    int getMemUsed(BasicBlock&);
+    int getMemUsed(BasicBlock*);
     int getLoopPath(Loop*);
     int accumulateBranch(std::vector<int>&);
   private:
