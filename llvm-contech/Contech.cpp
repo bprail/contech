@@ -41,6 +41,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include "llvm/Analysis/Interval.h"
+#include "llvm/Analysis/LoopInfo.h"
 
 #include <map>
 #include <set>
@@ -51,6 +52,7 @@
 #include "llvm/Support/CommandLine.h"
 #include <cxxabi.h>
 
+#include "BufferCheckAnalysis.h"
 #include "Contech.h"
 using namespace llvm;
 using namespace std;
@@ -1073,14 +1075,15 @@ namespace llvm {
                 }
             } while (changed);
 
+            Function &pF = *F;
+            BufferCheckAnalysis bufferCheckAnalysis{collectMemOps(pF), collectBlockElide(pF), collectLoopExits(pF)};
+
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
                 internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
                 bb_count++;
             }
-
-            
 
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
@@ -2207,6 +2210,51 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     }
     return false;
 }
+
+std::map<std::string, bool> Contech::collectBlockElide(Function& fblock)
+  {
+    std::map<std::string, bool> blockElide{};
+    unsigned bb_count = 0;
+    for (Function::iterator bb = fblock.begin(), be = fblock.end(); bb != be; ++bb) {
+      std::string bb_name{ bb->getName().str() };
+      BasicBlock &basic_block = *bb;
+      bool elideBasicBlockId = checkAndApplyElideId(&basic_block, bb_count);
+      blockElide[bb_name] = elideBasicBlockId;
+    }
+
+    return std::move(blockElide);
+  }
+
+  std::map<std::string, int> Contech::collectMemOps(Function& fblock)
+  {
+    std::map<std::string, int> blockMemOps{};
+    for (Function::iterator bb = fblock.begin(); bb != fblock.end(); ++bb) {
+      std::string bb_name{ bb->getName().str() };
+      int cnt = 0;
+      for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
+        if (isa<LoadInst>(ins) || isa<StoreInst>(ins)) { ++cnt; }
+      }
+      blockMemOps[bb_name] = cnt;
+    }
+
+    return std::move(blockMemOps);
+  }
+
+  std::map<std::string, Loop*> Contech::collectLoopExits(Function& fblock)
+  {
+    std::map<std::string, Loop*> loopExits{};
+    LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+    for (Function::iterator bb = fblock.begin(); bb != fblock.end(); ++bb) {
+      std::string bb_name{ bb->getName().str() };
+      BasicBlock &basic_block = *bb;
+      Loop* motherLoop = LI->getLoopFor(&basic_block);
+      if (motherLoop != nullptr && motherLoop->isLoopExiting(&basic_block)) {
+        loopExits[bb_name] = motherLoop;
+      }
+    }
+
+    return std::move(loopExits);
+  }
 
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
