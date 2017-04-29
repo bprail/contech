@@ -8,6 +8,7 @@
 #include <list>
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <set>
 
 #include "llvm/Support/raw_ostream.h"
@@ -35,9 +36,11 @@ namespace llvm {
 class BufferCheckAnalysis
   {
   public:
-    BufferCheckAnalysis(std::map<std::string, int>&&, 
-      std::map<std::string, bool>&&,
-      std::map<std::string, Loop*>&&);
+    BufferCheckAnalysis(std::map<std::string, int>&, 
+      std::map<std::string, bool>&,
+      std::map<std::string, Loop*>&,
+      std::map<std::string, Loop*>&,
+      std::unordered_map<Loop*, std::string>&);
     ~BufferCheckAnalysis() {}
     // the flow analysis components
     int blockInitialization();
@@ -46,15 +49,21 @@ class BufferCheckAnalysis
     int merge(int, int);
     int flowFunction(int, BasicBlock*);
     // the analysis usage
-    void runAnalysis(Function&);
+    void runAnalysis(Function*);
     // helper function
     int getMemUsed(BasicBlock*);
     int getLoopPath(Loop*);
     int accumulateBranch(std::vector<int>&);
+    void prettyPrint();
+    std::map<std::string, int> getStateAfter() const { return stateAfter; }
   private:
+    static int const DEFAULT_SIZE = 100;
     std::map<std::string, int> blockMemOps;
     std::map<std::string, bool> blockElide;
     std::map<std::string, Loop*> loopExits;
+    std::map<std::string, Loop*> loopBelong;
+    std::unordered_map<Loop*, std::string> loopEntry;
+    std::map<std::string, int> stateAfter;
   };
 
 }

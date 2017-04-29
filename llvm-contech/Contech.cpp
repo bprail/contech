@@ -48,6 +48,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
 #include <cxxabi.h>
@@ -1074,30 +1075,47 @@ namespace llvm {
                     }
                 }
             } while (changed);
+            
+            // static analysis
+            Function* pF = &*F;
+            std::map<std::string, bool> blockElide{ collectBlockElide(pF) };
+             std::map<std::string, int> blockMemOps{ collectMemOps(pF) };
+           std::map<std::string, Loop*> loopExits{ collectLoopExits(pF) };
+            std::map<std::string, Loop*> loopBelong{ collectLoopBelong(pF) };
+            std::unordered_map<Loop*, std::string> loopEntry{ collectLoopEntry(pF) };
 
 
-            outs() << "before gg\n";
+            BufferCheckAnalysis bufferCheckAnalysis{
+                blockMemOps, 
+                blockElide, 
+                loopExits,
+                loopBelong,
+                loopEntry
+            };
 
-            Function &pF = *F;
 
-            outs() << "before constructor\n";
+            outs() << "loop exits\n";
+            for (std::pair<std::string, Loop*> kvp : loopBelong) {
+              outs() << kvp.first << "\n";
+              Loop* motherLoop = kvp.second;
+              outs() << "loop is " << (motherLoop->getLoopDepth()) << "\n";
+            }
+            outs() << "\n";
 
-            std::map<std::string, bool> blockElide{collectBlockElide(pF)};
+        bufferCheckAnalysis.prettyPrint();
 
-            outs() << "after elide\n";
 
-            std::map<std::string, int> blockMemOps{collectMemOps(pF)};
+           bufferCheckAnalysis.runAnalysis(pF);
 
-            outs() << "after memops\n";
+            std::map<std::string, int> stateAfter{bufferCheckAnalysis.getStateAfter()};
 
-            std::map<std::string, Loop*> loopExits{collectLoopExits(pF)};
+            
+            // outs() << "state after:\n";
+            // for (auto kvp : stateAfter) {
+            //   outs() << kvp.first << ": " << kvp.second << "\n";
+            // }
+            // outs() << "\n";
 
-            outs() << "after loop exits\n";
-
-            BufferCheckAnalysis 
-              bufferCheckAnalysis{std::move(blockMemOps), 
-                          std::move(blockElide), 
-                          std::move(loopExits)};
 
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
@@ -2232,11 +2250,11 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     return false;
 }
 
-std::map<std::string, bool> Contech::collectBlockElide(Function& fblock)
+std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
   {
     std::map<std::string, bool> blockElide{};
     unsigned bb_count = 0;
-    for (Function::iterator bb = fblock.begin(), be = fblock.end(); bb != be; ++bb) {
+    for (Function::iterator bb = fblock->begin(), be = fblock->end(); bb != be; ++bb) {
       std::string bb_name{ bb->getName().str() };
       BasicBlock &basic_block = *bb;
       bool elideBasicBlockId = checkAndApplyElideId(&basic_block, bb_count);
@@ -2246,10 +2264,10 @@ std::map<std::string, bool> Contech::collectBlockElide(Function& fblock)
     return std::move(blockElide);
   }
 
-  std::map<std::string, int> Contech::collectMemOps(Function& fblock)
+  std::map<std::string, int> Contech::collectMemOps(Function* fblock)
   {
     std::map<std::string, int> blockMemOps{};
-    for (Function::iterator bb = fblock.begin(); bb != fblock.end(); ++bb) {
+    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
       std::string bb_name{ bb->getName().str() };
       int cnt = 0;
       for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
@@ -2261,35 +2279,82 @@ std::map<std::string, bool> Contech::collectBlockElide(Function& fblock)
     return std::move(blockMemOps);
   }
 
-  std::map<std::string, Loop*> Contech::collectLoopExits(Function& fblock)
+  std::map<std::string, Loop*> Contech::collectLoopExits(Function* fblock)
   {
     std::map<std::string, Loop*> loopExits{};
+    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
 
-    outs() << "entry\n";
-
-    auto tmp = &getAnalysis<LoopInfoWrapperPass>(fblock);
-
-    outs() << "half\n";
-    
-    LoopInfo& LI = tmp->getLoopInfo();
-    //LoopInfo* LI = new LoopInfo();
-    // LoopInfo &LI = getAnalysis<LoopInfo>(fblock);
-
-    outs() << "after wrapper\n";
-
-    for (Function::iterator bb = fblock.begin(); bb != fblock.end(); ++bb) {
+    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
       std::string bb_name{ bb->getName().str() };
       BasicBlock &basic_block = *bb;
-      Loop* motherLoop = LI.getLoopFor(&basic_block);
+      Loop* motherLoop = LI->getLoopFor(&basic_block);
       if (motherLoop != nullptr && motherLoop->isLoopExiting(&basic_block)) {
         loopExits[bb_name] = motherLoop;
       }
     }
 
-    outs() << "before reeturn\n";
-
     return std::move(loopExits);
   }
+
+  std::map<std::string, Loop*> Contech::collectLoopBelong(Function* fblock)
+  {
+    std::map<std::string, Loop*> loopBelong{};
+    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
+
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
+      BasicBlock* bb = &*B;
+      Loop* motherLoop = LI->getLoopFor(bb);
+      loopBelong[bb->getName().str()] = motherLoop;
+    }
+
+    return move(loopBelong);
+  }
+
+    Loop* Contech::isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps)
+  {
+    for (Loop* lp : lps) {
+      if (bb == (*lp->block_begin())) {
+        return lp;
+      }
+    }
+
+    return nullptr;
+  }
+
+
+  std::unordered_map<Loop*, std::string> Contech::collectLoopEntry(Function* fblock)
+    {
+    std::unordered_map<Loop*, std::string> loopEntry{};
+    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
+
+    std::unordered_set<Loop*> allLoops{};
+    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
+      BasicBlock* bptr = &*bb;
+      Loop* motherLoop = LI->getLoopFor(bptr);
+      if (motherLoop != nullptr) {
+        allLoops.insert(motherLoop);
+      }
+    }
+
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
+        
+        if (B != fblock->end()) {
+          BasicBlock* bb = &*B;
+          for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+            BasicBlock* next_bb = *NB;
+            Loop* entryLoop = isLoopEntry(next_bb, allLoops);
+            if (entryLoop != nullptr) {
+              std::string bb_name{ next_bb->getName().str() };
+              loopEntry[entryLoop] = bb_name;
+              break;
+            }
+          }
+        }
+    }
+
+    return std::move(loopEntry);
+  }
+
 
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);

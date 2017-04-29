@@ -200,11 +200,18 @@ namespace llvm {
         AU.addPreserved<LoopInfoWrapperPass>();
     }
 
-    std::map<std::string, bool> collectBlockElide(Function& fblock);
+    std::map<std::string, bool> collectBlockElide(Function* fblock);
 
-    std::map<std::string, int> collectMemOps(Function& fblock);
+    std::map<std::string, int> collectMemOps(Function* fblock);
 
-    std::map<std::string, Loop*> collectLoopExits(Function& fblock);
+    std::map<std::string, Loop*> collectLoopExits(Function* fblock);
+
+    Loop* isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps);
+
+    std::unordered_map<Loop*, std::string> collectLoopEntry(Function* fblock);
+
+    std::map<std::string, Loop*> collectLoopBelong(Function* fblock);
+    
 
   }; // end of class Conetch
 
