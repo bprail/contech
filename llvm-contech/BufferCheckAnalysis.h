@@ -10,6 +10,7 @@
 #include <map>
 #include <unordered_map>
 #include <set>
+#include <functional>
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/BitVector.h"
@@ -36,11 +37,11 @@ namespace llvm {
 class BufferCheckAnalysis
   {
   public:
-    BufferCheckAnalysis(std::map<std::string, int>&, 
-      std::map<std::string, bool>&,
-      std::map<std::string, Loop*>&,
-      std::map<std::string, Loop*>&,
-      std::unordered_map<Loop*, std::string>&);
+    BufferCheckAnalysis(std::map<int, int>&, 
+      std::map<int, bool>&,
+      std::map<int, Loop*>&,
+      std::map<int, Loop*>&,
+      std::unordered_map<Loop*, int>&);
     ~BufferCheckAnalysis() {}
     // the flow analysis components
     int blockInitialization();
@@ -55,21 +56,23 @@ class BufferCheckAnalysis
     int getLoopPath(Loop*);
     int accumulateBranch(std::vector<int>&);
     void prettyPrint();
-    bool hasStateChange(std::map<std::string, int>&, 
-      std::map<std::string, int>&);
-    std::map<std::string, std::map<std::string, int>> getStateAfter() const { return stateAfter; }
+    bool hasStateChange(std::map<int, int>&, 
+      std::map<int, int>&);
+    std::map<int, std::map<int, int>> getStateAfter() const { return stateAfter; }
   private:
     // analysis parameter
     static const int DEFAULT_SIZE{ 100 };
     static const int FUNCTION_REMAIN{ 0 };
     static const int LOOP_EXIT_REMAIN{ 1000 };
 
-    std::map<std::string, int> blockMemOps;
-    std::map<std::string, bool> blockElide;
-    std::map<std::string, Loop*> loopExits;
-    std::map<std::string, Loop*> loopBelong;
-    std::unordered_map<Loop*, std::string> loopEntry;
-    std::map<std::string, std::map<std::string, int>> stateAfter;
+    std::hash<BasicBlock*> blockHash;
+
+    std::map<int, int> blockMemOps;
+    std::map<int, bool> blockElide;
+    std::map<int, Loop*> loopExits;
+    std::map<int, Loop*> loopBelong;
+    std::unordered_map<Loop*, int> loopEntry;
+    std::map<int, std::map<int, int>> stateAfter;
   };
 
 }

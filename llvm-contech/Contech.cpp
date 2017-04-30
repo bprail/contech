@@ -1080,15 +1080,15 @@ namespace llvm {
             Function* pF = &*F;
             LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*pF).getLoopInfo();
 
-            std::map<std::string, bool> blockElide{ collectBlockElide(pF) };
-            std::map<std::string, int> blockMemOps{ collectMemOps(pF) };
+            std::map<int, bool> blockElide{ collectBlockElide(pF) };
+            std::map<int, int> blockMemOps{ collectMemOps(pF) };
             //std::map<std::string, Loop*> loopExits{ collectLoopExits(pF) };
-            std::map<std::string, Loop*> loopExits;
+            std::map<int, Loop*> loopExits;
             collectLoopExits(pF, loopExits, LI);
             //std::map<std::string, Loop*> loopBelong{ collectLoopBelong(pF) };
-            std::map<std::string, Loop*> loopBelong;
+            std::map<int, Loop*> loopBelong;
             collectLoopBelong(pF, loopBelong, LI);
-            std::unordered_map<Loop*, std::string> loopEntry{ collectLoopEntry(pF, LI) };
+            std::unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
 
             BufferCheckAnalysis bufferCheckAnalysis{
                 blockMemOps, 
@@ -1103,7 +1103,7 @@ namespace llvm {
 
            bufferCheckAnalysis.runAnalysis(pF);
 
-            std::map<std::string, std::map<std::string, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
+            std::map<int, std::map<int, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
 
             
             // outs() << "state after:\n";
@@ -2246,62 +2246,66 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     return false;
 }
 
-std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
+std::map<int, bool> Contech::collectBlockElide(Function* fblock)
   {
-    std::map<std::string, bool> blockElide{};
+    std::hash<BasicBlock*> blockHash{};
+    std::map<int, bool> blockElide{};
     unsigned bb_count = 0;
-    for (Function::iterator bb = fblock->begin(), be = fblock->end(); bb != be; ++bb) {
-      std::string bb_name{ bb->getName().str() };
-      BasicBlock &basic_block = *bb;
-      bool elideBasicBlockId = checkAndApplyElideId(&basic_block, bb_count);
-      blockElide[bb_name] = elideBasicBlockId;
+    for (Function::iterator B = fblock->begin(), BE = fblock->end(); B != BE; ++B) {
+      
+      BasicBlock &bb = *B;
+      int bb_val = blockHash(&bb);
+      bool elideBasicBlockId = checkAndApplyElideId(&bb, bb_count);
+      blockElide[bb_val] = elideBasicBlockId;
     }
 
     return std::move(blockElide);
   }
 
-  std::map<std::string, int> Contech::collectMemOps(Function* fblock)
+  std::map<int, int> Contech::collectMemOps(Function* fblock)
   {
-    std::map<std::string, int> blockMemOps{};
-    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
-      std::string bb_name{ bb->getName().str() };
+    std::hash<BasicBlock*> blockHash{};
+    std::map<int, int> blockMemOps{};
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
+      BasicBlock* bb = &*B;
+      int bb_val = blockHash(bb);
       int cnt = 0;
       for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
         if (isa<LoadInst>(ins) || isa<StoreInst>(ins)) { ++cnt; }
       }
-      blockMemOps[bb_name] = cnt;
+      blockMemOps[bb_val] = cnt;
     }
 
     return std::move(blockMemOps);
   }
 
-  void Contech::collectLoopExits(Function* fblock, std::map<std::string, Loop*>& loopExits,
+  void Contech::collectLoopExits(Function* fblock, std::map<int, Loop*>& loopExits,
     LoopInfo* LI)
   {
     //std::map<std::string, Loop*> loopExits{};
-
-    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
-      std::string bb_name{ bb->getName().str() };
-      BasicBlock &basic_block = *bb;
-      Loop* motherLoop = LI->getLoopFor(&basic_block);
-      if (motherLoop != nullptr && motherLoop->isLoopExiting(&basic_block)) {
-        loopExits[bb_name] = motherLoop;
+    std::hash<BasicBlock*> blockHash{};
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
+      BasicBlock &bb = *B;
+      int bb_val = blockHash(&bb);
+      Loop* motherLoop = LI->getLoopFor(&bb);
+      if (motherLoop != nullptr && motherLoop->isLoopExiting(&bb)) {
+        loopExits[bb_val] = motherLoop;
       }
     }
 
     //return std::move(loopExits);
   }
 
-  void Contech::collectLoopBelong(Function* fblock, std::map<std::string, Loop*>& loopBelong,
+  void Contech::collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopBelong,
     LoopInfo* LI)
   {
     //std::map<std::string, Loop*> loopBelong{};
-
+    std::hash<BasicBlock*> blockHash{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock* bb = &*B;
       Loop* motherLoop = LI->getLoopFor(bb);
       if (motherLoop != nullptr) {
-        loopBelong[bb->getName().str()] = motherLoop;
+        loopBelong[blockHash(bb)] = motherLoop;
       }
     }
 
@@ -2320,37 +2324,37 @@ std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
   }
 
 
-  std::unordered_map<Loop*, std::string> Contech::collectLoopEntry(Function* fblock,
+  std::unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     LoopInfo* LI)
     {
-    std::unordered_map<Loop*, std::string> loopEntry{};
-
-    std::unordered_set<Loop*> allLoops{};
-    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
-      BasicBlock* bptr = &*bb;
-      Loop* motherLoop = LI->getLoopFor(bptr);
-      if (motherLoop != nullptr) {
-        allLoops.insert(motherLoop);
+      std::unordered_map<Loop*, int> loopEntry{};
+      std::hash<BasicBlock*> blockHash{};
+      std::unordered_set<Loop*> allLoops{};
+      for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
+        BasicBlock* bptr = &*bb;
+        Loop* motherLoop = LI->getLoopFor(bptr);
+        if (motherLoop != nullptr) {
+          allLoops.insert(motherLoop);
+        }
       }
-    }
 
-    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
-        
-        if (B != fblock->end()) {
-          BasicBlock* bb = &*B;
-          for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
-            BasicBlock* next_bb = *NB;
-            Loop* entryLoop = isLoopEntry(next_bb, allLoops);
-            if (entryLoop != nullptr) {
-              std::string bb_name{ next_bb->getName().str() };
-              loopEntry[entryLoop] = bb_name;
-              break;
+      for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
+          
+          if (B != fblock->end()) {
+            BasicBlock* bb = &*B;
+            for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+              BasicBlock* next_bb = *NB;
+              Loop* entryLoop = isLoopEntry(next_bb, allLoops);
+              if (entryLoop != nullptr) {
+                int next_bb_val = blockHash(next_bb);
+                loopEntry[entryLoop] = next_bb_val;
+                break;
+              }
             }
           }
-        }
-    }
+      }
 
-    return std::move(loopEntry);
+      return std::move(loopEntry);
   }
 
 
