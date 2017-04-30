@@ -275,7 +275,7 @@ namespace llvm {
 							// outside loop set to buffer size
 							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_val]);
 						}
-						//if (next <= 0) { next = DEFAULT_SIZE; }
+						if (next <= 0) { next = DEFAULT_SIZE; }
 						nextStates[next_bb_val] = next;
 					}
 				}

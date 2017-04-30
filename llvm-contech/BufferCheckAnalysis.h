@@ -61,9 +61,9 @@ class BufferCheckAnalysis
     std::map<int, std::map<int, int>> getStateAfter() const { return stateAfter; }
   private:
     // analysis parameter
-    static const int DEFAULT_SIZE{ 100 };
+    static const int DEFAULT_SIZE{ 1024 * 1024 };
     static const int FUNCTION_REMAIN{ 0 };
-    static const int LOOP_EXIT_REMAIN{ 1000 };
+    static const int LOOP_EXIT_REMAIN{ 1024 };
 
     std::hash<BasicBlock*> blockHash;
 
