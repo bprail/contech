@@ -1100,7 +1100,7 @@ namespace llvm {
                 loopEntry
             };
 
-        bufferCheckAnalysis.prettyPrint();
+       // bufferCheckAnalysis.prettyPrint();
 
 
            bufferCheckAnalysis.runAnalysis(pF);

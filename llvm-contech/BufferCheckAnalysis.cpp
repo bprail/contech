@@ -60,11 +60,11 @@ namespace llvm {
 	int BufferCheckAnalysis::accumulateBranch(std::vector<int>& srcs)
 	{
 
-		outs() << "accumulate status: size = " << srcs.size() << "\n";
-		for (int n : srcs) {
-			outs() << n << " ";
-		}
-		outs() << "\n";
+		// outs() << "accumulate status: size = " << srcs.size() << "\n";
+		// for (int n : srcs) {
+		// 	outs() << n << " ";
+		// }
+		// outs() << "\n";
 
 		int ret = srcs[0];
 		for (int i = 1; i < srcs.size(); ++i) {
@@ -116,7 +116,7 @@ namespace llvm {
 		BasicBlock::iterator last = bb->end();
 		int bb_val = blockHash(bb);
 		if (isa<CallInst>(last)) {
-			outs() << "case func\n";
+			//outs() << "case func\n";
 			// if it is a function, return 0
 			// TODO: distinguish library function call
 			return FUNCTION_REMAIN;
@@ -171,7 +171,7 @@ namespace llvm {
 	{
 		BasicBlock* entry_bb = &*fblock->begin();
 		int entry_val = blockHash(entry_bb);
-		outs() << "entry = " << entry_val << "\n";
+		//outs() << "entry = " << entry_val << "\n";
 		// recording the state of the last iteration
 		std::map<int, std::map<int, int>> lastFlowAfter{}, lastFlowBefore{};
 		// recording the state of the current iteration
@@ -207,8 +207,21 @@ namespace llvm {
 				BasicBlock* bb = &*B;
 				// the name of current basic block
 				int bb_val = blockHash(bb);
-				bool isLoopExit = loopExits.find(bb_val) != loopExits.end();
-				Loop* currLoop = isLoopExit ? loopBelong[bb_val] : nullptr;
+			
+				bool isInsideLoop = loopBelong.find(bb_val) != loopBelong.end();
+				Loop* currLoop = isInsideLoop ? loopBelong[bb_val] : nullptr;
+
+				bool hasBlockOutside = false;
+				if (isInsideLoop) {
+					for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
+						BasicBlock* prev_bb = *PB;
+						if (!currLoop->contains(prev_bb)) {
+							hasBlockOutside = true;
+						}
+					}
+				}
+
+
 				// collect all previous states
 				// prepare to merge
 				std::vector<int> pred_bb_states{};
@@ -216,10 +229,10 @@ namespace llvm {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
 
-					if (!isLoopExit || 
-						(isLoopExit && !currLoop->contains(prev_bb))) {	
-						outs() << "at " << bb_val << " need merge "  << prev_bb_val << "\n";
-						pred_bb_states.push_back(currFlowAfter[bb_val][prev_bb_val]);
+					if (!hasBlockOutside || 
+						(hasBlockOutside && !currLoop->contains(prev_bb))) {	
+						//outs() << "at " << bb_val << " need merge "  << prev_bb_val << "\n";
+						pred_bb_states.push_back(currFlowBefore[bb_val][prev_bb_val]);
 					}
 				}
 				// get the initial current state
@@ -230,12 +243,12 @@ namespace llvm {
 				}
 				else {
 					// we merge all previous branches
-					outs() << "accumulate at " << bb_val << "\n";
-					outs() << bb_val << " contains :\n";
-					for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
-						ins->print(outs());
-						outs() << "\n";
-					} 
+					// outs() << "accumulate at " << bb_val << "\n";
+					// outs() << bb_val << " contains :\n";
+					// for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
+					// 	ins->print(outs());
+					// 	outs() << "\n";
+					// } 
 					currState = accumulateBranch(pred_bb_states);
 				}
 
@@ -246,6 +259,7 @@ namespace llvm {
 				}
 
 				std::map<int, int> nextStates{};
+				bool isLoopExit = loopExits.find(bb_val) != loopExits.end();
 				// update the state according to the current block
 				if (isLoopExit) {
 					// the current block is loop exit
@@ -273,11 +287,11 @@ namespace llvm {
 					}
 				}
 
-				outs() << "next states:\n";
-				for (auto currb : nextStates) {
-					outs() << "nextStates[" << currb.first << "] = " 
-						<< currb.second << "\n";
-				}
+				// outs() << "next states:\n";
+				// for (auto currb : nextStates) {
+				// 	outs() << "nextStates[" << currb.first << "] = " 
+				// 		<< currb.second << "\n";
+				// }
 
 				// get the state for this iteration
 				// and update the curr flow map
@@ -293,20 +307,20 @@ namespace llvm {
 				}
 
 
-				outs() << "lastflow after:\n";
-				for (auto currbm : lastFlowAfter) {
-					for (auto src : currbm.second) {
-						outs() << "lastFlowAfter[" << currbm.first << "][" << src.first << "]" 
-							<< " = " << src.second << "\n";
-					}
-				}
-				outs() << "currflow after:\n";
-				for (auto currbm : currFlowAfter) {
-					for (auto src : currbm.second) {
-						outs() << "currFlowAfter[" << currbm.first << "][" << src.first << "]" 
-							<< " = " << src.second << "\n";
-					}
-				}
+				// outs() << "lastflow after:\n";
+				// for (auto currbm : lastFlowAfter) {
+				// 	for (auto src : currbm.second) {
+				// 		outs() << "lastFlowAfter[" << currbm.first << "][" << src.first << "]" 
+				// 			<< " = " << src.second << "\n";
+				// 	}
+				// }
+				// outs() << "currflow after:\n";
+				// for (auto currbm : currFlowAfter) {
+				// 	for (auto src : currbm.second) {
+				// 		outs() << "currFlowAfter[" << currbm.first << "][" << src.first << "]" 
+				// 			<< " = " << src.second << "\n";
+				// 	}
+				// }
 
 				// see if the state changes
 				if (hasStateChange(currFlowAfter[bb_val], lastFlowAfter[bb_val])) {
@@ -314,7 +328,7 @@ namespace llvm {
 					change = true;
 				}
 
-				outs() << "iteration finish\n\n";
+				//outs() << "iteration finish\n\n";
 			}
 		}
 
