@@ -59,6 +59,13 @@ namespace llvm {
 
 	int BufferCheckAnalysis::accumulateBranch(std::vector<int>& srcs)
 	{
+
+		outs() << "accumulate status: size = " << srcs.size() << "\n";
+		for (int n : srcs) {
+			outs() << n << " ";
+		}
+		outs() << "\n";
+
 		int ret = srcs[0];
 		for (int i = 1; i < srcs.size(); ++i) {
 			ret = merge(ret, srcs[i]);
@@ -164,6 +171,7 @@ namespace llvm {
 	{
 		BasicBlock* entry_bb = &*fblock->begin();
 		int entry_val = blockHash(entry_bb);
+		outs() << "entry = " << entry_val << "\n";
 		// recording the state of the last iteration
 		std::map<int, std::map<int, int>> lastFlowAfter{}, lastFlowBefore{};
 		// recording the state of the current iteration
@@ -191,8 +199,7 @@ namespace llvm {
 		bool change = true;
 		while (change) {
 			change = false;
-
-
+			// we are going to change the state
 			lastFlowBefore = currFlowBefore;
 			lastFlowAfter = currFlowAfter;
 
@@ -205,8 +212,7 @@ namespace llvm {
 				// collect all previous states
 				// prepare to merge
 				std::vector<int> pred_bb_states{};
-				for (auto PB = pred_begin(bb);
-					PB != pred_end(bb); ++PB) {
+				for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
 
@@ -224,6 +230,12 @@ namespace llvm {
 				}
 				else {
 					// we merge all previous branches
+					outs() << "accumulate at " << bb_val << "\n";
+					outs() << bb_val << " contains :\n";
+					for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
+						ins->print(outs());
+						outs() << "\n";
+					} 
 					currState = accumulateBranch(pred_bb_states);
 				}
 

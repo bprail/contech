@@ -1080,6 +1080,8 @@ namespace llvm {
             Function* pF = &*F;
             LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*pF).getLoopInfo();
 
+            outs() << "at function " << pF->getName().str() << "\n";
+
             std::map<int, bool> blockElide{ collectBlockElide(pF) };
             std::map<int, int> blockMemOps{ collectMemOps(pF) };
             //std::map<std::string, Loop*> loopExits{ collectLoopExits(pF) };
