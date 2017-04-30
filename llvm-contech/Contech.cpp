@@ -1078,15 +1078,17 @@ namespace llvm {
             
             // static analysis
             Function* pF = &*F;
+            LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*pF).getLoopInfo();
+
             std::map<std::string, bool> blockElide{ collectBlockElide(pF) };
             std::map<std::string, int> blockMemOps{ collectMemOps(pF) };
             //std::map<std::string, Loop*> loopExits{ collectLoopExits(pF) };
             std::map<std::string, Loop*> loopExits;
-            collectLoopExits(pF, loopExits);
+            collectLoopExits(pF, loopExits, LI);
             //std::map<std::string, Loop*> loopBelong{ collectLoopBelong(pF) };
             std::map<std::string, Loop*> loopBelong;
-            collectLoopBelong(pF, loopBelong);
-            std::unordered_map<Loop*, std::string> loopEntry{ collectLoopEntry(pF) };
+            collectLoopBelong(pF, loopBelong, LI);
+            std::unordered_map<Loop*, std::string> loopEntry{ collectLoopEntry(pF, LI) };
 
             BufferCheckAnalysis bufferCheckAnalysis{
                 blockMemOps, 
@@ -1096,21 +1098,12 @@ namespace llvm {
                 loopEntry
             };
 
-
-            outs() << "loop exits\n";
-            for (std::pair<std::string, Loop*> kvp : loopBelong) {
-              outs() << kvp.first << "\n";
-              Loop* motherLoop = kvp.second;
-              outs() << "loop is " << (motherLoop->getLoopDepth()) << "\n";
-            }
-            outs() << "\n";
-
         bufferCheckAnalysis.prettyPrint();
 
 
            bufferCheckAnalysis.runAnalysis(pF);
 
-            std::map<std::string, int> stateAfter{bufferCheckAnalysis.getStateAfter()};
+            std::map<std::string, std::map<std::string, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
 
             
             // outs() << "state after:\n";
@@ -2282,10 +2275,10 @@ std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
     return std::move(blockMemOps);
   }
 
-  void Contech::collectLoopExits(Function* fblock, std::map<std::string, Loop*> loopExits)
+  void Contech::collectLoopExits(Function* fblock, std::map<std::string, Loop*>& loopExits,
+    LoopInfo* LI)
   {
     //std::map<std::string, Loop*> loopExits{};
-    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
 
     for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
       std::string bb_name{ bb->getName().str() };
@@ -2299,15 +2292,17 @@ std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
     //return std::move(loopExits);
   }
 
-  void Contech::collectLoopBelong(Function* fblock, std::map<std::string, Loop*> loopBelong)
+  void Contech::collectLoopBelong(Function* fblock, std::map<std::string, Loop*>& loopBelong,
+    LoopInfo* LI)
   {
     //std::map<std::string, Loop*> loopBelong{};
-    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
 
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock* bb = &*B;
       Loop* motherLoop = LI->getLoopFor(bb);
-      loopBelong[bb->getName().str()] = motherLoop;
+      if (motherLoop != nullptr) {
+        loopBelong[bb->getName().str()] = motherLoop;
+      }
     }
 
     //return move(loopBelong);
@@ -2325,10 +2320,10 @@ std::map<std::string, bool> Contech::collectBlockElide(Function* fblock)
   }
 
 
-  std::unordered_map<Loop*, std::string> Contech::collectLoopEntry(Function* fblock)
+  std::unordered_map<Loop*, std::string> Contech::collectLoopEntry(Function* fblock,
+    LoopInfo* LI)
     {
     std::unordered_map<Loop*, std::string> loopEntry{};
-    LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*fblock).getLoopInfo();
 
     std::unordered_set<Loop*> allLoops{};
     for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {

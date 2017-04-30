@@ -23,13 +23,10 @@ namespace llvm {
 
 		blockMemOps{ blockMemOps_ },
 		blockElide{ blockElide_ },
+		loopExits{ loopExits_ },
 		loopBelong{ loopBelong_ },
 		loopEntry{ loopEntry_ }
-	{
-		for (auto kvp : loopExits_) {
-			loopExits_[kvp.first] = kvp.second;
-		}
-	}
+	{}
 
 	// initialize all basic blocks with 0 memOps
 	int BufferCheckAnalysis::blockInitialization()
@@ -54,6 +51,12 @@ namespace llvm {
 		return std::min(src1, src2);
 	}
 
+	bool BufferCheckAnalysis::hasStateChange(std::map<std::string, int>& last, 
+		std::map<std::string, int>& curr)
+	{
+		return last != curr;
+	}
+
 	int BufferCheckAnalysis::accumulateBranch(std::vector<int>& srcs)
 	{
 		int ret = srcs[0];
@@ -61,7 +64,7 @@ namespace llvm {
 			ret = merge(ret, srcs[i]);
 		}
 
-		outs() << "accumlate = " << ret << "\n";
+		//outs() << "accumlate = " << ret << "\n";
 
 		return ret;
 	}
@@ -90,7 +93,7 @@ namespace llvm {
 			cnt += getMemUsed(B);
 		}
 
-		outs() << "get loop path = " << cnt << "\n";
+		//outs() << "get loop path = " << cnt << "\n";
 
 		return cnt;
 	}
@@ -100,8 +103,6 @@ namespace llvm {
 	// and calculates the bytes used in this basic block
 	int BufferCheckAnalysis::flowFunction(int curr, BasicBlock* bb)
 	{
-		static const int FUNCTION_REMAIN{ 0 };
-		static const int LOOP_EXIT_REMAIN{ 30 };
 		// it should distinguish whether the terminator is a function
 		// or is the end of a loop
 		// or is a normal branch 
@@ -113,11 +114,11 @@ namespace llvm {
 			// TODO: distinguish library function call
 			return FUNCTION_REMAIN;
 		}
-		else if (loopExits.find(bb_name) != loopExits.end()) {
-			outs() << "case loop with " << bb_name << "\n";
-			// the block is one exit of a loop
-			return LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_name]);
-		}
+		// else if (loopExits.find(bb_name) != loopExits.end()) {
+		// 	outs() << "case loop with " << bb_name << "\n";
+		// 	// the block is one exit of a loop
+		// 	return LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_name]);
+		// }
 		else {
 			// if it is a jump, return the bytes
 			return curr - getMemUsed(bb);
@@ -137,14 +138,21 @@ namespace llvm {
 		}
 		outs() << "\n";
 
+		outs() << "loop exits\n";
+		for (std::pair<std::string, Loop*> kvp : loopExits) {
+			outs() << kvp.first << ": ";
+			Loop* motherLoop = kvp.second;
+			motherLoop->print(outs());
+		}
 
-		// outs() << "loop exits\n";
-		// for (std::pair<std::string, Loop*> kvp : loopExits) {
-		// 	outs() << kvp.first << "\n";
-		// 	Loop* motherLoop = kvp.second;
-		// 	outs() << "loop is " << (motherLoop->getLoopDepth()) << "\n";
-		// }
-		// outs() << "\n";
+		outs() << "loop belongs\n";
+		for (std::pair<std::string, Loop*> kvp : loopBelong) {
+			outs() << kvp.first << ": ";
+			Loop* motherLoop = kvp.second;
+			motherLoop->print(outs());
+		}
+
+		outs() << "\n";
 	}
 
 
@@ -156,16 +164,26 @@ namespace llvm {
 	{
 		std::string entry_name{fblock->begin()->getName().str()};
 		// recording the state of the last iteration
-		std::map<std::string, int> lastFlowAfter{}, lastFlowBefore{};
+		std::map<std::string, std::map<std::string, int>> lastFlowAfter{}, lastFlowBefore{};
 		// recording the state of the current iteration
-		std::map<std::string, int> currFlowAfter{}, currFlowBefore{};
+		std::map<std::string, std::map<std::string, int>> currFlowAfter{}, currFlowBefore{};
 		// initialize
-		for (auto bb = fblock->begin(); bb != fblock->end(); ++bb) {
+		for (auto B = fblock->begin(); B != fblock->end(); ++B) {
+			BasicBlock* bb = &*B;
 			std::string bb_name{bb->getName().str()};
-			lastFlowAfter[bb_name] = entryInitialization();
-			currFlowAfter[bb_name] = entryInitialization();
-			lastFlowBefore[bb_name] = DEFAULT_SIZE;
-			currFlowBefore[bb_name] = DEFAULT_SIZE;
+
+			for (auto pred_bb = pred_begin(bb);
+					pred_bb != pred_end(bb); ++pred_bb) {
+					std::string prev_bb_name{ (*pred_bb)->getName().str() };
+					lastFlowBefore[bb_name][prev_bb_name] = DEFAULT_SIZE;
+					currFlowBefore[bb_name][prev_bb_name] = DEFAULT_SIZE;
+			}
+
+			for (auto next_bb = succ_begin(bb); next_bb != succ_end(bb); ++next_bb) {
+				std::string next_bb_name{ next_bb->getName().str() };
+				lastFlowAfter[bb_name][next_bb_name] = DEFAULT_SIZE;
+				currFlowAfter[bb_name][next_bb_name] = DEFAULT_SIZE;
+			}	
 		}
 
 		bool change = true;
@@ -180,69 +198,108 @@ namespace llvm {
 				BasicBlock* bb = &*B;
 				// the name of current basic block
 				std::string bb_name{ bb->getName().str() };
+				bool isLoopExit = loopExits.find(bb_name) != loopExits.end();
+				Loop* currLoop = isLoopExit ? loopBelong[bb_name] : nullptr;
 				// collect all previous states
 				// prepare to merge
 				std::vector<int> pred_bb_states{};
-				for (auto pred_bb = pred_begin(bb);
-					pred_bb != pred_end(bb); ++pred_bb) {
-					pred_bb_states.push_back(currFlowAfter[(*pred_bb)->getName().str()]);
+				for (auto PB = pred_begin(bb);
+					PB != pred_end(bb); ++PB) {
+					BasicBlock* prev_bb = *PB;
+					std::string prev_bb_name{ prev_bb->getName().str() };
+
+					if (!isLoopExit || 
+						(isLoopExit && !currLoop->contains(prev_bb))) {	
+						outs() << "at " << bb_name << " need merge "  << prev_bb_name << "\n";
+						pred_bb_states.push_back(currFlowAfter[bb_name][prev_bb_name]);
+					}
 				}
 				// get the initial current state
 				int currState{};
-				if (bb_name == entry_name || pred_bb_states.size() == 1) {
+				if (bb_name == entry_name) {
 					// we do not need to merge
-					currState = currFlowBefore[bb_name];
+					currState = DEFAULT_SIZE;
 				}
 				else {
 					// we merge all previous branches
 					currState = accumulateBranch(pred_bb_states);
 				}
 
-				outs() << "currState = " << currState << "\n"; 
+				std::vector<BasicBlock*> allSuccessors{};
+				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+					BasicBlock* next_bb = *NB;
+					allSuccessors.push_back(next_bb);
+				}
 
+				std::map<std::string, int> nextStates{};
+				// update the state according to the current block
+				if (isLoopExit) {
+					// the current block is loop exit
+					// need multiple dispatch
+					for (BasicBlock* next_bb : allSuccessors) {
+						std::string next_bb_name{ next_bb->getName().str() };
+						int next = 0;
+						if (currLoop->contains(next_bb)) {
+							// inside the loop just follow the flow function
+							next = flowFunction(currState, bb);
+						}
+						else {
+							// outside loop set to buffer size
+							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_name]);
+						}
+						if (next < 0) { next = DEFAULT_SIZE; }
+						nextStates[next_bb_name] = next;
+					}
+				}
+				else {
+					// just dispatch to all its successors
+					for (BasicBlock* next_bb : allSuccessors) {
+						std::string next_bb_name{ next_bb->getName().str() };
+						nextStates[next_bb_name] = flowFunction(currState, bb);
+					}
+				}
+
+				outs() << "next states:\n";
+				for (auto currb : nextStates) {
+					outs() << "nextStates[" << currb.first << "] = " 
+						<< currb.second << "\n";
+				}
 
 				// get the state for this iteration
 				// and update the curr flow map
-				int nextState = flowFunction(currState, bb);
-				currFlowAfter[bb_name] = nextState;
+				currFlowAfter[bb_name] = nextStates;
 
-				outs() << "print currFlow\n";
-				for (auto kvp : currFlowAfter) {
-					outs() << "currFlow[" << kvp.first << "] = " << kvp.second << "\n";
-				}
-				outs() << "print lastFlow\n";
-				for (auto kvp : lastFlowAfter) {
-					outs() << "lastFlow[" << kvp.first << "] = " << kvp.second << "\n";
-				}
-				outs() << "flow size = " << currFlowAfter.size() << "\n";
-
-
-
-				// see if the state changes
-				if ((lastFlowAfter[bb_name] != currFlowAfter[bb_name]) || 
-					(lastFlowBefore[bb_name] != currFlowBefore[bb_name])) {
-					// if it changes, we update the flow
-					change = true;
-				}
 				// pass the updated state to all its successors
 				// to prepare for next basic block flow
 				for (auto next_bb = succ_begin(bb); next_bb != succ_end(bb); ++next_bb) {
 					std::string next_bb_name{ next_bb->getName().str() };
-					currFlowBefore[next_bb_name] = copy(nextState);
+					currFlowBefore[next_bb_name][bb_name] = 
+						copy(nextStates[next_bb_name]);
 				}
 
 
-				outs() << "before next iteration\n";
-				outs() << "print currFlow\n";
-				for (auto kvp : currFlowAfter) {
-					outs() << "currFlow[" << kvp.first << "] = " << kvp.second << "\n";
+				outs() << "lastflow after:\n";
+				for (auto currbm : lastFlowAfter) {
+					for (auto src : currbm.second) {
+						outs() << "lastFlowAfter[" << currbm.first << "][" << src.first << "]" 
+							<< " = " << src.second << "\n";
+					}
 				}
-				outs() << "print lastFlow\n";
-				for (auto kvp : lastFlowAfter) {
-					outs() << "lastFlow[" << kvp.first << "] = " << kvp.second << "\n";
+				outs() << "currflow after:\n";
+				for (auto currbm : currFlowAfter) {
+					for (auto src : currbm.second) {
+						outs() << "currFlowAfter[" << currbm.first << "][" << src.first << "]" 
+							<< " = " << src.second << "\n";
+					}
 				}
-				outs() << "flow size = " << currFlowAfter.size() << "\n";
-				outs() << "\n";
+
+				// see if the state changes
+				if (hasStateChange(currFlowAfter[bb_name], lastFlowAfter[bb_name])) {
+					// if it changes, we update the flow
+					change = true;
+				}
+
+				outs() << "iteration finish\n\n";
 			}
 		}
 

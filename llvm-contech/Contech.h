@@ -206,15 +206,15 @@ namespace llvm {
 
     std::map<std::string, Loop*> collectLoopExits(Function* fblock);
 
-    void collectLoopExits(Function* fblock, std::map<std::string, Loop*> loopmap);
+    void collectLoopExits(Function* fblock, std::map<std::string, Loop*>& loopmap, LoopInfo*);
 
     Loop* isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps);
 
-    std::unordered_map<Loop*, std::string> collectLoopEntry(Function* fblock);
+    std::unordered_map<Loop*, std::string> collectLoopEntry(Function* fblock, LoopInfo*);
 
     std::map<std::string, Loop*> collectLoopBelong(Function* fblock);
 
-    void collectLoopBelong(Function* fblock, std::map<std::string, Loop*> loopmap);
+    void collectLoopBelong(Function* fblock, std::map<std::string, Loop*>& loopmap, LoopInfo*);
     
 
   }; // end of class Conetch

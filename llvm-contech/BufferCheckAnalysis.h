@@ -55,15 +55,21 @@ class BufferCheckAnalysis
     int getLoopPath(Loop*);
     int accumulateBranch(std::vector<int>&);
     void prettyPrint();
-    std::map<std::string, int> getStateAfter() const { return stateAfter; }
+    bool hasStateChange(std::map<std::string, int>&, 
+      std::map<std::string, int>&);
+    std::map<std::string, std::map<std::string, int>> getStateAfter() const { return stateAfter; }
   private:
-    static int const DEFAULT_SIZE = 100;
+    // analysis parameter
+    static const int DEFAULT_SIZE{ 100 };
+    static const int FUNCTION_REMAIN{ 0 };
+    static const int LOOP_EXIT_REMAIN{ 1000 };
+
     std::map<std::string, int> blockMemOps;
     std::map<std::string, bool> blockElide;
     std::map<std::string, Loop*> loopExits;
     std::map<std::string, Loop*> loopBelong;
     std::unordered_map<Loop*, std::string> loopEntry;
-    std::map<std::string, int> stateAfter;
+    std::map<std::string, std::map<std::string, int>> stateAfter;
   };
 
 }
