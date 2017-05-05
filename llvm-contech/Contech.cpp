@@ -1082,15 +1082,15 @@ namespace llvm {
 
             outs() << "at function " << pF->getName().str() << "\n";
 
-            std::map<int, bool> blockElide{ collectBlockElide(pF) };
-            std::map<int, int> blockMemOps{ collectMemOps(pF) };
-            //std::map<std::string, Loop*> loopExits{ collectLoopExits(pF) };
-            std::map<int, Loop*> loopExits;
+            map<int, bool> blockElide{ collectBlockElide(pF) };
+            map<int, int> blockMemOps{ collectMemOps(pF) };
+            //map<string, Loop*> loopExits{ collectLoopExits(pF) };
+            map<int, Loop*> loopExits;
             collectLoopExits(pF, loopExits, LI);
-            //std::map<std::string, Loop*> loopBelong{ collectLoopBelong(pF) };
-            std::map<int, Loop*> loopBelong;
+            //map<string, Loop*> loopBelong{ collectLoopBelong(pF) };
+            map<int, Loop*> loopBelong;
             collectLoopBelong(pF, loopBelong, LI);
-            std::unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
+            unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
 
             BufferCheckAnalysis bufferCheckAnalysis{
                 blockMemOps, 
@@ -1100,25 +1100,36 @@ namespace llvm {
                 loopEntry
             };
 
-       // bufferCheckAnalysis.prettyPrint();
+       bufferCheckAnalysis.prettyPrint();
 
 
            bufferCheckAnalysis.runAnalysis(pF);
 
-            std::map<int, std::map<int, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
+            map<int, map<int, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
 
+            map<int, bool> needCheckAtBlock{ bufferCheckAnalysis.getNeedCheckAtBlock() };
             
-            // outs() << "state after:\n";
-            // for (auto kvp : stateAfter) {
-            //   outs() << kvp.first << ": " << kvp.second << "\n";
-            // }
-            // outs() << "\n";
+            outs() << "state after:\n";
+            for (auto kvp : stateAfter) {
+              for (auto kvp2 : kvp.second) {
+                outs() << "state[" << kvp.first << "][" << kvp2.first 
+                  << "] = " << kvp2.second << "\n";
+              }
+            }
+            outs() << "\n";
+
+            outs() << "need check at block:\n";
+            for (auto kvp : needCheckAtBlock) {
+              outs() << "block " << kvp.first << " need check\n";
+            }
+
+
 
 
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
-                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
+                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, needCheckAtBlock);
                 bb_count++;
             }
 
@@ -1332,10 +1343,11 @@ cleanup:
     //
     // For each basic block
     //
-    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName)
+    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName, 
+      map<int, bool>& needCheckAtBlock)
     {
         Instruction* iPt = B.getTerminator();
-        std::vector<pllvm_mem_op> opsInBlock;
+        vector<pllvm_mem_op> opsInBlock;
         unsigned int memOpCount = 0;
         Instruction* aPhi ;//= convertIterToInst(B.begin());
         bool getNextI = false;
@@ -1914,6 +1926,14 @@ cleanup:
             //   These blocks would have only 1 successor
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
+
+            // hash<BasicBlock*> blockHash{};
+            // int bb_val = blockHash(&B);
+            // outs() << "block hash = " << bb_val << "\n";
+            // if (needCheckAtBlock.find(bb_val) == needCheckAtBlock.end()) {
+            //   outs() << "no need to check\n";
+            // }
+
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
         }
@@ -2248,10 +2268,10 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     return false;
 }
 
-std::map<int, bool> Contech::collectBlockElide(Function* fblock)
+map<int, bool> Contech::collectBlockElide(Function* fblock)
   {
-    std::hash<BasicBlock*> blockHash{};
-    std::map<int, bool> blockElide{};
+    hash<BasicBlock*> blockHash{};
+    map<int, bool> blockElide{};
     unsigned bb_count = 0;
     for (Function::iterator B = fblock->begin(), BE = fblock->end(); B != BE; ++B) {
       
@@ -2261,13 +2281,13 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
       blockElide[bb_val] = elideBasicBlockId;
     }
 
-    return std::move(blockElide);
+    return move(blockElide);
   }
 
-  std::map<int, int> Contech::collectMemOps(Function* fblock)
+  map<int, int> Contech::collectMemOps(Function* fblock)
   {
-    std::hash<BasicBlock*> blockHash{};
-    std::map<int, int> blockMemOps{};
+    hash<BasicBlock*> blockHash{};
+    map<int, int> blockMemOps{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock* bb = &*B;
       int bb_val = blockHash(bb);
@@ -2278,14 +2298,14 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
       blockMemOps[bb_val] = cnt;
     }
 
-    return std::move(blockMemOps);
+    return move(blockMemOps);
   }
 
-  void Contech::collectLoopExits(Function* fblock, std::map<int, Loop*>& loopExits,
+  void Contech::collectLoopExits(Function* fblock, map<int, Loop*>& loopExits,
     LoopInfo* LI)
   {
-    //std::map<std::string, Loop*> loopExits{};
-    std::hash<BasicBlock*> blockHash{};
+    //map<string, Loop*> loopExits{};
+    hash<BasicBlock*> blockHash{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock &bb = *B;
       int bb_val = blockHash(&bb);
@@ -2295,14 +2315,14 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
       }
     }
 
-    //return std::move(loopExits);
+    //return move(loopExits);
   }
 
-  void Contech::collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopBelong,
+  void Contech::collectLoopBelong(Function* fblock, map<int, Loop*>& loopBelong,
     LoopInfo* LI)
   {
-    //std::map<std::string, Loop*> loopBelong{};
-    std::hash<BasicBlock*> blockHash{};
+    //map<string, Loop*> loopBelong{};
+    hash<BasicBlock*> blockHash{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock* bb = &*B;
       Loop* motherLoop = LI->getLoopFor(bb);
@@ -2314,7 +2334,7 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
     //return move(loopBelong);
   }
 
-    Loop* Contech::isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps)
+    Loop* Contech::isLoopEntry(BasicBlock* bb, unordered_set<Loop*>& lps)
   {
     for (Loop* lp : lps) {
       if (bb == (*lp->block_begin())) {
@@ -2326,12 +2346,12 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
   }
 
 
-  std::unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
+  unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     LoopInfo* LI)
     {
-      std::unordered_map<Loop*, int> loopEntry{};
-      std::hash<BasicBlock*> blockHash{};
-      std::unordered_set<Loop*> allLoops{};
+      unordered_map<Loop*, int> loopEntry{};
+      hash<BasicBlock*> blockHash{};
+      unordered_set<Loop*> allLoops{};
       for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) {
         BasicBlock* bptr = &*bb;
         Loop* motherLoop = LI->getLoopFor(bptr);
@@ -2356,7 +2376,7 @@ std::map<int, bool> Contech::collectBlockElide(Function* fblock)
           }
       }
 
-      return std::move(loopEntry);
+      return move(loopEntry);
   }
 
 

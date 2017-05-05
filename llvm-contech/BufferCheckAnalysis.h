@@ -56,6 +56,9 @@ class BufferCheckAnalysis
     int getLoopPath(Loop*);
     int accumulateBranch(std::vector<int>&);
     void prettyPrint();
+
+    std::map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
+
     bool hasStateChange(std::map<int, int>&, 
       std::map<int, int>&);
     std::map<int, std::map<int, int>> getStateAfter() const { return stateAfter; }
@@ -66,6 +69,8 @@ class BufferCheckAnalysis
     static const int LOOP_EXIT_REMAIN{ 1024 };
 
     std::hash<BasicBlock*> blockHash;
+
+    std::map<int, bool> needCheckAtBlock;
 
     std::map<int, int> blockMemOps;
     std::map<int, bool> blockElide;

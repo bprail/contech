@@ -243,12 +243,12 @@ namespace llvm {
 				}
 				else {
 					// we merge all previous branches
-					// outs() << "accumulate at " << bb_val << "\n";
-					// outs() << bb_val << " contains :\n";
-					// for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
-					// 	ins->print(outs());
-					// 	outs() << "\n";
-					// } 
+					outs() << "accumulate at " << bb_val << "\n";
+					outs() << bb_val << " contains :\n";
+					for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
+						ins->print(outs());
+						outs() << "\n";
+					} 
 					currState = accumulateBranch(pred_bb_states);
 				}
 
@@ -261,12 +261,12 @@ namespace llvm {
 				std::map<int, int> nextStates{};
 				bool isLoopExit = loopExits.find(bb_val) != loopExits.end();
 				// update the state according to the current block
+				int next = 0;
 				if (isLoopExit) {
 					// the current block is loop exit
 					// need multiple dispatch
 					for (BasicBlock* next_bb : allSuccessors) {
 						int next_bb_val = blockHash(next_bb);
-						int next = 0;
 						if (currLoop->contains(next_bb)) {
 							// inside the loop just follow the flow function
 							next = flowFunction(currState, bb);
@@ -275,7 +275,10 @@ namespace llvm {
 							// outside loop set to buffer size
 							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_val]);
 						}
-						if (next <= 0) { next = DEFAULT_SIZE; }
+						if (next <= 0) { 
+							next = DEFAULT_SIZE; 
+							needCheckAtBlock[bb_val] = true;
+						}
 						nextStates[next_bb_val] = next;
 					}
 				}
@@ -283,7 +286,12 @@ namespace llvm {
 					// just dispatch to all its successors
 					for (BasicBlock* next_bb : allSuccessors) {
 						int next_bb_val = blockHash(next_bb);
-						nextStates[next_bb_val] = flowFunction(currState, bb);
+						int next = flowFunction(currState, bb);
+						if (next <= 0) {
+							next = DEFAULT_SIZE;
+							needCheckAtBlock[bb_val] = true;
+						}
+						nextStates[next_bb_val] = next;
 					}
 				}
 
