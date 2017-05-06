@@ -11,6 +11,9 @@
 #include <sys/timeb.h>
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
 
@@ -22,11 +25,17 @@
 #include <sched.h>
 
 void* (__ctBackgroundThreadWriter)(void*);
+void* (__ctBackgroundThreadWriterM)(void*);
 void* (__ctBackgroundThreadDiscard)(void*);
 
 bool __ctIsROIEnabled = false;
 bool __ctIsROIActive = false;
 bool __ctSegFaultObs = false;
+
+void* __ctMapBufferBase;
+ size_t __ctBufferOffset;
+ size_t _ctBufferOrderNumber;
+ int __ctBufFd;
 
 extern int ct_orig_main(int, char**);
 
@@ -147,8 +156,34 @@ int main(int argc, char** argv)
             __ctFreeBuffers = t;*/
         }
         
+        {
+            char* fname = getenv("CONTECH_FE_FILE");
+            if (fname == NULL)
+            {
+                fname = "/tmp/contech_fe";
+            }
+            fprintf(stderr, "Open: %s\n", fname);
+            __ctBufFd = open(fname, O_RDWR | O_CREAT, S_IRWXU);
+            if (__ctBufFd == -1)
+            {
+                perror("Failure on open");
+            }
+            lseek(__ctBufFd, 1024 * 1024 * 1024, SEEK_CUR);
+            write(__ctBufFd, &fname[0], 1);
+            __ctMapBufferBase = mmap(NULL, 1024 * 1024 * 1024, PROT_READ | PROT_WRITE,
+                                     MAP_PRIVATE /*| MAP_POPULATE | MAP_NORESERVE*/, __ctBufFd, 0);
+            if (__ctMapBufferBase == NULL)
+            {
+                perror("Failure on mmap");
+            }
+            fprintf(stderr, "%p\n", __ctMapBufferBase);
+            (*(char*)__ctMapBufferBase) = '\0';
+            __ctBufferOffset = (_binary_contech_bin_end - _binary_contech_bin_start) + 5 * sizeof(unsigned int);
+            _ctBufferOrderNumber = 0;
+        }
+        
         // Now create the background thread writer
-        if (0 != pthread_create(&pt_temp, NULL, __ctBackgroundThreadWriter, NULL))
+        if (0 != pthread_create(&pt_temp, NULL, __ctBackgroundThreadWriterM, NULL))
         {
             exit(1);
         }
@@ -662,6 +697,51 @@ void __ctDebugAndTestLock(pthread_mutex_t* m, const char* s)
     {
         fprintf(stderr, "Failed with %s\n", strerror(ret));
     }
+}
+
+void* __ctBackgroundThreadWriterM(void* d)
+{
+    FILE* serialFile;
+    char* fname = getenv("CONTECH_FE_FILE");
+    unsigned int wpos = 0;
+    unsigned int memLimitBufCount = 0;
+    pct_serial_buffer memLimitQueue = NULL;
+    pct_serial_buffer memLimitQueueTail = NULL;
+    unsigned long long totalLimitTime = 0, startLimitTime, endLimitTime;
+    int mpiRank = __ctGetMPIRank();
+    int mpiPresent = __ctIsMPIPresent();
+    // TODO: Create MPI event
+    // TODO: Modify filename with MPI rank
+    // TODO: Only do the above when MPI is present
+ 
+    
+    {
+        unsigned int id = 0;
+        ct_event_id ty = ct_event_version;
+        unsigned int version = CONTECH_EVENT_VERSION;
+        uint8_t* bb_info = _binary_contech_bin_start;
+        
+        memcpy(__ctMapBufferBase, &id, sizeof(unsigned int));
+        memcpy(__ctMapBufferBase + sizeof(unsigned int), &ty, sizeof(unsigned int));
+        memcpy(__ctMapBufferBase + 2* sizeof(unsigned int), &version, sizeof(unsigned int));
+        memcpy(__ctMapBufferBase + 3* sizeof(unsigned int), bb_info, sizeof(unsigned int));
+        
+        {
+            size_t tl, wl;
+            unsigned int buf[2];
+            buf[0] = ct_event_rank;
+            buf[1] = mpiRank;
+            
+            memcpy(__ctMapBufferBase + 4 * sizeof(unsigned int), buf, 2 * sizeof(unsigned int));
+        }
+        bb_info += 4;
+        memcpy(__ctMapBufferBase + 6 * sizeof(unsigned int), bb_info, (_binary_contech_bin_end - _binary_contech_bin_start - 4));
+    }
+    
+    // TODO: Insert wait loop for threads to terminate
+    // TODO: Track allocated mmap regions for release
+    
+    pthread_exit(NULL);
 }
 
 //

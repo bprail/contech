@@ -11,6 +11,8 @@
 #include <sys/timeb.h>
 #include <sys/sysinfo.h>
 #include <sys/mman.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include <assert.h>
 #include <sched.h>
 
@@ -118,59 +120,38 @@ uint64_t __ctAllocateTicket()
 
 void __ctAllocateLocalBuffer()
 {
+    size_t bufSize = serialBufferSize;
+    size_t deltaSize;
     pthread_mutex_lock(&__ctFreeBufferLock);
-    if (__ctFreeBuffers != NULL)
+    deltaSize = (1024 * 1024 * 1024) - __ctBufferOffset;
+    if (__ctBufferOffset < (1024 * 1024 * 1024) &&
+        (deltaSize > 16*1024))
     {
-        __ctThreadLocalBuffer = __ctFreeBuffers;
-        __ctFreeBuffers = __ctFreeBuffers->next;
-        __ctCurrentBuffers++;
-        pthread_mutex_unlock(&__ctFreeBufferLock);
-        // Buffer from list, just set position
-        __ctThreadLocalBuffer->pos = 0;
+        __ctThreadLocalBuffer = __ctMapBufferBase + __ctBufferOffset;
+        if (deltaSize < sizeof(ct_serial_buffer_sized))
+        {
+            // If there is less space remaining, then provide all space minus the header.
+            // TODO: currently, the size check uses a hardcoded buffer size.
+            bufSize = deltaSize - sizeof(ct_serial_buffer);
+        }
+        __ctBufferOffset += sizeof(ct_serial_buffer_sized); // Can exceed 1GB
     }
     else
     {
-        if (__ctCurrentBuffers == __ctMaxBuffers)
-        {
-            ct_tsc_t start = rdtsc();
-            // Does this condition variable need an additional check?
-            //   Or are we asserting that the delay is finished and
-            //   __ctFreeBuffers is not NULL
-            while (__ctCurrentBuffers == __ctMaxBuffers)
-                pthread_cond_wait(&__ctFreeSignal, &__ctFreeBufferLock);
-            __ctThreadLocalBuffer = __ctFreeBuffers;
-            __ctFreeBuffers = __ctFreeBuffers->next;
-            __ctCurrentBuffers++;
-            pthread_mutex_unlock(&__ctFreeBufferLock);
-            __ctStoreDelay(start);
-            // Buffer from list, just set position
-            __ctThreadLocalBuffer->pos = 0;
-        }
-        else {
-            __ctCurrentBuffers++;
-            pthread_mutex_unlock(&__ctFreeBufferLock);
-            __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + serialBufferSize);
-            //__ctThreadLocalBuffer = ctInternalAllocateBuffer();
-            if (__ctThreadLocalBuffer == NULL)
-            {
-                // This may be a bad thing, but we're already failing memory allocations
-                pthread_exit(NULL);
-            }
-            
-            // Buffer was malloc, so set the length
-            __ctThreadLocalBuffer->pos = 0;
-            __ctThreadLocalBuffer->length = serialBufferSize;
-        }
+        lseek(__ctBufFd, 1024 * 1024 * 1024, SEEK_END);
+        write(__ctBufFd, &__ctThreadLocalBuffer->data[0], 1); // dummy write
+        __ctMapBufferBase = mmap(__ctMapBufferBase + 1024 * 1024 * 1024, 1024 * 1024 * 1024, 
+                                 PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE, __ctBufFd, 1024 * 1024 * 1024);
+        //fprintf(stderr, "MBB - %p\n", __ctMapBufferBase);
+        __ctThreadLocalBuffer = __ctMapBufferBase;
+        __ctBufferOffset = sizeof(ct_serial_buffer_sized);
     }
-
+    pthread_mutex_unlock(&__ctFreeBufferLock);
+    __ctThreadLocalBuffer->pos = 0;
+    __ctThreadLocalBuffer->length = bufSize;
     __ctThreadLocalBuffer->next = NULL;
     __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
-    #ifdef DEBUG
-    pthread_mutex_lock(&__ctPrintLock);
-    fprintf(stderr, "a,%p,%d\n", __ctThreadLocalBuffer, __ctThreadLocalNumber);
-    fflush(stderr);
-    pthread_mutex_unlock(&__ctPrintLock);
-    #endif
 }
 
 void __parsec_bench_begin(int t)
@@ -361,213 +342,33 @@ void* __ctInitThread(void* v)//pcontech_thread_create ptc
 //
 void __ctQueueBuffer(bool alloc)
 {
-    pct_serial_buffer localBuffer = NULL;
-#ifdef CT_OVERHEAD_TRACK
-    ct_tsc_t start, end, qstart, qend;
-    start = rdtsc();
-#endif
-    
-#ifdef DEBUG
-    pthread_mutex_lock(&__ctPrintLock);
-    fprintf(stderr, "q,%p,%d\n", __ctThreadLocalBuffer, __ctThreadLocalNumber);
-    fflush(stderr);
-    pthread_mutex_unlock(&__ctPrintLock);
-#endif
-
-    assert(__ctThreadLocalBuffer->pos < SERIAL_BUFFER_SIZE);
-    
-    // If this thread is still using the init buffer, then discard the events
     if (__ctThreadLocalBuffer == (pct_serial_buffer)&initBuffer)
     {
         __ctThreadLocalBuffer->pos = 0;
-        return;
     }
-    
-    // N.B. OVERHEAD Tracking only
-    #ifndef POS_USED
-    if (alloc) 
-    {
-        __ctThreadLocalBuffer->pos = 0;
-        return;
-    }
-    #endif
-    
-    //assert(__ctThreadLocalBuffer->data[0] != 0x13 && __ctThreadLocalBuffer->data[1] != 0x1);
-    
-    // If we need to allocate a new buffer, and the current one is rather empty,
-    //   then allocate one for the current, copy data and reuse the existing buffer
-    if (alloc && 
-        (__ctThreadLocalBuffer->pos < (64 * 1024))) // Use a constant, if not 64KB
-        //(__ctThreadLocalBuffer->pos < (__ctThreadLocalBuffer->length / 2)))
-    {
-        unsigned int allocSize = (__ctThreadLocalBuffer->pos + 0) & (~0);
-        localBuffer = __ctThreadLocalBuffer;
-       
-        if (__ctThreadLocalBuffer->pos == 0)
-        {
-            return;
-        }
-       
-        // The following microbuffer optimization can potentially reorder create events,
-        //   which still have an ordering requirement.
-        /*if (__ctThreadMicroBuffer == NULL)
-        {
-            unsigned int mallocSize = allocSize;
-            if (mallocSize < 1024) mallocSize = 1024;
-            
-            __ctThreadMicroBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + mallocSize);
-            
-            if (__ctThreadMicroBuffer != NULL)
-            {
-                __ctThreadMicroBuffer->pos = localBuffer->pos;
-                __ctThreadMicroBuffer->basePos = localBuffer->pos;
-                __ctThreadMicroBuffer->length = mallocSize;
-                __ctThreadMicroBuffer->next = NULL;
-                __ctThreadMicroBuffer->id = __ctThreadLocalNumber;
-                
-                memcpy(__ctThreadMicroBuffer->data, localBuffer->data, allocSize);
-                goto microbuf_exit;
-            }
-            else
-            {
-                __ctThreadLocalBuffer = localBuffer;
-                localBuffer = NULL;
-            }
-        }
-        else if ((__ctThreadMicroBuffer->length - __ctThreadMicroBuffer->pos) > (allocSize + 12))
-        {
-            unsigned int buf[3];
-            buf[0] = ct_event_buffer;
-            buf[1] = __ctThreadLocalNumber;
-            buf[2] = allocSize;
-            memcpy(__ctThreadMicroBuffer->data + __ctThreadMicroBuffer->pos, buf, 12);
-            memcpy(__ctThreadMicroBuffer->data + __ctThreadMicroBuffer->pos + 12, 
-                   __ctThreadLocalBuffer->data, 
-                   allocSize);
-            __ctThreadMicroBuffer->pos += (allocSize + 12);
-            goto microbuf_exit;
-        }
-        else*/
-        {
-            __ctThreadLocalBuffer = (pct_serial_buffer) malloc(sizeof(ct_serial_buffer) + allocSize);
-            
-            if (__ctThreadLocalBuffer != NULL)
-            {
-                __ctThreadLocalBuffer->pos = localBuffer->pos;
-                __ctThreadLocalBuffer->length = allocSize;
-                __ctThreadLocalBuffer->next = NULL;
-                __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
-                
-                memcpy(__ctThreadLocalBuffer->data, localBuffer->data, allocSize);
-            }
-            else
-            {
-                __ctThreadLocalBuffer = localBuffer;
-                localBuffer = NULL;
-            }
-        }
-    }
-    
-    if (__ctThreadLocalBuffer->id != __ctThreadLocalNumber)
-    {
-        fprintf(stderr, "WARNING: Local Buffer has migrated from %d to %d since allocation\n",
-                __ctThreadLocalBuffer->id, __ctThreadLocalNumber);
-    }
-    
-#if 0
-    // This check verifies that the first 16 bytes of a buffer are not 0s
-    //   Such a failure would likely indicate the lack of a basic block (or other) event
-    //   to start a buffer.  The check is disabled for runtime reasons.
-    int s = 0;
-    for (int i = 0; i < 16; i++)
-        if (__ctThreadLocalBuffer->data[i] == 0) s++;
-    assert(s < 16);
-#endif
-    
-    //
-    // Queue the thread local buffer to the back of the queue, tail pointer available
-    //   Signal the background thread if the queue is empty
-    //
-#ifdef CT_OVERHEAD_TRACK
-    qstart = rdtsc();
-#endif
-
-    __ctThreadLocalBuffer->basePos = __ctThreadLocalBuffer->pos;
-    // Locally queue the micro buffer ahead of the local buffer
-    if (__ctThreadMicroBuffer != NULL)
-    {
-        __ctThreadMicroBuffer->next = __ctThreadLocalBuffer;
-        __ctThreadLocalBuffer = __ctThreadMicroBuffer;
-        __ctThreadMicroBuffer = NULL;
-    }
-
     pthread_mutex_lock(&__ctQueueBufferLock);
-    __builtin_prefetch(&__ctQueuedBufferTail->next, 1, 0);
-    if (__ctQueuedBuffers == NULL)
-    {
-        __ctQueuedBuffers = __ctThreadLocalBuffer;
-        if (__ctThreadLocalBuffer->next == NULL)
-        {
-            __ctQueuedBufferTail = __ctThreadLocalBuffer;
-        }
-        else
-        {
-            __ctQueuedBufferTail = __ctThreadLocalBuffer->next;
-        }
-        pthread_cond_signal(&__ctQueueSignal);
-    }
-    else
-    {
-        __ctQueuedBufferTail->next = __ctThreadLocalBuffer;
-        if (__ctThreadLocalBuffer->next == NULL)
-        {
-            __ctQueuedBufferTail = __ctThreadLocalBuffer;
-        }
-        else
-        {
-            __ctQueuedBufferTail = __ctThreadLocalBuffer->next;
-        }
-    }
+    __ctThreadLocalBuffer->next = (void*)_ctBufferOrderNumber;
+    _ctBufferOrderNumber++;
     pthread_mutex_unlock(&__ctQueueBufferLock);
-    __ctThreadLocalBuffer = NULL;
-    
-#ifdef CT_OVERHEAD_TRACK
-    qend = rdtsc();
-#endif
-
-microbuf_exit:
-    //
-    // Used a temporary to hold the thread local buffer, restore
-    //
-    if (localBuffer != NULL)
-    {
-        localBuffer->pos = 0;
-        __ctThreadLocalBuffer = localBuffer;
-    }
-    //
-    // If we need to allocate a new buffer do so now
-    //
-    else if (alloc)
-    {
-        __ctAllocateLocalBuffer();
-    }
-    else
+    if (alloc == false)
     {
         __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
+        return;
     }
     
-#ifdef CT_OVERHEAD_TRACK
-    end = rdtsc();
-    __sync_fetch_and_add(&__ctTotalThreadOverhead, (end - start));
-    __sync_fetch_and_add(&__ctTotalThreadQueue, (qend - qstart));
-    int d = __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
-    
-    if (__ctLastQueueBuffer != 0)
+    size_t nextLength = (__ctThreadLocalBuffer->length - __ctThreadLocalBuffer->pos);
+    // TODO: While the overflow check uses a hardcoded size, avoid smaller buffers
+    if (nextLength > 16 * 1024)
     {
-        __sync_fetch_and_add(&__ctTotalTimeBetweenQueueBuffers, (start - __ctLastQueueBuffer));
+        __ctThreadLocalBuffer = (ct_serial_buffer*)(((char*)__ctThreadLocalBuffer) + nextLength);
+        __ctThreadLocalBuffer->pos = 0;
+        __ctThreadLocalBuffer->length = nextLength - sizeof(ct_serial_buffer);
+        __ctThreadLocalBuffer->next = NULL;
+        __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
+        return;
     }
-    __ctLastQueueBuffer = end;
-#endif 
+    __ctAllocateLocalBuffer();
+    return ;
 }
 
 
@@ -597,7 +398,7 @@ void __ctDebugLocalBuffer()
 void __ctCheckBufferBySize(unsigned int numOps)
 {
     #ifdef POS_USED
-    if ((SERIAL_BUFFER_SIZE - (numOps + 1)*6) < __ctThreadLocalBuffer->pos)
+    if ((__ctThreadLocalBuffer->length - (numOps + 1)*6) < __ctThreadLocalBuffer->pos)
         __ctQueueBuffer(true);
     #endif
 }
@@ -607,7 +408,7 @@ __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
     #ifdef POS_USED
     // Contech LLVM pass knows this limit
     //   It will call check by size if the basic block needs more than 1K to store its data
-    if ((SERIAL_BUFFER_SIZE - 1024) < p)
+    if ((__ctThreadLocalBuffer->length - 1024) < p)
         __ctQueueBuffer(true);
     /* Adding a prefetch reduces the L1 D$ miss rate by 1 - 3%, but also increases overhead by 5 - 10%
     else // TODO: test with , 1 to indicate write prefetch

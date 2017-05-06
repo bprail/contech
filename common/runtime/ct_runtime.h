@@ -153,6 +153,11 @@ extern pct_serial_buffer __ctFreeBuffers;
 // Setting the size in a variable, so that future code can tune / change this value
 const extern size_t serialBufferSize;
 
+extern void* __ctMapBufferBase;
+extern size_t __ctBufferOffset;
+extern size_t _ctBufferOrderNumber;
+extern int __ctBufFd;
+
 extern pthread_mutex_t __ctQueueBufferLock;
 extern pthread_cond_t __ctQueueSignal;
 extern pthread_mutex_t __ctFreeBufferLock;
