@@ -172,7 +172,7 @@ namespace llvm {
     virtual bool doInitialization(Module &M);
     virtual bool runOnModule(Module &M);
     virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName, 
-      std::map<int, bool>& needCheck);
+      std::map<int, bool>& needCheck, map<int, Loop*>& loopExits);
     virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
     void addCheckAfterPhi(BasicBlock* B);
     bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid);
@@ -201,7 +201,7 @@ namespace llvm {
         AU.addPreserved<LoopInfoWrapperPass>();
     }
 
-    std::map<int, bool> collectBlockElide(Function* fblock);
+    std::map<int, bool> collectBlockElide(Function* fblock, uint32_t);
 
     std::map<int, int> collectMemOps(Function* fblock);
 

@@ -54,6 +54,7 @@
 #include <cxxabi.h>
 
 #include "BufferCheckAnalysis.h"
+#include "BufferSizeAnalysis.h"
 #include "Contech.h"
 using namespace llvm;
 using namespace std;
@@ -1082,7 +1083,7 @@ namespace llvm {
 
             outs() << "at function " << pF->getName().str() << "\n";
 
-            map<int, bool> blockElide{ collectBlockElide(pF) };
+            map<int, bool> blockElide{ collectBlockElide(pF, bb_count) };
             map<int, int> blockMemOps{ collectMemOps(pF) };
             //map<string, Loop*> loopExits{ collectLoopExits(pF) };
             map<int, Loop*> loopExits;
@@ -1099,6 +1100,17 @@ namespace llvm {
                 loopBelong,
                 loopEntry
             };
+
+            BufferSizeAnalysis bufferSizeAnalysis{
+                blockMemOps, 
+                blockElide, 
+                loopExits,
+                loopBelong,
+                loopEntry
+            };
+
+            int bf_size = bufferSizeAnalysis.runAnalysis(pF);
+            outs() << "bf_size = " << bf_size << "\n";
 
        bufferCheckAnalysis.prettyPrint();
 
@@ -1125,11 +1137,12 @@ namespace llvm {
 
 
 
+            hash<BasicBlock*> blockHash{};
 
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
-                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, needCheckAtBlock);
+                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, needCheckAtBlock, loopExits);
                 bb_count++;
             }
 
@@ -1344,7 +1357,7 @@ cleanup:
     // For each basic block
     //
     bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName, 
-      map<int, bool>& needCheckAtBlock)
+      map<int, bool>& needCheckAtBlock, map<int, Loop*>& loopExits)
     {
         Instruction* iPt = B.getTerminator();
         vector<pllvm_mem_op> opsInBlock;
@@ -1508,9 +1521,12 @@ cleanup:
         // Large blocks cannot have their IDs elided.
         // TODO: permament value or different approach to checks
         //
-        if (memOpCount < 160)
+        if (memOpCount < 160) {
             elideBasicBlockId = checkAndApplyElideId(&B, bbid);
-        
+            hash<BasicBlock*> blockHash{};
+            outs() << "block " << blockHash(&B) << " with " << elideBasicBlockId << "\n";
+        }
+
         bi->id = bbid;
         bi->next_id = -1;
         bi->first_op = NULL;
@@ -1926,16 +1942,37 @@ cleanup:
             //   These blocks would have only 1 successor
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
+            
 
-            // hash<BasicBlock*> blockHash{};
-            // int bb_val = blockHash(&B);
-            // outs() << "block hash = " << bb_val << "\n";
-            // if (needCheckAtBlock.find(bb_val) == needCheckAtBlock.end()) {
-            //   outs() << "no need to check\n";
-            // }
+            hash<BasicBlock*> blockHash{};
+            int bb_val = blockHash(&B);
+
+            Instruction* last = &*B.end();
+            if (needCheckAtBlock.find(bb_val) == needCheckAtBlock.end()) {
+              if ((&B != &(B.getParent()->getEntryBlock())) &&
+                (B.getTerminator()->getNumSuccessors() != 0) &&
+                loopExits.find(bb_val) == loopExits.end() &&
+                !isa<CallInst>(last)) {
+                outs() << "block " << bb_val << " no need to check\n";
+              }
+            }
+            else {
+              needCheckAtBlock.erase(bb_val);
+              outs() << "remove " << bb_val << " from needCheckAtBlock\n";
+             }
 
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
+        }
+        else {
+            hash<BasicBlock*> blockHash{};
+            int bb_val = blockHash(&B);
+
+            Instruction* last = &*B.end();
+            if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end()) {
+                outs() << "block " << bb_val << " need checks\n";
+            }
+
         }
 
         // Finally record the information about this basic block
@@ -2268,17 +2305,18 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     return false;
 }
 
-map<int, bool> Contech::collectBlockElide(Function* fblock)
+map<int, bool> Contech::collectBlockElide(Function* fblock, uint32_t bb_count)
   {
     hash<BasicBlock*> blockHash{};
     map<int, bool> blockElide{};
-    unsigned bb_count = 0;
     for (Function::iterator B = fblock->begin(), BE = fblock->end(); B != BE; ++B) {
       
       BasicBlock &bb = *B;
       int bb_val = blockHash(&bb);
       bool elideBasicBlockId = checkAndApplyElideId(&bb, bb_count);
+      outs() << "collect::block " << blockHash(&bb) << " with " << elideBasicBlockId << "\n";
       blockElide[bb_val] = elideBasicBlockId;
+      bb_count++;
     }
 
     return move(blockElide);
