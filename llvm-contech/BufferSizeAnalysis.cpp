@@ -2,6 +2,7 @@
 #include "BufferSizeAnalysis.h"
 
 using namespace llvm;
+using namespace std;
 
 namespace llvm {
 
@@ -42,8 +43,6 @@ namespace llvm {
 	{
 		int bb_val = blockHash(bb);
 
-		outs() << "block " << bb_val << " fail at pattern exit\n";
-
 		return (bb->getTerminator()->getNumSuccessors() > 1) &&
 			loopBelong.find(bb_val) == loopBelong.end();
 	}
@@ -52,24 +51,22 @@ namespace llvm {
 	{
 		int bb_val = blockHash(bb);
 
-		outs() << "block " << bb_val << ": ";
-
 		if (bb->getTerminator()->getNumSuccessors() > 1) {
-			outs() << " fail at terminator\n";
 			return false;
 		}
 
 		if (loopBelong.find(bb_val) != loopBelong.end()) {
-			outs() << " fail at belongs to loop\n";
 			return false;
 		}
 
 		Instruction* last = &*(bb->end());
 		for (auto I = bb->begin(); I != bb->end(); ++I) {
 			Instruction* inst = &*I;
-			if (isa<CallInst>(inst)) {
-				outs() << " fail at function call\n";
-				return false;
+			if (CallInst* CI = dyn_cast<CallInst>(inst)) {
+				Function* called_function = CI->getCalledFunction();
+				if (!called_function->isDeclaration()) {
+					return false;
+				}
 			}
 		}
 
@@ -109,7 +106,6 @@ namespace llvm {
 
 	int BufferSizeAnalysis::runAnalysis(Function* fblock)
 	{
-		outs() << "run analysis\n";
 		// first check all straight line code
 		// within a basic block
 		// and see what is the maximum mem ops
@@ -134,7 +130,6 @@ namespace llvm {
 			// each block should only have one successor
 			// b1 -> b2 -> ... -> bn
 			if (isPatternEntry(bb)) {
-				outs() << bb_val << " is pattern entry\n";
 				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
 					BasicBlock* next_bb = *NB;
 					if (isPatternExit(next_bb)) {
@@ -148,11 +143,6 @@ namespace llvm {
 						break;
 					}
 				}
-				outs() << "pattern 2:\n";
-				for (BasicBlock* bb2 : straightBlocks) {
-					outs() << blockHash(bb2) << "->";
-				}
-				outs() << "\n";
 			}
 			int line_path = calculateLinePath(straightBlocks);
 			if (max_loop_path < line_path) {

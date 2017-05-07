@@ -31,17 +31,18 @@
 
 
 using namespace llvm;
+using namespace std;
 
 namespace llvm {
 
 class BufferCheckAnalysis
   {
   public:
-    BufferCheckAnalysis(std::map<int, int>&, 
-      std::map<int, bool>&,
-      std::map<int, Loop*>&,
-      std::map<int, Loop*>&,
-      std::unordered_map<Loop*, int>&);
+    BufferCheckAnalysis(map<int, int>&, 
+      map<int, bool>&,
+      map<int, Loop*>&,
+      map<int, Loop*>&,
+      unordered_map<Loop*, int>&, int);
     ~BufferCheckAnalysis() {}
     // the flow analysis components
     int blockInitialization();
@@ -54,30 +55,30 @@ class BufferCheckAnalysis
     // helper function
     int getMemUsed(BasicBlock*);
     int getLoopPath(Loop*);
-    int accumulateBranch(std::vector<int>&);
+    int accumulateBranch(vector<int>&);
     void prettyPrint();
 
-    std::map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
+    map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
 
-    bool hasStateChange(std::map<int, int>&, 
-      std::map<int, int>&);
-    std::map<int, std::map<int, int>> getStateAfter() const { return stateAfter; }
+    bool hasStateChange(map<int, int>&, 
+      map<int, int>&);
+    map<int, map<int, int>> getStateAfter() const { return stateAfter; }
   private:
     // analysis parameter
-    static const int DEFAULT_SIZE{ 1024 * 1024 };
-    static const int FUNCTION_REMAIN{ 0 };
-    static const int LOOP_EXIT_REMAIN{ 1024 };
+    const int DEFAULT_SIZE{ 1024 * 1024 };
+    const int FUNCTION_REMAIN;
+    const int LOOP_EXIT_REMAIN;
 
-    std::hash<BasicBlock*> blockHash;
+    hash<BasicBlock*> blockHash;
 
-    std::map<int, bool> needCheckAtBlock;
+    map<int, bool> needCheckAtBlock;
 
-    std::map<int, int> blockMemOps;
-    std::map<int, bool> blockElide;
-    std::map<int, Loop*> loopExits;
-    std::map<int, Loop*> loopBelong;
-    std::unordered_map<Loop*, int> loopEntry;
-    std::map<int, std::map<int, int>> stateAfter;
+    map<int, int> blockMemOps;
+    map<int, bool> blockElide;
+    map<int, Loop*> loopExits;
+    map<int, Loop*> loopBelong;
+    unordered_map<Loop*, int> loopEntry;
+    map<int, map<int, int>> stateAfter;
   };
 
 }

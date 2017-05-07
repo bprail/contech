@@ -1079,28 +1079,22 @@ namespace llvm {
             
             // static analysis
             Function* pF = &*F;
+            // the loop information
             LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*pF).getLoopInfo();
-
-            outs() << "at function " << pF->getName().str() << "\n";
-
+            // state of eliding blocks
             map<int, bool> blockElide{ collectBlockElide(pF, bb_count) };
+            // state of memory operations
             map<int, int> blockMemOps{ collectMemOps(pF) };
-            //map<string, Loop*> loopExits{ collectLoopExits(pF) };
+            // state of loop exits
             map<int, Loop*> loopExits;
             collectLoopExits(pF, loopExits, LI);
-            //map<string, Loop*> loopBelong{ collectLoopBelong(pF) };
+            // state of loop and basic block
             map<int, Loop*> loopBelong;
             collectLoopBelong(pF, loopBelong, LI);
+            // whether is a loop entry
             unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
 
-            BufferCheckAnalysis bufferCheckAnalysis{
-                blockMemOps, 
-                blockElide, 
-                loopExits,
-                loopBelong,
-                loopEntry
-            };
-
+            // analyze the buffer check size first
             BufferSizeAnalysis bufferSizeAnalysis{
                 blockMemOps, 
                 blockElide, 
@@ -1108,35 +1102,22 @@ namespace llvm {
                 loopBelong,
                 loopEntry
             };
-
+            // get the size
             int bf_size = bufferSizeAnalysis.runAnalysis(pF);
-            outs() << "bf_size = " << bf_size << "\n";
-
-       bufferCheckAnalysis.prettyPrint();
-
-
-           bufferCheckAnalysis.runAnalysis(pF);
-
-            map<int, map<int, int>> stateAfter{bufferCheckAnalysis.getStateAfter()};
-
+            // run the check analysis
+            BufferCheckAnalysis bufferCheckAnalysis{
+                blockMemOps, 
+                blockElide, 
+                loopExits,
+                loopBelong,
+                loopEntry,
+                bf_size
+            };
+            // run analysis
+            bufferCheckAnalysis.runAnalysis(pF);
+            // see the analysis result
             map<int, bool> needCheckAtBlock{ bufferCheckAnalysis.getNeedCheckAtBlock() };
-            
-            outs() << "state after:\n";
-            for (auto kvp : stateAfter) {
-              for (auto kvp2 : kvp.second) {
-                outs() << "state[" << kvp.first << "][" << kvp2.first 
-                  << "] = " << kvp2.second << "\n";
-              }
-            }
-            outs() << "\n";
-
-            outs() << "need check at block:\n";
-            for (auto kvp : needCheckAtBlock) {
-              outs() << "block " << kvp.first << " need check\n";
-            }
-
-
-
+            // hashing
             hash<BasicBlock*> blockHash{};
 
             // Now instrument each basic block in the function
@@ -1523,8 +1504,6 @@ cleanup:
         //
         if (memOpCount < 160) {
             elideBasicBlockId = checkAndApplyElideId(&B, bbid);
-            hash<BasicBlock*> blockHash{};
-            outs() << "block " << blockHash(&B) << " with " << elideBasicBlockId << "\n";
         }
 
         bi->id = bbid;
@@ -1953,24 +1932,30 @@ cleanup:
                 (B.getTerminator()->getNumSuccessors() != 0) &&
                 loopExits.find(bb_val) == loopExits.end() &&
                 !isa<CallInst>(last)) {
-                outs() << "block " << bb_val << " no need to check\n";
+                // no need to check
+              }
+              else {
+                Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+                MarkInstAsContechInst(callChk);
               }
             }
             else {
               needCheckAtBlock.erase(bb_val);
-              outs() << "remove " << bb_val << " from needCheckAtBlock\n";
+              Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+              MarkInstAsContechInst(callChk);
              }
-
-            Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
-            MarkInstAsContechInst(callChk);
         }
         else {
+            // straight line code
+            // need check 
+             Value* argsCheck[] = {sbbc};
             hash<BasicBlock*> blockHash{};
             int bb_val = blockHash(&B);
 
             Instruction* last = &*B.end();
             if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end()) {
-                outs() << "block " << bb_val << " need checks\n";
+              Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+              MarkInstAsContechInst(callChk);
             }
 
         }
@@ -2314,7 +2299,6 @@ map<int, bool> Contech::collectBlockElide(Function* fblock, uint32_t bb_count)
       BasicBlock &bb = *B;
       int bb_val = blockHash(&bb);
       bool elideBasicBlockId = checkAndApplyElideId(&bb, bb_count);
-      outs() << "collect::block " << blockHash(&bb) << " with " << elideBasicBlockId << "\n";
       blockElide[bb_val] = elideBasicBlockId;
       bb_count++;
     }
@@ -2342,7 +2326,6 @@ map<int, bool> Contech::collectBlockElide(Function* fblock, uint32_t bb_count)
   void Contech::collectLoopExits(Function* fblock, map<int, Loop*>& loopExits,
     LoopInfo* LI)
   {
-    //map<string, Loop*> loopExits{};
     hash<BasicBlock*> blockHash{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock &bb = *B;
@@ -2353,13 +2336,11 @@ map<int, bool> Contech::collectBlockElide(Function* fblock, uint32_t bb_count)
       }
     }
 
-    //return move(loopExits);
-  }
+    }
 
   void Contech::collectLoopBelong(Function* fblock, map<int, Loop*>& loopBelong,
     LoopInfo* LI)
   {
-    //map<string, Loop*> loopBelong{};
     hash<BasicBlock*> blockHash{};
     for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) {
       BasicBlock* bb = &*B;
@@ -2369,8 +2350,7 @@ map<int, bool> Contech::collectBlockElide(Function* fblock, uint32_t bb_count)
       }
     }
 
-    //return move(loopBelong);
-  }
+    }
 
     Loop* Contech::isLoopEntry(BasicBlock* bb, unordered_set<Loop*>& lps)
   {
