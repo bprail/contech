@@ -193,9 +193,9 @@ namespace llvm {
         Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
-        virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-
-        }
+        virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+        std::vector <Instruction*> LoopMemoryOps;
+        bool is_loop_computable(Instruction* memI, int* offset);
     };
 
     // Using a macro, although a function call would be preferred; however, a function call

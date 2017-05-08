@@ -52,6 +52,7 @@
 #include <cxxabi.h>
 
 #include "Contech.h"
+#include "loop/loop.h"
 using namespace llvm;
 using namespace std;
 
@@ -740,7 +741,23 @@ namespace llvm {
         
         return true;
     }
-    
+
+    // is_loop_computable
+    // 
+    // Checks if address can be calculated as const base + f(i,j,..) 
+    // imports data from loop pass 
+    //
+    bool Contech::is_loop_computable(Instruction* memI, int* offset)
+    {
+      *offset = 0;
+      if(std::find(Contech::LoopMemoryOps.begin(), Contech::LoopMemoryOps.end(), &*memI) != Contech::LoopMemoryOps.end()) {
+        return true;
+      }
+      else {
+        return false;
+      }
+
+    }
     //
     // findSimilarMemoryInst
     //
@@ -949,11 +966,40 @@ namespace llvm {
         return NULL;
     }
 
+    void Contech::getAnalysisUsage(AnalysisUsage& AU) const {
+      AU.setPreservesAll();
+      AU.addRequired<loop>();
+      //AU.addRequired<LoopInfoWrapperPass>();  //in this order
+    }
     //
     // Go through the module to get the basic blocks
     //
     bool Contech::runOnModule(Module &M)
     {
+      #if 1
+
+      // Run the analysis for loop IV and their memory operations,
+      for (Module::iterator func_iter = M.begin(), func_iter_end = M.end(); func_iter != func_iter_end; ++func_iter)
+      {
+        Function &F = *func_iter;
+
+        if (!F.isDeclaration()) {
+          outs() << "----------- Print summary for the function: "<< F.getName() << "\n";
+           vector <Instruction*> temp = getAnalysis<loop>(F).getLoopMemoryOps();
+          outs() << "-----------------------------------------------------\n\n\n";
+
+          // merge into global vector
+          Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
+                                      temp.begin(), temp.end());
+        }
+      }
+      outs() << "TOTAL : " << Contech::LoopMemoryOps.size() << "\n";
+      //for(auto iv = Contech::LoopMemoryOps.begin(); iv != Contech::LoopMemoryOps.end(); ++iv) {
+      //  outs() << **iv << "\n";
+      //}          
+
+      #endif
+        
         unsigned int bb_count = 0;
         int length = 0;
         char* buffer = NULL;
@@ -1369,6 +1415,12 @@ cleanup:
                     dupMemOpOff[li] = addrOffset;
                     dupMemOpPos[addrSimilar] = 0;
                 }
+                else if(is_loop_computable(li, &addrOffset)) 
+                {
+                    dupMemOps[li] = addrSimilar;
+                    dupMemOpOff[li] = addrOffset;
+                    //dupMemOpPos[addrSimilar] = 0;                  
+                }
                 else
                 {
                     memOpCount ++;
@@ -1385,6 +1437,12 @@ cleanup:
                     dupMemOps[si] = addrSimilar;
                     dupMemOpOff[si] = addrOffset;
                     dupMemOpPos[addrSimilar] = 0;
+                }
+                else if(is_loop_computable(si, &addrOffset)) 
+                {
+                    dupMemOps[si] = addrSimilar;
+                    dupMemOpOff[si] = addrOffset;
+                    //dupMemOpPos[addrSimilar] = 0;                  
                 }
                 else
                 {
