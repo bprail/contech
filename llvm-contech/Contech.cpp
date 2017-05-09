@@ -984,6 +984,18 @@ namespace llvm {
         icontechStateFile->close();
         delete icontechStateFile;
 
+        // unordered_map<Function*, bool> isDeclaredMp{};
+        // for (Module::iterator F = M.begin(); F != M.end(); ++F) {
+        //   Function* fblock = &*F;
+        //   isDeclaredMp[fblock] = fblock->isDeclaration();
+        // }
+
+        // for (auto kvp : isDeclaredMp) {
+        //   kvp.first->print(outs());
+        //   outs() << ": " << kvp.second << "\n";
+        // }
+        // outs() << "finish declared\n"; 
+
         for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
             int status;
             const char* fmn = F->getName().data();
@@ -1094,7 +1106,7 @@ namespace llvm {
             // whether is a loop entry
             unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
 
-            // analyze the buffer check size first
+            //analyze the buffer check size first
             BufferSizeAnalysis bufferSizeAnalysis{
                 blockMemOps, 
                 blockElide, 
@@ -1111,7 +1123,7 @@ namespace llvm {
                 loopExits,
                 loopBelong,
                 loopEntry,
-                bf_size
+                1024
             };
             // run analysis
             bufferCheckAnalysis.runAnalysis(pF);
@@ -1120,12 +1132,20 @@ namespace llvm {
             // hashing
             hash<BasicBlock*> blockHash{};
 
+
+            int num_checks = 0;
+            int origin_checks = 0;
             // Now instrument each basic block in the function
             for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
                 BasicBlock &pB = *B;
-                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, needCheckAtBlock, loopExits);
+                internalRunOnBasicBlock(pB, M, bb_count, 
+                  ContechMarkFrontend, fmn, needCheckAtBlock, 
+                  loopExits, num_checks, origin_checks);
                 bb_count++;
             }
+
+            outs() << "function " << F->getName().str() << " has " << num_checks 
+            << " checks, originally has " << origin_checks << "\n" ;
 
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
@@ -1338,7 +1358,8 @@ cleanup:
     // For each basic block
     //
     bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName, 
-      map<int, bool>& needCheckAtBlock, map<int, Loop*>& loopExits)
+      map<int, bool>& needCheckAtBlock, map<int, Loop*>& loopExits, 
+      int& num_checks, int& origin_check)
     {
         Instruction* iPt = B.getTerminator();
         vector<pllvm_mem_op> opsInBlock;
@@ -1363,6 +1384,7 @@ cleanup:
         map<Instruction*, Value*> dupMemOps;
         map<Instruction*, int> dupMemOpOff;
         map<Value*, unsigned short> dupMemOpPos;
+
 
         //errs() << "BB: " << bbid << "\n";
         debugLog("Enter BBID: " << bbid);
@@ -1903,8 +1925,9 @@ cleanup:
             // TODO: Function not defined in ct_runtime
             Value* argsCheck[] = {llvm_nops};
             debugLog("checkBufferLargeFunction @" << __LINE__);
-            Instruction* callChk = CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
-            MarkInstAsContechInst(callChk);
+            origin_check++;
+           // Instruction* callChk = CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
+            //MarkInstAsContechInst(callChk);
         }
         //
         // Being conservative, if another function was called, then
@@ -1922,6 +1945,8 @@ cleanup:
             Value* argsCheck[] = {sbbc};
             debugLog("checkBufferFunction @" << __LINE__);
             
+            origin_check++;
+
 
             hash<BasicBlock*> blockHash{};
             int bb_val = blockHash(&B);
@@ -1937,12 +1962,14 @@ cleanup:
               else {
                 Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
                 MarkInstAsContechInst(callChk);
+                num_checks++;
               }
             }
             else {
               needCheckAtBlock.erase(bb_val);
               Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
               MarkInstAsContechInst(callChk);
+              num_checks++;
              }
         }
         else {
@@ -1956,6 +1983,7 @@ cleanup:
             if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end()) {
               Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
               MarkInstAsContechInst(callChk);
+              num_checks++;
             }
 
         }

@@ -44,11 +44,11 @@ namespace llvm {
 		~BufferSizeAnalysis() {}
 
 		int runAnalysis(Function*);
-		int getMemUsed(BasicBlock*);
+		int getMemUsed(int);
 		int getLoopPath(Loop*);
 		bool isValidBlock(BasicBlock*);
-		int calculateLinePath(vector<BasicBlock*>& blockLines);
-		void accumulatePath(BasicBlock* bb, vector<BasicBlock*>&);
+		int calculateLinePath(vector<int>& blockLines);
+		void accumulatePath(BasicBlock* bb, vector<int>&);
 		bool isPatternEntry(BasicBlock*);
 		bool isPatternExit(BasicBlock*);
 	private:

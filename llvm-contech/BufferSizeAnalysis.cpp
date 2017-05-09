@@ -18,9 +18,8 @@ namespace llvm {
 		loopEntry{ loopEntry_ }
 	{}
 
-	int BufferSizeAnalysis::getMemUsed(BasicBlock* bb)
+	int BufferSizeAnalysis::getMemUsed(int bb_val)
 	{
-		int bb_val = blockHash(bb);
 		bool isElide = blockElide[bb_val];
 		int memCnt = blockMemOps[bb_val];
 
@@ -33,7 +32,8 @@ namespace llvm {
 		int cnt = 0;
 		for (auto BIt = lp->block_begin(), BEIt = lp->block_end(); BIt != BEIt; ++BIt) {
 			BasicBlock* B = *BIt;
-			cnt += getMemUsed(B);
+			int bb_val = blockHash(B);
+			cnt += getMemUsed(bb_val);
 		}
 
 		return cnt;
@@ -42,7 +42,6 @@ namespace llvm {
 	bool BufferSizeAnalysis::isPatternExit(BasicBlock* bb)
 	{
 		int bb_val = blockHash(bb);
-
 		return (bb->getTerminator()->getNumSuccessors() > 1) &&
 			loopBelong.find(bb_val) == loopBelong.end();
 	}
@@ -64,7 +63,8 @@ namespace llvm {
 			Instruction* inst = &*I;
 			if (CallInst* CI = dyn_cast<CallInst>(inst)) {
 				Function* called_function = CI->getCalledFunction();
-				if (!called_function->isDeclaration()) {
+				if (called_function != nullptr && 
+					!called_function->isDeclaration()) {
 					return false;
 				}
 			}
@@ -73,11 +73,11 @@ namespace llvm {
 		return true;
 	}
 
-	int BufferSizeAnalysis::calculateLinePath(vector<BasicBlock*>& blockLines)
+	int BufferSizeAnalysis::calculateLinePath(vector<int>& blockLines)
 	{
 		int sum = 0;
-		for (BasicBlock* bb : blockLines) {
-			sum += getMemUsed(bb);
+		for (int bb_val : blockLines) {
+			sum += getMemUsed(bb_val);
 		}
 		return sum;
 	}
@@ -89,42 +89,32 @@ namespace llvm {
 	}
 
 	void BufferSizeAnalysis::accumulatePath(BasicBlock* bb,
-		vector<BasicBlock*>& patterns)
+		vector<int>& patterns)
 	{
-		
-		while (isValidBlock(bb)) {
-			patterns.push_back(bb);
+		while (isValidBlock(bb) && bb->getTerminator()->getNumSuccessors() > 0) {
+			int bb_val = blockHash(bb);
+			patterns.push_back(bb_val);
 			if (bb->getTerminator()->getNumSuccessors() == 1) {
 				bb = *succ_begin(bb);
 			}
 		}
-		if (isPatternExit(bb)) {
-			patterns.push_back(bb);
+		if (isPatternExit(bb) || bb->getTerminator()->getNumSuccessors() == 0) {
+			int bb_val = blockHash(bb);
+			patterns.push_back(bb_val);
 		}
 	}
 
 
 	int BufferSizeAnalysis::runAnalysis(Function* fblock)
 	{
-		// first check all straight line code
-		// within a basic block
-		// and see what is the maximum mem ops
-		int default_buffer_size = 0;
-		for (auto B = fblock->begin(); B != fblock->end(); ++B) {
-			BasicBlock* bb = &*B;
-			int bb_val = blockHash(bb);
-			int bb_mem_used = getMemUsed(bb);
-			if (default_buffer_size < bb_mem_used) {
-				default_buffer_size = bb_mem_used;
-			}
-		}
-		// second check all if after loop path 
+		// check all if after loop path 
 		// length and get its maximum
 		int max_loop_path = 0;
 		for (auto B = fblock->begin(); B != fblock->end(); ++B) {
 			BasicBlock* bb = &*B;
 			int bb_val = blockHash(bb);
-			vector<BasicBlock*> straightBlocks{};
+			//vector<BasicBlock*> straightBlocks{};
+			vector<int> straightBlocks{};
 			// bb is the begin block
 			// this returns the longest straight basic blocks path
 			// each block should only have one successor
@@ -132,13 +122,14 @@ namespace llvm {
 			if (isPatternEntry(bb)) {
 				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
 					BasicBlock* next_bb = *NB;
+					int next_bb_val = blockHash(next_bb);
 					if (isPatternExit(next_bb)) {
-						straightBlocks.push_back(bb);
-						straightBlocks.push_back(next_bb);
+						straightBlocks.push_back(bb_val);
+						straightBlocks.push_back(next_bb_val);
 						break;
 					}
 					else if (isValidBlock(next_bb)) {
-						straightBlocks.push_back(bb);
+						straightBlocks.push_back(bb_val);
 						accumulatePath(next_bb, straightBlocks);
 						break;
 					}
@@ -149,7 +140,6 @@ namespace llvm {
 				max_loop_path = line_path;
 			}
 		}
-		
-		return max(default_buffer_size, max_loop_path);
+		return max_loop_path;
 	}
 }
