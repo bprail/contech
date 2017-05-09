@@ -110,7 +110,7 @@ namespace llvm {
 		if (CallInst* CI = dyn_cast<CallInst>(last)) {
 			Function* called_function = CI->getCalledFunction();
 			// if it is a function, return default value
-			if (called_function == nullptr && 
+			if (called_function == nullptr ||
 				!called_function->isDeclaration()) {
 				return FUNCTION_REMAIN;
 			}

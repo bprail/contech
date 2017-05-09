@@ -68,7 +68,7 @@ namespace llvm {
 			Instruction* inst = &*I;
 			if (CallInst* CI = dyn_cast<CallInst>(inst)) {
 				Function* called_function = CI->getCalledFunction();
-				if (called_function == nullptr && 
+				if (called_function == nullptr || 
 					!called_function->isDeclaration()) {
 					return false;
 				}
@@ -104,6 +104,7 @@ namespace llvm {
 		// while it belongs to a pattern
 		// add to the pattern set
 		while (isValidBlock(bb) && bb->getTerminator()->getNumSuccessors() > 0) {
+			outs() << "loops\n";
 			int bb_val = blockHash(bb);
 			patterns.push_back(bb_val);
 			if (bb->getTerminator()->getNumSuccessors() == 1) {

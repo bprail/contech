@@ -1132,8 +1132,8 @@ namespace llvm {
                 bb_count++;
             }
 
-            outs() << "function " << F->getName().str() << " has " << num_checks 
-            << " checks, originally has " << origin_checks << "\n" ;
+            outs() << F->getName().str() << "," << num_checks 
+            << "," << origin_checks << "\n" ;
 
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
