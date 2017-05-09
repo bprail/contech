@@ -26,7 +26,7 @@ namespace llvm {
 		return (6 * memCnt) + (isElide ? 0 : 3);
 	}
 	
-	
+	// get the number of bytes used with a loop interation
 	int BufferSizeAnalysis::getLoopPath(Loop* lp)
 	{
 		int cnt = 0;
@@ -39,6 +39,8 @@ namespace llvm {
 		return cnt;
 	}
 
+	// see if the basic block is the exit
+	// of a diamond pattern
 	bool BufferSizeAnalysis::isPatternExit(BasicBlock* bb)
 	{
 		int bb_val = blockHash(bb);
@@ -46,24 +48,27 @@ namespace llvm {
 			loopBelong.find(bb_val) == loopBelong.end();
 	}
 
+	// see if the basic block if a valid candidate
+	// of a diamond pattern
 	bool BufferSizeAnalysis::isValidBlock(BasicBlock* bb)
 	{
 		int bb_val = blockHash(bb);
 
+		// it should only have a single successor
 		if (bb->getTerminator()->getNumSuccessors() > 1) {
 			return false;
 		}
-
+		// it should not belongs to any loop
 		if (loopBelong.find(bb_val) != loopBelong.end()) {
 			return false;
 		}
-
+		// there should be no function call
 		Instruction* last = &*(bb->end());
 		for (auto I = bb->begin(); I != bb->end(); ++I) {
 			Instruction* inst = &*I;
 			if (CallInst* CI = dyn_cast<CallInst>(inst)) {
 				Function* called_function = CI->getCalledFunction();
-				if (called_function != nullptr && 
+				if (called_function == nullptr && 
 					!called_function->isDeclaration()) {
 					return false;
 				}
@@ -73,6 +78,8 @@ namespace llvm {
 		return true;
 	}
 
+	// calculate the total number of bytes within a sequence of
+	// basic blocks within the diamond pattern
 	int BufferSizeAnalysis::calculateLinePath(vector<int>& blockLines)
 	{
 		int sum = 0;
@@ -82,15 +89,20 @@ namespace llvm {
 		return sum;
 	}
 
+	// see if the basic block is the beginning of a 
+	// diamond pattern 
 	bool BufferSizeAnalysis::isPatternEntry(BasicBlock* bb)
 	{
 		int bb_val = blockHash(bb);
 		return loopExits.find(bb_val) != loopExits.end();
 	}
 
+	// collect all basic blocks within a diamond pattern
 	void BufferSizeAnalysis::accumulatePath(BasicBlock* bb,
 		vector<int>& patterns)
 	{
+		// while it belongs to a pattern
+		// add to the pattern set
 		while (isValidBlock(bb) && bb->getTerminator()->getNumSuccessors() > 0) {
 			int bb_val = blockHash(bb);
 			patterns.push_back(bb_val);
@@ -98,6 +110,9 @@ namespace llvm {
 				bb = *succ_begin(bb);
 			}
 		}
+		// if it is exit of a function
+		// or a pattern exit
+		// also append to the pattern set
 		if (isPatternExit(bb) || bb->getTerminator()->getNumSuccessors() == 0) {
 			int bb_val = blockHash(bb);
 			patterns.push_back(bb_val);

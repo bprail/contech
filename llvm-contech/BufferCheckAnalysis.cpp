@@ -61,6 +61,7 @@ namespace llvm {
 		return last != curr;
 	}
 
+	// accumulate the state from multiple branches
 	int BufferCheckAnalysis::accumulateBranch(vector<int>& srcs)
 	{
 		int ret = srcs[0];
@@ -87,7 +88,6 @@ namespace llvm {
 	// iteration of the loop
 	int BufferCheckAnalysis::getLoopPath(Loop* lp)
 	{
-		// TODO: to the control flow branch into consideration
 		int cnt = 0;
 		for (auto BIt = lp->block_begin(), BEIt = lp->block_end(); BIt != BEIt; ++BIt) {
 			BasicBlock* B = *BIt;
@@ -109,15 +109,16 @@ namespace llvm {
 		int bb_val = blockHash(bb);
 		if (CallInst* CI = dyn_cast<CallInst>(last)) {
 			Function* called_function = CI->getCalledFunction();
-			// if it is a function, return 0
-			if (!called_function->isDeclaration()) {
+			// if it is a function, return default value
+			if (called_function == nullptr && 
+				!called_function->isDeclaration()) {
 				return FUNCTION_REMAIN;
 			}
 		}
-		else {
-			// if it is a jump, return the bytes
-			return curr - getMemUsed(bb);
-		}
+
+		// if it is a jump, return the bytes
+		// otherwise just calculate normally
+		return curr - getMemUsed(bb);
 	}
 
 	void BufferCheckAnalysis::prettyPrint()
@@ -153,8 +154,8 @@ namespace llvm {
 
 	// this runs the dataflow analysis
 	// it distinguishes two locations:
-	// (1) function calls, assume return with 0
-	// (2) loop, assume return with 1024 - loop path
+	// (1) function calls, assume return with default size
+	// (2) loop, assume return with default size - loop path
 	void BufferCheckAnalysis::runAnalysis(Function* fblock)
 	{
 		BasicBlock* entry_bb = &*fblock->begin();
@@ -167,14 +168,14 @@ namespace llvm {
 		for (auto B = fblock->begin(); B != fblock->end(); ++B) {
 			BasicBlock* bb = &*B;
 			int bb_val = blockHash(bb);
-
+			// previous branches
 			for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
 					lastFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
 					currFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
 			}
-
+			// coming branches
 			for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
 				BasicBlock* next_bb = *NB;
 				int next_bb_val = blockHash(next_bb);
@@ -182,7 +183,6 @@ namespace llvm {
 				currFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
 			}	
 		}
-
 		bool change = true;
 		while (change) {
 			change = false;
@@ -197,7 +197,8 @@ namespace llvm {
 			
 				bool isInsideLoop = loopBelong.find(bb_val) != loopBelong.end();
 				Loop* currLoop = isInsideLoop ? loopBelong[bb_val] : nullptr;
-
+				// see if the previous branches have
+				// outside loop edges
 				bool hasBlockOutside = false;
 				if (isInsideLoop) {
 					for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
@@ -209,11 +210,11 @@ namespace llvm {
 				}
 				// collect all previous states
 				// prepare to merge
+				// only mergeee blocks with outside loop edges
 				vector<int> pred_bb_states{};
 				for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
-
 					if (!hasBlockOutside || 
 						(hasBlockOutside && !currLoop->contains(prev_bb))) {	
 						pred_bb_states.push_back(currFlowBefore[bb_val][prev_bb_val]);
@@ -226,12 +227,6 @@ namespace llvm {
 					currState = DEFAULT_SIZE;
 				}
 				else {
-					// we merge all previous branches
-					// outs() << bb_val << " contains :\n";
-					// for (auto ins = bb->begin(); ins != bb->end(); ++ins) {
-					// 	ins->print(outs());
-					// 	outs() << "\n";
-					// } 
 					currState = accumulateBranch(pred_bb_states);
 				}
 
@@ -258,6 +253,8 @@ namespace llvm {
 							// outside loop set to buffer size
 							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_val]);
 						}
+						// the state becomes nonpositve
+						// that means we need to add a check here
 						if (next <= 0) { 
 							next = DEFAULT_SIZE; 
 							needCheckAtBlock[bb_val] = true;
@@ -296,7 +293,7 @@ namespace llvm {
 				}
 			}
 		}
-
+		// update the global state
 		stateAfter = currFlowAfter;
 	}
 }
