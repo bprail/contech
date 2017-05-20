@@ -65,10 +65,13 @@ public:
     static char* getSharersString(ct_sharers_t m);
     static ct_sharers_t getSharersMask(contech::TaskId id);
 
+    static CommTracker* fromGraph(contech::TaskGraph*);
     static CommTracker* fromFile(FILE* taskGraphIn);
     friend std::ostream& operator<<(std::ostream &out, const CommTracker &rhs);
 
 private:
+    static CommTracker* runOnGraph(contech::TaskGraph*);
+
     // Maintains an entry for each address
     map<uint64_t, addrEntry> addrTable;
 

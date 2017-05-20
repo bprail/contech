@@ -188,8 +188,21 @@ std::ostream& operator<<(std::ostream &out, const CommTracker &rhs)
 
 CommTracker* CommTracker::fromFile(FILE* taskGraphIn)
 {
-    CommTracker* tracker = new CommTracker();
     TaskGraph* taskGraph = TaskGraph::initFromFile(taskGraphIn);
+    CommTracker* tracker = runOnGraph(taskGraph);
+    delete taskGraph;
+    return tracker;
+}
+
+CommTracker* CommTracker::fromGraph(TaskGraph* taskGraph)
+{
+    taskGraph->resetTaskOrder();
+    return runOnGraph(taskGraph);
+}
+
+CommTracker* CommTracker::runOnGraph(TaskGraph* taskGraph)
+{
+    CommTracker* tracker = new CommTracker();
 
     while(Task* currentTask = taskGraph->readContechTask())
     {
@@ -274,8 +287,6 @@ CommTracker* CommTracker::fromFile(FILE* taskGraphIn)
 
         delete currentTask;
     }
-    
-    delete taskGraph;
     
     return tracker;
 }
