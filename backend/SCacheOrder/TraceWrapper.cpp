@@ -6,14 +6,8 @@ using namespace contech;
 TraceWrapper::TraceWrapper(char* fname)
 {
     assert(fname != NULL);
-
-    ct_file* taskGraphIn  = create_ct_file_r(fname);
-    if (taskGraphIn == NULL) {
-        fprintf(stderr, "ERROR: Couldn't open input file\n");
-        exit(1);
-    }
     
-    tg = TaskGraph::initFromFile(taskGraphIn);
+    tg = TaskGraph::initFromFile(fname);
     
     lastOpTime = 0;
     priorStart = 0;
