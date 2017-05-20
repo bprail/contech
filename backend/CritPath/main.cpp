@@ -291,7 +291,7 @@ int main(int argc, char const *argv[])
 	bool inROI = false;
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
     
-    if (tg == NULL) {close_ct_file(taskGraphIn); exit(1);}
+    if (tg == NULL) {exit(1);}
     
     ProgramSpeedup* pPS = processTaskSpeedup(argv[2]);
     
