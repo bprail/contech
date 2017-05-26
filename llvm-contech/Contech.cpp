@@ -968,6 +968,7 @@ namespace llvm {
             buffer = new char[length];
             icontechStateFile->read(buffer, length);
             bb_count = *(unsigned int*)buffer;
+            errs() << "BB Count (in): " << bb_count << "\n";
         }
         else
         {
@@ -1080,7 +1081,18 @@ namespace llvm {
                 bb_count++;
             }
 
-            
+            // HACK 
+            if (fmn != NULL &&
+                strcmp(fmn, "BodyGeometry::ComputeGeometry(BodyPose&, BodyParameters&)") == 0)
+            {
+                // 114 basic blocks, 160 memops, no branches....
+                Constant* estCost = ConstantInt::get(cct.int32Ty, 200);
+                Value* argsCheck[] = {estCost};
+                debugLog("checkBufferLargeFunction @" << __LINE__);
+                Instruction* callChk = CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", 
+                                                        (&*F->begin())->getFirstNonPHIOrDbgOrLifetime());
+                MarkInstAsContechInst(callChk);   
+            }
 
             // If fmn is fn, then it was allocated by the demangle routine and we are required to free
             if (fmn == fn)
@@ -1111,6 +1123,7 @@ cleanup:
             //   First, put a new basic block count at the start of the existing data
             *(unsigned int*) buffer = bb_count;
             contechStateFile->write(buffer, length);
+            errs() << "BB Count: " << bb_count << "\n";
         }
         //contechStateFile->seekp(0, ios_base::end);
 
