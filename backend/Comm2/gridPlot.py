@@ -10,8 +10,9 @@ import shutil
 import time
 import datetime
 import glob
-import numpy as np
 import matplotlib
+#matplotlib.use('Agg') 
+import numpy as np
 import matplotlib.pyplot as plt
 import json
 import math
@@ -39,7 +40,8 @@ def main():
             nThreads = max([nThreads, src, dst])
             x.append(dst)
             y.append(src)
-            
+    
+    nThreads = nThreads + 1 # nThreads is the max, ranges need to include it    
     print "Plotting for {} threads, {} communication records...".format(nThreads, len(x))
     
 #     plt.title(os.path.basename(args.inFile).replace(".json",""))
