@@ -29,6 +29,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 
+#include "ContechDef.h"
 
 using namespace llvm;
 using namespace std;
@@ -36,50 +37,47 @@ using namespace std;
 namespace llvm {
 
 class BufferCheckAnalysis
-  {
-  public:
-    BufferCheckAnalysis(map<int, int>&, 
-      map<int, bool>&,
-      map<int, Loop*>&,
-      map<int, Loop*>&,
-      unordered_map<Loop*, int>&, int);
-    ~BufferCheckAnalysis() {}
-    // the flow analysis components
-    int blockInitialization();
-    int entryInitialization();
-    int copy(int);
-    int merge(int, int);
-    int flowFunction(int, BasicBlock*);
-    // the analysis usage
-    void runAnalysis(Function*);
-    // helper function
-    int getMemUsed(BasicBlock*);
-    int getLoopPath(Loop*);
-    int accumulateBranch(vector<int>&);
-    void prettyPrint();
+{
+    public:
+        BufferCheckAnalysis(map<int, llvm_inst_block>&,
+                            map<int, Loop*>&,
+                            map<int, Loop*>&,
+                            unordered_map<Loop*, int>&, int);
+        ~BufferCheckAnalysis() {}
+        // the flow analysis components
+        int blockInitialization();
+        int entryInitialization();
+        int copy(int);
+        int merge(int, int);
+        int flowFunction(int, BasicBlock*);
+        // the analysis usage
+        void runAnalysis(Function*);
+        // helper function
+        int getMemUsed(BasicBlock*);
+        int getLoopPath(Loop*);
+        int accumulateBranch(vector<int>&);
+        void prettyPrint();
 
-    map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
+        map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
 
-    bool hasStateChange(map<int, int>&, 
-      map<int, int>&);
-    map<int, map<int, int>> getStateAfter() const { return stateAfter; }
-  private:
-    // analysis parameter
-    const int DEFAULT_SIZE{ 1024 * 1024 };
-    const int FUNCTION_REMAIN;
-    const int LOOP_EXIT_REMAIN;
+        bool hasStateChange(map<int, int>&, map<int, int>&);
+        map<int, map<int, int>> getStateAfter() const { return stateAfter; }
+    private:
+        // analysis parameter
+        const int DEFAULT_SIZE{ 1024 * 1024 };
+        const int FUNCTION_REMAIN;
+        const int LOOP_EXIT_REMAIN;
 
-    hash<BasicBlock*> blockHash;
+        hash<BasicBlock*> blockHash;
 
-    map<int, bool> needCheckAtBlock;
+        map<int, bool> needCheckAtBlock;
 
-    map<int, int> blockMemOps;
-    map<int, bool> blockElide;
-    map<int, Loop*> loopExits;
-    map<int, Loop*> loopBelong;
-    unordered_map<Loop*, int> loopEntry;
-    map<int, map<int, int>> stateAfter;
-  };
+        map<int, llvm_inst_block> blockInfo;
+        map<int, Loop*> loopExits;
+        map<int, Loop*> loopBelong;
+        unordered_map<Loop*, int> loopEntry;
+        map<int, map<int, int>> stateAfter;
+    };
 
 }
 

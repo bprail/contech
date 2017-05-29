@@ -11,20 +11,19 @@
 using namespace llvm;
 using namespace std;
 
-namespace llvm {
+namespace llvm 
+{
 
 	// the constructor
 	// we need the memOps of all basic blocks && 
 	// elide situation for all basic blocks
-	BufferCheckAnalysis::BufferCheckAnalysis(map<int, int>& blockMemOps_,
-		map<int, bool>& blockElide_, 
+	BufferCheckAnalysis::BufferCheckAnalysis(map<int, llvm_inst_block>& blockInfo_,
 		map<int, Loop*>& loopExits_,
 		map<int, Loop*>& loopBelong_,
       	unordered_map<Loop*, int>& loopEntry_, 
       	int bufferCheckSize_) :
 
-		blockMemOps{ blockMemOps_ },
-		blockElide{ blockElide_ },
+		blockInfo{ blockInfo_ },
 		loopExits{ loopExits_ },
 		loopBelong{ loopBelong_ },
 		loopEntry{ loopEntry_ },
@@ -55,8 +54,7 @@ namespace llvm {
 		return min(src1, src2);
 	}
 
-	bool BufferCheckAnalysis::hasStateChange(map<int, int>& last, 
-		map<int, int>& curr)
+	bool BufferCheckAnalysis::hasStateChange(map<int, int>& last, map<int, int>& curr)
 	{
 		return last != curr;
 	}
@@ -65,7 +63,8 @@ namespace llvm {
 	int BufferCheckAnalysis::accumulateBranch(vector<int>& srcs)
 	{
 		int ret = srcs[0];
-		for (int i = 1; i < srcs.size(); ++i) {
+		for (int i = 1; i < srcs.size(); ++i) 
+        {
 			ret = merge(ret, srcs[i]);
 		}
 		return ret;
@@ -78,10 +77,7 @@ namespace llvm {
 	int BufferCheckAnalysis::getMemUsed(BasicBlock* bb)
 	{
 		int bb_val = blockHash(bb);
-		bool isElide = blockElide[bb_val];
-		int memCnt = blockMemOps[bb_val];
-	
-		return (6 * memCnt) + (isElide ? 0 : 3);
+		return blockInfo.find(bb_val)->second.cost;
 	}
 
 	// calculate the overall byte used in one 
@@ -89,7 +85,8 @@ namespace llvm {
 	int BufferCheckAnalysis::getLoopPath(Loop* lp)
 	{
 		int cnt = 0;
-		for (auto BIt = lp->block_begin(), BEIt = lp->block_end(); BIt != BEIt; ++BIt) {
+		for (auto BIt = lp->block_begin(), BEIt = lp->block_end(); BIt != BEIt; ++BIt) 
+        {
 			BasicBlock* B = *BIt;
 			cnt += getMemUsed(B);
 		}
@@ -107,11 +104,13 @@ namespace llvm {
 		// or is a normal branch 
 		Instruction* last = &*bb->end();
 		int bb_val = blockHash(bb);
-		if (CallInst* CI = dyn_cast<CallInst>(last)) {
+		if (CallInst* CI = dyn_cast<CallInst>(last)) 
+        {
 			Function* called_function = CI->getCalledFunction();
 			// if it is a function, return default value
 			if (called_function == nullptr ||
-				!called_function->isDeclaration()) {
+				!called_function->isDeclaration()) 
+            {
 				return FUNCTION_REMAIN;
 			}
 		}
@@ -124,25 +123,28 @@ namespace llvm {
 	void BufferCheckAnalysis::prettyPrint()
 	{
 		set<int> allBlocks{};
-		for (auto kvp : blockMemOps) {
+		for (auto kvp : blockInfo) 
+        {
 			allBlocks.insert(kvp.first);
 		}
 
-		for (int bb_val : allBlocks) {
-			outs() << bb_val << " has " << blockMemOps[bb_val] << " memOps, "
-				<< blockElide[bb_val] << " elide\n";
+		for (int bb_val : allBlocks) 
+        {
+			outs() << bb_val << " has " << blockInfo.find(bb_val)->second.cost << "cost.\n";
 		}
 		outs() << "\n";
 
 		outs() << "loop exits\n";
-		for (pair<int, Loop*> kvp : loopExits) {
+		for (pair<int, Loop*> kvp : loopExits) 
+        {
 			outs() << kvp.first << ": ";
 			Loop* motherLoop = kvp.second;
 			motherLoop->print(outs());
 		}
 
 		outs() << "loop belongs\n";
-		for (pair<int, Loop*> kvp : loopBelong) {
+		for (pair<int, Loop*> kvp : loopBelong) 
+        {
 			outs() << kvp.first << ": ";
 			Loop* motherLoop = kvp.second;
 			motherLoop->print(outs());
@@ -165,18 +167,21 @@ namespace llvm {
 		// recording the state of the current iteration
 		map<int, map<int, int>> currFlowAfter{}, currFlowBefore{};
 		// initialize
-		for (auto B = fblock->begin(); B != fblock->end(); ++B) {
+		for (auto B = fblock->begin(); B != fblock->end(); ++B) 
+        {
 			BasicBlock* bb = &*B;
 			int bb_val = blockHash(bb);
 			// previous branches
-			for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
+			for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
+            {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
 					lastFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
 					currFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
 			}
 			// coming branches
-			for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+			for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
+            {
 				BasicBlock* next_bb = *NB;
 				int next_bb_val = blockHash(next_bb);
 				lastFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
@@ -184,13 +189,15 @@ namespace llvm {
 			}	
 		}
 		bool change = true;
-		while (change) {
+		while (change) 
+        {
 			change = false;
 			// we are going to change the state
 			lastFlowBefore = currFlowBefore;
 			lastFlowAfter = currFlowAfter;
 
-			for (auto B = fblock->begin(); B != fblock->end(); ++B) {
+			for (auto B = fblock->begin(); B != fblock->end(); ++B) 
+            {
 				BasicBlock* bb = &*B;
 				// the name of current basic block
 				int bb_val = blockHash(bb);
@@ -200,10 +207,13 @@ namespace llvm {
 				// see if the previous branches have
 				// outside loop edges
 				bool hasBlockOutside = false;
-				if (isInsideLoop) {
-					for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
+				if (isInsideLoop) 
+                {
+					for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
+                    {
 						BasicBlock* prev_bb = *PB;
-						if (!currLoop->contains(prev_bb)) {
+						if (!currLoop->contains(prev_bb)) 
+                        {
 							hasBlockOutside = true;
 						}
 					}
@@ -212,26 +222,31 @@ namespace llvm {
 				// prepare to merge
 				// only mergeee blocks with outside loop edges
 				vector<int> pred_bb_states{};
-				for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) {
+				for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
+                {
 					BasicBlock* prev_bb = *PB;
 					int prev_bb_val = blockHash(prev_bb);
 					if (!hasBlockOutside || 
-						(hasBlockOutside && !currLoop->contains(prev_bb))) {	
+						(hasBlockOutside && !currLoop->contains(prev_bb))) 
+                    {	
 						pred_bb_states.push_back(currFlowBefore[bb_val][prev_bb_val]);
 					}
 				}
 				// get the initial current state
 				int currState{};
-				if (bb_val == entry_val) {
+				if (bb_val == entry_val) 
+                {
 					// we do not need to merge
 					currState = DEFAULT_SIZE;
 				}
-				else {
+				else 
+                {
 					currState = accumulateBranch(pred_bb_states);
 				}
 
 				vector<BasicBlock*> allSuccessors{};
-				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
+                {
 					BasicBlock* next_bb = *NB;
 					allSuccessors.push_back(next_bb);
 				}
@@ -240,34 +255,42 @@ namespace llvm {
 				bool isLoopExit = loopExits.find(bb_val) != loopExits.end();
 				// update the state according to the current block
 				int next = 0;
-				if (isLoopExit) {
+				if (isLoopExit)
+                {
 					// the current block is loop exit
 					// need multiple dispatch
-					for (BasicBlock* next_bb : allSuccessors) {
+					for (BasicBlock* next_bb : allSuccessors) 
+                    {
 						int next_bb_val = blockHash(next_bb);
-						if (currLoop->contains(next_bb)) {
+						if (currLoop->contains(next_bb)) 
+                        {
 							// inside the loop just follow the flow function
 							next = flowFunction(currState, bb);
 						}
-						else {
+						else 
+                        {
 							// outside loop set to buffer size
 							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_val]);
 						}
 						// the state becomes nonpositve
 						// that means we need to add a check here
-						if (next <= 0) { 
+						if (next <= 0) 
+                        { 
 							next = DEFAULT_SIZE; 
 							needCheckAtBlock[bb_val] = true;
 						}
 						nextStates[next_bb_val] = next;
 					}
 				}
-				else {
+				else 
+                {
 					// just dispatch to all its successors
-					for (BasicBlock* next_bb : allSuccessors) {
+					for (BasicBlock* next_bb : allSuccessors)
+                    {
 						int next_bb_val = blockHash(next_bb);
 						int next = flowFunction(currState, bb);
-						if (next <= 0) {
+						if (next <= 0) 
+                        {
 							next = DEFAULT_SIZE;
 							needCheckAtBlock[bb_val] = true;
 						}
@@ -280,14 +303,16 @@ namespace llvm {
 
 				// pass the updated state to all its successors
 				// to prepare for next basic block flow
-				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) {
+				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
+                {
 					BasicBlock* next_bb = *NB;
 					int next_bb_val = blockHash(next_bb);
 					currFlowBefore[next_bb_val][bb_val] = 
 						copy(nextStates[next_bb_val]);
 				}
 				// see if the state changes
-				if (hasStateChange(currFlowAfter[bb_val], lastFlowAfter[bb_val])) {
+				if (hasStateChange(currFlowAfter[bb_val], lastFlowAfter[bb_val])) 
+                {
 					// if it changes, we update the flow
 					change = true;
 				}

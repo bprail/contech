@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 2.8.12.2)
+
 find_package(LLVM REQUIRED CONFIG)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
@@ -19,5 +21,4 @@ include(AddLLVM)
 add_llvm_loadable_module( LLVMContech
   Contech.cpp
   BufferCheckAnalysis.cpp
-  BufferSizeAnalysis.cpp
   )
