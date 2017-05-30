@@ -225,7 +225,7 @@ namespace llvm {
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         
 
-    }; // end of class Conetch
+    }; // end of class Contech
 
 }; // end namespace
     
