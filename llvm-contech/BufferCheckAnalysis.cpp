@@ -31,27 +31,9 @@ namespace llvm
 		LOOP_EXIT_REMAIN{ bufferCheckSize_ }
 	{}
 
-	// initialize all basic blocks with 0 memOps
-	int BufferCheckAnalysis::blockInitialization()
-	{
-		return DEFAULT_SIZE;
-	}
-
-	// initialize the entry as 0
-	// and accumulate throughout
-	int BufferCheckAnalysis::entryInitialization()
-	{
-		return DEFAULT_SIZE;
-	}
-
 	int BufferCheckAnalysis::copy(int from)
 	{
 		return from;
-	}
-
-	int BufferCheckAnalysis::merge(int src1, int src2)
-	{
-		return min(src1, src2);
 	}
 
 	bool BufferCheckAnalysis::hasStateChange(map<int, int>& last, map<int, int>& curr)
@@ -65,7 +47,7 @@ namespace llvm
 		int ret = srcs[0];
 		for (int i = 1; i < srcs.size(); ++i) 
         {
-			ret = merge(ret, srcs[i]);
+			ret = min(ret, srcs[i]);
 		}
 		return ret;
 	}
@@ -104,10 +86,25 @@ namespace llvm
 		// or is a normal branch 
 		Instruction* last = &*bb->end();
 		int bb_val = blockHash(bb);
+        
+        auto bi = blockInfo.find(bb_val);
+        assert(bi != blockInfo.end());
+        
+        // Some blocks have forced checks or queuing operations.
+        //   These blocks therefore guarantee that the space is available.
+        if (bi->second.hasCheck == true ||
+            bi->second.containQueueCall == true)
+        {
+            return DEFAULT_SIZE;
+        }
+        
 		if (CallInst* CI = dyn_cast<CallInst>(last)) 
         {
 			Function* called_function = CI->getCalledFunction();
-			// if it is a function, return default value
+            
+			// If the function called is in this file, implying instrumentation,
+            //   then it should guarantee certain space on return.
+            //   A CallGraph approach would revisit this and improve the bounds
 			if (called_function == nullptr ||
 				!called_function->isDeclaration()) 
             {
@@ -160,25 +157,31 @@ namespace llvm
 	// (2) loop, assume return with default size - loop path
 	void BufferCheckAnalysis::runAnalysis(Function* fblock)
 	{
-		BasicBlock* entry_bb = &*fblock->begin();
+		BasicBlock* entry_bb = &fblock->getEntryBlock();
 		int entry_val = blockHash(entry_bb);
+        needCheckAtBlock[entry_val] = true;
+        
 		// recording the state of the last iteration
 		map<int, map<int, int>> lastFlowAfter{}, lastFlowBefore{};
+        
 		// recording the state of the current iteration
 		map<int, map<int, int>> currFlowAfter{}, currFlowBefore{};
+        
 		// initialize
 		for (auto B = fblock->begin(); B != fblock->end(); ++B) 
         {
 			BasicBlock* bb = &*B;
 			int bb_val = blockHash(bb);
+            
 			// previous branches
 			for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
             {
-					BasicBlock* prev_bb = *PB;
-					int prev_bb_val = blockHash(prev_bb);
-					lastFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
-					currFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
+                BasicBlock* prev_bb = *PB;
+                int prev_bb_val = blockHash(prev_bb);
+                lastFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
+                currFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
 			}
+            
 			// coming branches
 			for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
             {
@@ -186,8 +189,15 @@ namespace llvm
 				int next_bb_val = blockHash(next_bb);
 				lastFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
 				currFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
-			}	
+			}
+            
+            // TODO: Are there other instructions to return from a function?
+            if (dyn_cast<ReturnInst>(B->getTerminator()) != NULL)
+            {
+                needCheckAtBlock[bb_val] = true;
+            }
 		}
+        
 		bool change = true;
 		while (change) 
         {
@@ -204,6 +214,7 @@ namespace llvm
 			
 				bool isInsideLoop = loopBelong.find(bb_val) != loopBelong.end();
 				Loop* currLoop = isInsideLoop ? loopBelong[bb_val] : nullptr;
+                
 				// see if the previous branches have
 				// outside loop edges
 				bool hasBlockOutside = false;
@@ -218,9 +229,10 @@ namespace llvm
 						}
 					}
 				}
+                
 				// collect all previous states
 				// prepare to merge
-				// only mergeee blocks with outside loop edges
+				// only merge blocks with outside loop edges
 				vector<int> pred_bb_states{};
 				for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
                 {
@@ -232,8 +244,9 @@ namespace llvm
 						pred_bb_states.push_back(currFlowBefore[bb_val][prev_bb_val]);
 					}
 				}
+                
 				// get the initial current state
-				int currState{};
+				int currState;
 				if (bb_val == entry_val) 
                 {
 					// we do not need to merge
@@ -257,6 +270,10 @@ namespace llvm
 				int next = 0;
 				if (isLoopExit)
                 {
+                    // N.B. Code in Contech main forces all loop exits to check,
+                    //   which should be reflected here.
+                    needCheckAtBlock[bb_val] = true;
+                    
 					// the current block is loop exit
 					// need multiple dispatch
 					for (BasicBlock* next_bb : allSuccessors) 
@@ -272,6 +289,7 @@ namespace llvm
 							// outside loop set to buffer size
 							next = LOOP_EXIT_REMAIN - getLoopPath(loopExits[bb_val]);
 						}
+                        
 						// the state becomes nonpositve
 						// that means we need to add a check here
 						if (next <= 0) 
@@ -297,6 +315,7 @@ namespace llvm
 						nextStates[next_bb_val] = next;
 					}
 				}
+                
 				// get the state for this iteration
 				// and update the curr flow map
 				currFlowAfter[bb_val] = nextStates;
@@ -310,6 +329,7 @@ namespace llvm
 					currFlowBefore[next_bb_val][bb_val] = 
 						copy(nextStates[next_bb_val]);
 				}
+                
 				// see if the state changes
 				if (hasStateChange(currFlowAfter[bb_val], lastFlowAfter[bb_val])) 
                 {

@@ -1134,6 +1134,7 @@ bool Contech::runOnModule(Module &M)
             
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
+            num_checks++;
         }
         
         errs() << F->getName().str() << "," << num_checks 

@@ -45,17 +45,10 @@ class BufferCheckAnalysis
                             unordered_map<Loop*, int>&, int);
         ~BufferCheckAnalysis() {}
         // the flow analysis components
-        int blockInitialization();
-        int entryInitialization();
         int copy(int);
-        int merge(int, int);
-        int flowFunction(int, BasicBlock*);
         // the analysis usage
         void runAnalysis(Function*);
         // helper function
-        int getMemUsed(BasicBlock*);
-        int getLoopPath(Loop*);
-        int accumulateBranch(vector<int>&);
         void prettyPrint();
 
         map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
@@ -77,6 +70,11 @@ class BufferCheckAnalysis
         map<int, Loop*> loopBelong;
         unordered_map<Loop*, int> loopEntry;
         map<int, map<int, int>> stateAfter;
+        
+        int flowFunction(int, BasicBlock*);
+        int getMemUsed(BasicBlock*);
+        int getLoopPath(Loop*);
+        int accumulateBranch(vector<int>&);
     };
 
 }
