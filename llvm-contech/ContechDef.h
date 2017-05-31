@@ -58,6 +58,7 @@ namespace llvm {
     typedef struct _llvm_inst_block {
         bool containQueueCall;
         bool hasCheck;
+        bool preElide;
         int cost;
         Instruction* insertPoint;
         Value* posValue;
@@ -190,7 +191,7 @@ namespace llvm {
                                                            std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
-        bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid);
+        bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid, std::map<int, llvm_inst_block>& costOfBlock);
         bool attemptTailDuplicate(BasicBlock* bbTail);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide);
         unsigned int getSizeofType(Type*);

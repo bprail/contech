@@ -443,7 +443,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
 //   - All predecessors have no function calls or atomics (that require events)
 //   - All predecessors have unconditional branches to current block
 //
-bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid)
+bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_inst_block>& costOfBlock)
 {
     bool elideBasicBlockId = false;
     BasicBlock* pred;
@@ -487,6 +487,8 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid)
     elideBasicBlockId = true;
     errs() << "BBID: " << bbid << " has ID elided.\n";
     
+    hash<BasicBlock*> blockHash{};
+        
 #if LLVM_VERSION_MINOR>=9
     for (BasicBlock *pred : predecessors(B))
     {
@@ -497,6 +499,9 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid)
 #endif
         auto bbInfo = cfgInfoMap.find(pred);
         bbInfo->second->next_id = (int32_t)bbid;
+        
+        int bb_val = blockHash(pred);
+        costOfBlock[bb_val].preElide = true;
     }
     
     return elideBasicBlockId;
@@ -1128,6 +1133,9 @@ bool Contech::runOnModule(Module &M)
                 assert("Missing Block" && 0);
             }
             
+            // HACK!  Skip blocks that are the pre elides.
+            if(lib->second.preElide == true) {continue;}
+            
             Value* sbbc = lib->second.posValue;
             Value* argsCheck[] = {sbbc};
             Instruction* iPt = lib->second.insertPoint;
@@ -1517,7 +1525,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     // TODO: permament value or different approach to checks
     //
     if (memOpCount < 160) {
-        elideBasicBlockId = checkAndApplyElideId(&B, bbid);
+        elideBasicBlockId = checkAndApplyElideId(&B, bbid, costOfBlock);
     }
 
     bi->id = bbid;
@@ -1921,6 +1929,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         lib.insertPoint = iPt;
         lib.posValue = sbbc;
         lib.hasCheck = false;
+        lib.preElide = false;
         lib.containQueueCall = containQueueBuf;
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
