@@ -1,4 +1,4 @@
-
+// TODO: Verify that this code will place checks before the op sequence overflows, not after it hits the limit
 
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/BitVector.h"
@@ -29,13 +29,14 @@ namespace llvm
 		loopEntry{ loopEntry_ },
 		FUNCTION_REMAIN{ bufferCheckSize_ },
 		LOOP_EXIT_REMAIN{ bufferCheckSize_ }
-	{}
+	{
+    }
 
 	int BufferCheckAnalysis::copy(int from)
 	{
 		return from;
 	}
-
+    
 	bool BufferCheckAnalysis::hasStateChange(map<int, int>& last, map<int, int>& curr)
 	{
 		return last != curr;
@@ -58,8 +59,23 @@ namespace llvm
 	// to calculate the mem used
 	int BufferCheckAnalysis::getMemUsed(BasicBlock* bb)
 	{
-		int bb_val = blockHash(bb);
-		return blockInfo.find(bb_val)->second.cost;
+		int bb_val = blockHash(bb), cost;
+        
+        auto lib = blockInfo.find(bb_val);
+        
+        // Elide block can have the non-zero cost
+        //    But the pre blocks have to be zero to avoid having a buffer check
+        assert(lib != blockInfo.end());
+        if (lib->second.preElide == true)
+        {
+            return 0; // include cost with succecessor
+        }
+        
+        // If the block is normal, then return the cost
+        //   if the block is elide, then its cost includes the max of its predecessor
+        cost = lib->second.cost;
+        
+		return cost;
 	}
 
 	// calculate the overall byte used in one 
@@ -172,6 +188,7 @@ namespace llvm
         {
 			BasicBlock* bb = &*B;
 			int bb_val = blockHash(bb);
+            int predMaxCost = 0;
             
 			// previous branches
 			for (auto PB = pred_begin(bb); PB != pred_end(bb); ++PB) 
@@ -180,7 +197,18 @@ namespace llvm
                 int prev_bb_val = blockHash(prev_bb);
                 lastFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
                 currFlowBefore[bb_val][prev_bb_val] = DEFAULT_SIZE;
-			}
+                
+                auto bi = blockInfo.find(prev_bb_val);
+                assert(bi != blockInfo.end());
+                if (bi->second.cost > predMaxCost) predMaxCost = bi->second.cost;
+            }
+            
+            auto lib = blockInfo.find(bb_val);
+            assert(lib != blockInfo.end());
+            if (lib->second.hasElide == true)
+            {
+                lib->second.cost += predMaxCost;
+            }
             
 			// coming branches
 			for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
