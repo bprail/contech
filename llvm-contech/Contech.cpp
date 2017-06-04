@@ -1134,7 +1134,8 @@ bool Contech::runOnModule(Module &M)
             }
             
             // HACK!  Skip blocks that are the pre elides.
-            if(lib->second.preElide == true) {continue;}
+            //if(lib->second.preElide == true) {continue;}
+            assert(lib->second.preElide == false);
             
             Value* sbbc = lib->second.posValue;
             Value* argsCheck[] = {sbbc};
@@ -1929,6 +1930,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         lib.insertPoint = iPt;
         lib.posValue = sbbc;
         lib.hasCheck = false;
+        lib.hasElide = elideBasicBlockId;
         lib.preElide = false;
         lib.containQueueCall = containQueueBuf;
         // If there are more than 170 memops, then "prealloc" space

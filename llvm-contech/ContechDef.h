@@ -59,6 +59,7 @@ namespace llvm {
         bool containQueueCall;
         bool hasCheck;
         bool preElide;
+        bool hasElide;
         int cost;
         Instruction* insertPoint;
         Value* posValue;
