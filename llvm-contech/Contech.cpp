@@ -1368,7 +1368,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     Instruction* aPhi ;//= convertIterToInst(B.begin());
     bool getNextI = false;
     bool containQueueBuf = false;
-    bool hasUninstCall = false;
+    bool hasUninstCall = true; // Any call is uninst
     bool containKeyCall = false;
     bool elideBasicBlockId = false;
     Value* posValue = NULL;
@@ -1888,6 +1888,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         else if (CallInst *ci = dyn_cast<CallInst>(&*I))
         {
+            bool huc = hasUninstCall;
             I = InstrumentFunctionCall<CallInst>(ci,
                                                  hasUninstCall,
                                                  containQueueBuf,
@@ -1899,9 +1900,11 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                  &cct,
                                                  this,
                                                  M);
+            if (huc == false) hasUninstCall = false;
         }
         else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I))
         {
+            bool huc = hasUninstCall;
             I = InstrumentFunctionCall<InvokeInst>(ci,
                                                  hasUninstCall,
                                                  containQueueBuf,
@@ -1913,12 +1916,14 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                  &cct,
                                                  this,
                                                  M);
+            if (huc == false) hasUninstCall = false;
         }
     }
 
     // There could be multiple call instructions in the block, due to intrinsics and
     //   debug "calls".  If any are real calls, then the block contains a call.
-    bi->containCall = (bi->containCall)?true:hasUninstCall;
+    //   If it has 
+    bi->containCall = (bi->containCall)?true:(!hasUninstCall);
 
     
     {
@@ -1926,7 +1931,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         int bb_val = blockHash(&B);
         llvm_inst_block lib;
         lib.cost = memOpCount * 6 + ((elideBasicBlockId == true)? 0 : 3) 
-                             + ((bi->containCall == true) ? 64 : 0);
+                             + ((hasUninstCall == false) ? 64 : 0);
         lib.insertPoint = iPt;
         lib.posValue = sbbc;
         lib.hasCheck = false;
@@ -1947,7 +1952,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             
             lib.hasCheck = true;
         }
-        
         costOfBlock[bb_val] = lib;
     }
     #if 0

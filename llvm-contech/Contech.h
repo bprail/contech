@@ -185,7 +185,7 @@ namespace llvm {
                                                  Module &M)
     {
         Function *f = ci->getCalledFunction();
-        hasUninstCall = true;
+        hasUninstCall = false;
 
         // call is indirect
         // TODO: add dynamic check on function called
@@ -196,6 +196,7 @@ namespace llvm {
             f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)
             {
+                hasUninstCall = true;
                 return I;
             }
         }
@@ -1195,7 +1196,7 @@ namespace llvm {
                     debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                     Instruction* callBMOF = CallInst::Create(cct->storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", convertIterToInst(I));
                     MarkInstAsContechInst(callBMOF);
-                    hasUninstCall = true;
+                    hasUninstCall = false;
                 }
                 else if (0 == __ctStrCmp(fn, "llvm."))
                 {
@@ -1223,22 +1224,23 @@ namespace llvm {
                              0 == __ctStrCmp(fn + 5, "lifetime"))
                     {
                         // IGNORE
-                        hasUninstCall = false;
+                        hasUninstCall = true;
                     }
                     else
                     {
                         errs() << "Builtin - " << fn << "\n";
-                        hasUninstCall = false;
+                        hasUninstCall = true;
                     }
                 }
                 else if (0 != __ctStrCmp(fn, "__ct"))
                 {
                     // The function called is not something added by the instrumentation
                     //     and also not one that needs special treatment.
+                    hasUninstCall = true;
                 }
                 else
                 {
-                    hasUninstCall = false;
+                    hasUninstCall = true;
                 }
             }
         }
