@@ -57,7 +57,7 @@ class BufferCheckAnalysis
         map<int, map<int, int>> getStateAfter() const { return stateAfter; }
     private:
         // analysis parameter
-        const int DEFAULT_SIZE{ 1024 * 1024 };
+        const int DEFAULT_SIZE{ 1024 };
         const int FUNCTION_REMAIN;
         const int LOOP_EXIT_REMAIN;
 
