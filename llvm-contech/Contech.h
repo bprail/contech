@@ -4,7 +4,6 @@
 #include "ContechDef.h"
 
 namespace llvm {
-
     // Using a macro, although a function call would be preferred; however, a function call
     //     has issues with the "initialization of non-const reference"
     #define convertInstToIter(I) ((I)->getIterator())

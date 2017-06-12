@@ -1,5 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12.2)
-
+cmake_minimum_required(VERSION 3.5)
 find_package(LLVM REQUIRED CONFIG)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
@@ -22,3 +21,11 @@ add_llvm_loadable_module( LLVMContech
   Contech.cpp
   BufferCheckAnalysis.cpp
   )
+
+link_directories(${CMAKE_SOURCE_DIR}/loop)
+add_library(loop SHARED IMPORTED)
+set_target_properties(loop PROPERTIES
+  IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/loop/loop.so"
+  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/loop"
+)
+target_link_libraries(LLVMContech loop)
