@@ -448,7 +448,7 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
     bool elideBasicBlockId = false;
     BasicBlock* pred;
     int predCount = 0;
-    
+    //return false; // elide toggle
 #if LLVM_VERSION_MINOR>=9
     for (BasicBlock *pred : predecessors(B))
     {
@@ -586,7 +586,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     }
     
     if (predCount <= 1) return false;
-    //return false;
+    //return false; // tailDup toggle
     //
     // Setup new PHINodes in the successor block in preparation for the duplication.
     //
@@ -760,7 +760,7 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
 
     *offset = 0;
 
-    //return NULL;
+    //return NULL; // memdup toggle
 
     if (addrI == NULL)
     {
@@ -1141,6 +1141,7 @@ bool Contech::runOnModule(Module &M)
             Value* argsCheck[] = {sbbc};
             Instruction* iPt = lib->second.insertPoint;
             
+            debugLog("checkBufferFunction@" << __LINE__);
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
             num_checks++;
