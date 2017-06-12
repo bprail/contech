@@ -48,7 +48,8 @@
 
 #include "BufferCheckAnalysis.h"
 #include "Contech.h"
-#include "loop/loop.h"
+#include "LoopIV.h"
+
 using namespace llvm;
 using namespace std;
 
@@ -954,10 +955,20 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
 
 void Contech::getAnalysisUsage(AnalysisUsage& AU) const {
     AU.setPreservesAll();
-    AU.addRequired<loop>();
+    AU.addRequired<ScalarEvolutionWrapperPass>();
     AU.addRequired<LoopInfoWrapperPass>();
     AU.addPreserved<LoopInfoWrapperPass>();
       //AU.addRequired<LoopInfoWrapperPass>();  //in this order
+}
+
+LoopInfo* Contech::getAnalysisLoopInfo(Function& F)
+{
+    return &getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
+}
+
+ScalarEvolution* Contech::getAnalysisSCEV(Function& F)
+{
+    return &getAnalysis<ScalarEvolutionWrapperPass>(F).getSE();
 }
 
 //
@@ -965,27 +976,6 @@ void Contech::getAnalysisUsage(AnalysisUsage& AU) const {
 //
 bool Contech::runOnModule(Module &M)
 {
-    // Run the analysis for loop IV and their memory operations,
-    for (Module::iterator func_iter = M.begin(), func_iter_end = M.end(); func_iter != func_iter_end; ++func_iter)
-    {
-        Function &F = *func_iter;
-
-        if (!F.isDeclaration()) 
-        {
-            outs() << "----------- Print summary for the function: "<< F.getName() << "\n";
-            vector <Instruction*> temp = getAnalysis<loop>(F).getLoopMemoryOps();
-            outs() << "-----------------------------------------------------\n\n\n";
-
-            // merge into global vector
-            Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
-                                          temp.begin(), temp.end());
-        }
-    }
-    outs() << "TOTAL : " << Contech::LoopMemoryOps.size() << "\n";
-    //for(auto iv = Contech::LoopMemoryOps.begin(); iv != Contech::LoopMemoryOps.end(); ++iv) {
-    //  outs() << **iv << "\n";
-    //}     
-
     unsigned int bb_count = 0;
     int length = 0;
     char* buffer = NULL;
@@ -1072,6 +1062,14 @@ bool Contech::runOnModule(Module &M)
             continue;
         }
         errs() << fmn << "\n";
+        
+        // TODO: Invoke LoopIV here
+        LoopIV* liv = new LoopIV(this);
+        liv->runOnFunction(*F);
+        vector <Instruction*> temp = liv->getLoopMemoryOps();
+        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
+                                      temp.begin(), temp.end());
+        delete liv;
 
         // "Normalize" every basic block to have only one function call in it
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {

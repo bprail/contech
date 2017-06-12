@@ -13,6 +13,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
+#include <unordered_map>
 #include <cxxabi.h>
 #include "../common/eventLib/ct_event_st.h"
 
@@ -211,12 +212,9 @@ namespace llvm {
         Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
-        void getAnalysisUsage(AnalysisUsage &AU) const override {
-                        
-            //AU.addRequired<DominatorTreeWrapperPass>();
-            AU.addRequired<LoopInfoWrapperPass>();
-            AU.addPreserved<LoopInfoWrapperPass>();
-        }
+        void getAnalysisUsage(AnalysisUsage &AU) const;
+        LoopInfo* getAnalysisLoopInfo(Function&);
+        ScalarEvolution* getAnalysisSCEV(Function&);
 
         void collectLoopExits(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
 
@@ -225,7 +223,8 @@ namespace llvm {
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
 
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
-        
+        std::vector <Instruction*> LoopMemoryOps;
+        bool is_loop_computable(Instruction* memI, int* offset);
 
     }; // end of class Contech
 

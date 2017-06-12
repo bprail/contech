@@ -20,12 +20,7 @@ include(AddLLVM)
 add_llvm_loadable_module( LLVMContech
   Contech.cpp
   BufferCheckAnalysis.cpp
+  LoopIV.cpp
   )
 
-link_directories(${CMAKE_SOURCE_DIR}/loop)
-add_library(loop SHARED IMPORTED)
-set_target_properties(loop PROPERTIES
-  IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/loop/loop.so"
-  INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/loop"
-)
-target_link_libraries(LLVMContech loop)
+target_link_libraries(LLVMContech)
