@@ -1,205 +1,12 @@
 #ifndef CONTECH_H
 #define CONTECH_H
 
-// These are included in contech.cpp, which creates the appropriate path
-//  given that llvm decided to put the headers in different directories
-//#include "llvm/Pass.h"
-//#include "llvm/Module.h"
-
-#include <string>
-#include "../common/eventLib/ct_event_st.h"
-
-//#define DEBUG_PRINT_CALLINST
-#ifdef DEBUG_PRINT_CALLINST
-    #define debugLog(s) errs() << s << "\n"
-#else
-    #define debugLog(s)
-#endif
-//#define SPLIT_DEBUG
-
-#define __ctStrCmp(x, y) strncmp(x, y, sizeof(y) - 1)
+#include "ContechDef.h"
 
 namespace llvm {
-    class Contech;
-    ModulePass* createContechPass();
-
-    typedef struct _llvm_mem_op {
-        bool isWrite;
-        bool isGlobal;
-        bool isDep;
-        char size;
-        unsigned short depMemOp;
-        int depMemOpDelta;
-        Value* addr;
-        struct _llvm_mem_op* next;
-    } llvm_mem_op, *pllvm_mem_op;
-
-    typedef struct _llvm_basic_block {
-        unsigned int id, len, lineNum, numIROps, critPathLen;
-        int32_t next_id;
-        bool containCall;
-        bool containGlobalAccess;
-        bool containAtomic;
-        pllvm_mem_op first_op;
-        std::string fnName;
-        std::string callFnName;
-        //const char* fnName;
-        const char* fileName;
-        unsigned int fileNameSize;
-    } llvm_basic_block, *pllvm_basic_block;
-
-    typedef enum _CONTECH_FUNCTION_TYPE {
-        NONE,
-        MAIN,
-        MALLOC,
-        MALLOC2, // Calls like memalign(align, size)
-        REALLOC,
-        FREE,
-        THREAD_CREATE,
-        THREAD_JOIN,
-        SYNC_ACQUIRE,
-        SYNC_RELEASE,
-        BARRIER,
-        BARRIER_WAIT,
-        EXIT,
-        COND_WAIT,
-        COND_SIGNAL,
-        OMP_CALL,
-        OMP_FORK,
-        OMP_FOR_ITER,
-        OMP_BARRIER,
-        OMP_TASK_CALL,
-        OMP_END,
-        GLOBAL_SYNC_ACQUIRE, // Syncs that have no explicit address
-        GLOBAL_SYNC_RELEASE,
-        MPI_SEND_BLOCKING,
-        MPI_RECV_BLOCKING,
-        MPI_SEND_NONBLOCKING,
-        MPI_RECV_NONBLOCKING,
-        MPI_TRANSFER_WAIT,
-        CILK_FRAME_CREATE,
-        CILK_FRAME_DESTROY,
-        CILK_SYNC,
-        NUM_CONTECH_FUNCTION_TYPES
-    } CONTECH_FUNCTION_TYPE;
-
-    typedef struct _llvm_function_map {
-        const char* func_name;
-        size_t str_len;
-        CONTECH_FUNCTION_TYPE typeID;
-    } llvm_function_map, *pllvm_function_map;
-
-    extern llvm_function_map functionsInstrument[];
-
-    typedef struct _ConstantsCT {
-        Constant* storeBasicBlockFunction;
-        Constant* storeBasicBlockCompFunction;
-        Constant* storeMemOpFunction;
-        Constant* allocateBufferFunction;
-        Constant* checkBufferFunction;
-        Constant* storeThreadCreateFunction;
-        Constant* storeSyncFunction;
-        Constant* storeMemoryEventFunction;
-        Constant* queueBufferFunction;
-        Constant* storeBarrierFunction;
-        Constant* allocateCTidFunction;
-        Constant* allocateTicketFunction;
-        Constant* getThreadNumFunction;
-        Constant* storeThreadJoinFunction;
-        Constant* storeThreadInfoFunction;
-        Constant* storeBulkMemoryOpFunction;
-        Constant* getCurrentTickFunction;
-        Constant* createThreadActualFunction;
-        Constant* checkBufferLargeFunction;
-        Constant* getBufPosFunction;
-        Constant* getBufFunction;
-
-        Constant* storeBasicBlockMarkFunction;
-        Constant* storeMemReadMarkFunction;
-        Constant* storeMemWriteMarkFunction;
-
-        Constant* storeMPITransferFunction;
-        Constant* storeMPIWaitFunction;
-
-        Constant* ompThreadCreateFunction;
-        Constant* ompThreadJoinFunction;
-        Constant* ompTaskCreateFunction;
-        Constant* ompTaskJoinFunction;
-        Constant* ompPushParentFunction;
-        Constant* ompPopParentFunction;
-        Constant* ctPeekParentIdFunction;
-        Constant* ompProcessJoinFunction;
-        Constant* ompGetNestLevelFunction;
-
-        Constant* ompGetParentFunction;
-        Constant* ompPrepareTaskFunction;
-        Constant* ompStoreInOutDepsFunction;
-
-        Constant* cilkInitFunction;
-        Constant* cilkCreateFunction;
-        Constant* cilkSyncFunction;
-        Constant* cilkRestoreFunction;
-        Constant* cilkParentFunction;
-
-        Constant* pthreadExitFunction;
-
-        Type* int8Ty;
-        Type* int32Ty;
-        Type* voidTy;
-        PointerType* voidPtrTy;
-        Type* int64Ty;
-        Type* pthreadTy;
-        int pthreadSize;
-
-        unsigned ContechMDID;
-    } ConstantsCT, *pConstantsCT;
-
-    //
-    // Contech - First record every load or store in a program
-    //
-    class Contech : public ModulePass {
-    public:
-        static char ID; // Pass identification, replacement for typeid
-        ConstantsCT cct;
-        const DataLayout* currentDataLayout;
-
-        std::set<Function*> contechAddedFunctions;
-        std::set<Function*> ompMicroTaskFunctions;
-
-        Contech() : ModulePass(ID) {
-        }
-
-        virtual bool doInitialization(Module &M);
-        virtual bool runOnModule(Module &M);
-        virtual bool internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, bool markOnly, const char* fnName);
-        virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
-        void addCheckAfterPhi(BasicBlock* B);
-        bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid);
-        bool attemptTailDuplicate(BasicBlock* bbTail);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide);
-        unsigned int getSizeofType(Type*);
-        unsigned int getSimpleLog(unsigned int);
-        unsigned int getCriticalPathLen(BasicBlock& B);
-        int getLineNum(Instruction* I);
-        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, BasicBlock* B);
-        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I);
-        Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
-        Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
-        Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
-        Value* castSupport(Type*, Value*, Instruction*);
-        Value* findCilkStructInBlock(BasicBlock& B, bool insert);
-        bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
-
-        Value* findSimilarMemoryInst(Instruction*, Value*, int*);
-        _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
-
-        virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-
-        }
-    };
 
     // Using a macro, although a function call would be preferred; however, a function call
-    //   has issues with the "initialization of non-const reference"
+    //     has issues with the "initialization of non-const reference"
     #define convertInstToIter(I) ((I)->getIterator())
 
     Instruction* convertIterToInst(BasicBlock::iterator& I)
@@ -273,15 +80,15 @@ namespace llvm {
         if (isa<CallInst>(ci))
         {
             ciStore = CallInst::Create(cct->storeMPITransferFunction,
-                                                 ArrayRef<Value*>(argsMPIXF, 9),
-                                                 "", ci);
+                                       ArrayRef<Value*>(argsMPIXF, 9),
+                                       "", ci);
             ci->moveBefore(ciStore);
         }
         else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
         {
             ciStore = CallInst::Create(cct->storeMPITransferFunction,
-                                                 ArrayRef<Value*>(argsMPIXF, 9),
-                                                 "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
+                                       ArrayRef<Value*>(argsMPIXF, 9),
+                                       "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
         }
         MarkInstAsContechInst(ciStore);
     }
@@ -322,7 +129,7 @@ namespace llvm {
 
         debugLog("storeSyncFunction @" << __LINE__);
         CallInst* nStoreSync = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArg,5),
-                                            "", initialPt);
+                                                "", initialPt);
         MarkInstAsContechInst(nStoreSync);
 
         if (isa<CallInst>(ci))
@@ -334,7 +141,7 @@ namespace llvm {
     }
 
     // Insert a normal dest for the Invoke inst
-    //   This gives us a single path target to instrument
+    //     This gives us a single path target to instrument
     template<typename T>
     BasicBlock* InsertNormalDest(T* ci, ConstantsCT* cct, Module &M)
     {
@@ -348,8 +155,8 @@ namespace llvm {
         ii->setNormalDest(bb);
         
         // Cannot just replace all uses of ii->parent, as it has two uses normal and exceptions
-        //   Need to replace all uses on just the normal target
-        //   The following code is adapted form BasicBlock.cpp
+        //     Need to replace all uses on just the normal target
+        //     The following code is adapted form BasicBlock.cpp
         BasicBlock* nDest = bi->getSuccessor(0);
         for (auto II = nDest->begin(), IE = nDest->end(); II != IE; ++II) 
         {
@@ -378,7 +185,7 @@ namespace llvm {
                                                  Module &M)
     {
         Function *f = ci->getCalledFunction();
-        hasUninstCall = true;
+        hasUninstCall = false;
 
         // call is indirect
         // TODO: add dynamic check on function called
@@ -389,6 +196,7 @@ namespace llvm {
             f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)
             {
+                hasUninstCall = true;
                 return I;
             }
         }
@@ -413,8 +221,8 @@ namespace llvm {
         {
 
             // Check for call to exit(n), replace with pthread_exit(n)
-            //  Splash benchmarks like to exit on us which pthread_cleanup doesn't catch
-            //  Also check that this "...exit..." is at least a do not return function
+            //    Splash benchmarks like to exit on us which pthread_cleanup doesn't catch
+            //    Also check that this "...exit..." is at least a do not return function
             case(EXIT):
             {
                 if (ci->getCalledFunction()->doesNotReturn())
@@ -433,14 +241,14 @@ namespace llvm {
                     if (isa<CallInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", convertIterToInst(++I));
+                                                    "", convertIterToInst(++I));
                         I = convertInstToIter(nStoreME);
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
                         BasicBlock* bb = InsertNormalDest(ii, cct, M);
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
+                                                    "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }
                     MarkInstAsContechInst(nStoreME);
                 }
@@ -456,13 +264,13 @@ namespace llvm {
                     if (isa<CallInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", convertIterToInst(++I));
+                                                    "", convertIterToInst(++I));
                         I = convertInstToIter(nStoreME);
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                        "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
+                                                    "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }
                     MarkInstAsContechInst(nStoreME);
                 }
@@ -519,13 +327,13 @@ namespace llvm {
                 if (isa<CallInst>(ci))
                 {
                     nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                    "", convertIterToInst(++I));
+                                                "", convertIterToInst(++I));
                     I = convertInstToIter(nStoreME);
                 }
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
                     nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
-                                                    "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
+                                                 "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                 }
                 MarkInstAsContechInst(nStoreME);
             }
@@ -583,8 +391,8 @@ namespace llvm {
 
                 // ISSUE #63
                 // TODO: By strict semantics, this queue buffer is not required.
-                //   However, processing a trace may require excessive memory if the
-                //   cond wait takes a long time.
+                //     However, processing a trace may require excessive memory if the
+                //     cond wait takes a long time.
                 Value* c1 = ConstantInt::get(cct->int8Ty, 1);
                 Value* cArgQB[] = {c1};
                 debugLog("queueBufferFunction @" << __LINE__);
@@ -663,7 +471,7 @@ namespace llvm {
 
                 debugLog("storeSyncFunction @" << __LINE__);
                 CallInst* nStoreCV = CallInst::Create(cct->storeSyncFunction, ArrayRef<Value*>(cArgCV, 5), "",
-                                                      initialPt);
+                                                        initialPt);
                 MarkInstAsContechInst(nStoreCV);
 
                 if (isa<CallInst>(ci))
@@ -716,10 +524,10 @@ namespace llvm {
                 Value* cArgQB[] = {c1};
 
                 // NB This queue buffer call is important, as a join event is often long waiting.
-                //   By queuing, the events before the join are processed, especially ticketed events
+                //     By queuing, the events before the join are processed, especially ticketed events
                 debugLog("queueBufferFunction @" << __LINE__);
                 CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
-                                                    "", ci);
+                                                       "", ci);
                 MarkInstAsContechInst(nQueueBuf);
 
                 debugLog("getCurrentTickFunction @" << __LINE__);
@@ -733,7 +541,7 @@ namespace llvm {
                 {
                     ++I;
                     nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2),
-                                                         Twine(""), convertIterToInst(I));
+                                               Twine(""), convertIterToInst(I));
                     I = convertInstToIter(nStoreJ);
                     iPt = nGetTick;
                     containQueueBuf = true;
@@ -741,13 +549,13 @@ namespace llvm {
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
                     nStoreJ = CallInst::Create(cct->storeThreadJoinFunction, ArrayRef<Value*>(cArg, 2),
-                                                     Twine(""), ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
+                                               Twine(""), ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                 }
                 MarkInstAsContechInst(nStoreJ);
             }
             break;
             //int pthread_create(pthread_t * thread, const pthread_attr_t * attr,
-            //                   void * (*start_routine)(void *), void * arg);
+            //                                     void * (*start_routine)(void *), void * arg);
             //
             case (THREAD_CREATE):
             {
@@ -767,6 +575,10 @@ namespace llvm {
                 CallInst* nThreadCreate = CallInst::Create(cct->createThreadActualFunction,
                                                            ArrayRef<Value*>(cTcArg, 4), "", ci);
                 MarkInstAsContechInst(nThreadCreate);
+                if (iPt == ci)
+                {
+                    iPt = nThreadCreate;
+                }
                 ci->replaceAllUsesWith(nThreadCreate);
                 ci->eraseFromParent();
                 I = convertInstToIter(nThreadCreate);
@@ -813,13 +625,13 @@ namespace llvm {
                 // Simple case, push and pop the parent id
                 // And Transform the arguments to the function call
                 // The GOMP_parallel_start has a parallel_end routine, so the master thread
-                //   returns immediately
+                //     returns immediately
                 // Thus the pop parent should be delayed until the end routine executes
                 Value* c1 = ConstantInt::get(cct->int8Ty, 1);
                 Value* cArgQB[] = {c1};
                 debugLog("queueBufferFunction @" << __LINE__);
                 CallInst* nQueueBuf = CallInst::Create(cct->queueBufferFunction, ArrayRef<Value*>(cArgQB, 1),
-                                                    "", ci);
+                                                       "", ci);
                 MarkInstAsContechInst(nQueueBuf);
 
                 debugLog("ompPushParentFunction @" << __LINE__);
@@ -937,11 +749,11 @@ namespace llvm {
                 }
 
                 // Add one to the number of arguments
-                //   TODO: Make this a ConstantExpr
+                //     TODO: Make this a ConstantExpr
                 ci->setArgOperand(1, BinaryOperator::Create(Instruction::Add,
-                                            ci->getArgOperand(1),
-                                            ConstantInt::get(cct->int32Ty, 1),
-                                            "", ci));
+                                                            ci->getArgOperand(1),
+                                                            ConstantInt::get(cct->int32Ty, 1),
+                                                            "", ci));
 
                 // Change the function called to a wrapper routine
                 Value* arg2 = ci->getArgOperand(2);
@@ -1002,9 +814,9 @@ namespace llvm {
                 else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                 {
                     InvokeInst* nForkCall = InvokeInst::Create(ii->getCalledFunction(),
-                                                           ii->getNormalDest(), ii->getUnwindDest(),
-                                                           ArrayRef<Value*>(cArg, 1 + ii->getNumArgOperands()),
-                                                           ii->getName(), ii);
+                                                               ii->getNormalDest(), ii->getUnwindDest(),
+                                                               ArrayRef<Value*>(cArg, 1 + ii->getNumArgOperands()),
+                                                               ii->getName(), ii);
                     MarkInstAsContechInst(nForkCall);
 
                     ii->replaceAllUsesWith(nForkCall);
@@ -1067,18 +879,18 @@ namespace llvm {
                 MarkInstAsContechInst(OGNLF);
 
                 Value* sub1 = BinaryOperator::Create(Instruction::Sub,
-                                            OGNLF,
-                                            ConstantInt::get(cct->int32Ty, 1), "", convertIterToInst(I));
+                                                     OGNLF,
+                                                     ConstantInt::get(cct->int32Ty, 1), "", convertIterToInst(I));
                 Value* cArgGPF[] = {sub1}; // TODO: add check that this will saturate at 0
                 CallInst* OGPF = CallInst::Create(cct->ompGetParentFunction, ArrayRef<Value*>(cArgGPF), "", convertIterToInst(I));
                 MarkInstAsContechInst(OGPF);
 
                 Value* mul8 = BinaryOperator::Create(Instruction::Mul,
-                                            OGPF,
-                                            ConstantInt::get(cct->int32Ty, 256), "", convertIterToInst(I));
+                                                     OGPF,
+                                                     ConstantInt::get(cct->int32Ty, 256), "", convertIterToInst(I));
                 Value* mergV = BinaryOperator::Create(Instruction::Add,
-                                            mul8,
-                                            OGNLF, "", convertIterToInst(I));
+                                                      mul8,
+                                                      OGNLF, "", convertIterToInst(I));
                 IntToPtrInst* bci = new IntToPtrInst(mergV, cct->voidPtrTy, "locktovoid", convertIterToInst(I));
                 MarkInstAsContechInst(bci);
 
@@ -1088,7 +900,7 @@ namespace llvm {
                 // Record the barrier entry
                 debugLog("storeBarrierFunction @" << __LINE__);
                 CallInst* nStoreBarEn = CallInst::Create(cct->storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
-                                                    "", convertIterToInst(I));
+                                                         "", convertIterToInst(I));
                 MarkInstAsContechInst(nStoreBarEn);
 
                 if (isa<CallInst>(ci))
@@ -1105,7 +917,7 @@ namespace llvm {
                 // Record the barrier exit
                 debugLog("storeBarrierFunction @" << __LINE__);
                 CallInst* nStoreBarEx = CallInst::Create(cct->storeBarrierFunction, ArrayRef<Value*>(cArgs,3),
-                                                    "", initialPt);
+                                                         "", initialPt);
                 MarkInstAsContechInst(nStoreBarEx);
 
                 if (isa<CallInst>(ci))
@@ -1118,12 +930,12 @@ namespace llvm {
             case(OMP_TASK_CALL):
             {
                 // __kmpc_omp_task_with_deps( ident_t *loc_ref, kmp_int32 gtid, kmp_task_t * new_task,
-                //             kmp_int32 ndeps, kmp_depend_info_t *dep_list,
-                //             kmp_int32 ndeps_noalias, kmp_depend_info_t *noalias_dep_list )
-                //  IF the task has no dependencies, it is still invoked with this routine, with NULL depends lists
-                //  new_task -> ... -> call __kmpc_omp_task_alloc(..., entry_point)
-                //  kmp_depend_info_t { base_addr, in, out}
-                //  Task will also be run in the current thread context
+                //                         kmp_int32 ndeps, kmp_depend_info_t *dep_list,
+                //                         kmp_int32 ndeps_noalias, kmp_depend_info_t *noalias_dep_list )
+                //    IF the task has no dependencies, it is still invoked with this routine, with NULL depends lists
+                //    new_task -> ... -> call __kmpc_omp_task_alloc(..., entry_point)
+                //    kmp_depend_info_t { base_addr, in, out}
+                //    Task will also be run in the current thread context
                 Value* taskPtr = ci->getArgOperand(2);
                 Value* nDeps = ci->getArgOperand(3);
                 Value* depList = ci->getArgOperand(4);
@@ -1165,15 +977,15 @@ namespace llvm {
                 ConstantInt* cnstNDeps = dyn_cast<ConstantInt>(nDeps);
 
                 Function* wrapDTask = ctPass->createMicroDependTaskWrap(baseTask, M,
-                                                                cnstTaskSize->getValue().getLimitedValue(),
-                                                                cnstNDeps->getValue().getLimitedValue());
+                                                                        cnstTaskSize->getValue().getLimitedValue(),
+                                                                        cnstNDeps->getValue().getLimitedValue());
                 ctPass->contechAddedFunctions.insert(wrapDTask);
 
                 // Add space for depend*, parentID, childID
                 taskAllocInst->setArgOperand(3, BinaryOperator::Create(Instruction::Add,
-                                            taskAllocInst->getArgOperand(3),
-                                            ConstantInt::get(baseTaskSize->getType(), cct->pthreadSize + 2*4),
-                                            "", taskAllocInst));
+                                                                       taskAllocInst->getArgOperand(3),
+                                                                       ConstantInt::get(baseTaskSize->getType(), cct->pthreadSize + 2*4),
+                                                                       "", taskAllocInst));
                 taskAllocInst->setArgOperand(5, wrapDTask);
 
                 // ParentID
@@ -1242,7 +1054,7 @@ namespace llvm {
             {
                 // If this setjmp leads to cilk_sync, then ignore
                 // N.B. LLVM 3.4 does not have getSingleSuccessor, but 3.6 does
-                //   BasicBlock* sucB = ci->getParent()->getSingleSuccessor();
+                //     BasicBlock* sucB = ci->getParent()->getSingleSuccessor();
                 BasicBlock* sucB = ci->getParent()->getTerminator()->getSuccessor(0);
 
                 // If Contech has formed the basic blocks, then there should be 1 successor
@@ -1381,14 +1193,14 @@ namespace llvm {
             default:
             {
                 // TODO: Function->isIntrinsic()
-                if (0 == __ctStrCmp(fn, "memcpy")  ||
+                if (0 == __ctStrCmp(fn, "memcpy")    ||
                     0 == __ctStrCmp(fn, "memmove"))
                 {
                     Value* cArgS[] = {ci->getArgOperand(2), ci->getArgOperand(0), ci->getArgOperand(1)};
                     debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                     Instruction* callBMOF = CallInst::Create(cct->storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", convertIterToInst(I));
                     MarkInstAsContechInst(callBMOF);
-                    hasUninstCall = true;
+                    hasUninstCall = false;
                 }
                 else if (0 == __ctStrCmp(fn, "llvm."))
                 {
@@ -1416,22 +1228,23 @@ namespace llvm {
                              0 == __ctStrCmp(fn + 5, "lifetime"))
                     {
                         // IGNORE
-                        hasUninstCall = false;
+                        hasUninstCall = true;
                     }
                     else
                     {
                         errs() << "Builtin - " << fn << "\n";
-                        hasUninstCall = false;
+                        hasUninstCall = true;
                     }
                 }
                 else if (0 != __ctStrCmp(fn, "__ct"))
                 {
                     // The function called is not something added by the instrumentation
-                    //   and also not one that needs special treatment.
+                    //     and also not one that needs special treatment.
+                    hasUninstCall = true;
                 }
                 else
                 {
-                    hasUninstCall = false;
+                    hasUninstCall = true;
                 }
             }
         }
@@ -1442,6 +1255,7 @@ namespace llvm {
 
         return I;
     }
-}
+
+} // namespace
 
 #endif

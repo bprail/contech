@@ -41,16 +41,12 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include "llvm/Analysis/Interval.h"
+#include "llvm/Analysis/LoopInfo.h"
 
-#include <map>
-#include <set>
-#include <vector>
-#include <iostream>
-#include <fstream>
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
-#include <cxxabi.h>
 
+#include "BufferCheckAnalysis.h"
 #include "Contech.h"
 using namespace llvm;
 using namespace std;
@@ -139,1758 +135,1906 @@ namespace llvm {
 
     ModulePass* createContechPass() { return new Contech(); }
 }
-    //
-    // Create any globals required for this module
-    //
-    //  These globals are predominantly setting up the constants for Contech's runtime functions.
-    //    Each constant is effectively the entry point to a function and can be called / invoked.
-    //    The routine also finds the appropriate type definitions and retains them for consistent use.
-    //
-    bool Contech::doInitialization(Module &M)
+
+//
+// Create any globals required for this module
+//
+//  These globals are predominantly setting up the constants for Contech's runtime functions.
+//    Each constant is effectively the entry point to a function and can be called / invoked.
+//    The routine also finds the appropriate type definitions and retains them for consistent use.
+//
+bool Contech::doInitialization(Module &M)
+{
+    // Function types are named fun(Return type)(arg1 ... argN)Ty
+    FunctionType* funVoidPtrI32I32VoidPtrI8Ty;
+    FunctionType* funVoidVoidPtrI32VoidPtrI8Ty;
+    FunctionType* funVoidVoidPtrI32I32I64I64Ty;
+    FunctionType* funVoidPtrVoidPtrTy;
+    FunctionType* funVoidPtrVoidTy;
+    FunctionType* funVoidVoidTy;
+    FunctionType* funVoidVoidPtrTy;
+    FunctionType* funVoidI8I64VoidPtrTy;
+    FunctionType* funVoidI64VoidPtrVoidPtrTy;
+    FunctionType* funVoidI8Ty;
+    FunctionType* funVoidI32Ty;
+    FunctionType* funVoidI8VoidPtrI64Ty;
+    FunctionType* funVoidVoidPtrI32Ty;
+    FunctionType* funVoidI64I64Ty;
+    FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
+    FunctionType* funI32I32Ty;
+    FunctionType* funI32VoidPtrTy;
+    FunctionType* funI32I32I32VoidPtrI8Ty;
+    FunctionType* funVoidVoidPtrI64Ty;
+    FunctionType* funVoidVoidPtrI64I32I32Ty;
+    FunctionType* funVoidI32I64I64Ty;
+
+    // Get the different integer types required by Contech
+    LLVMContext &ctx = M.getContext();
+    currentDataLayout = &M.getDataLayout();
+    cct.int8Ty = Type::getInt8Ty(ctx);
+    cct.int32Ty = Type::getInt32Ty(ctx);
+    cct.int64Ty = Type::getInt64Ty(ctx);
+    cct.voidTy = Type::getVoidTy(ctx);
+    cct.voidPtrTy = cct.int8Ty->getPointerTo();
+
+    Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
+    funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
+
+    funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
+    cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
+
+    Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty};
+    funVoidPtrI32I32VoidPtrI8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 4), false);
+    cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8Ty);
+
+    funI32I32I32VoidPtrI8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 4), false);
+    cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8Ty);
+
+    Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty};
+    funVoidVoidPtrI32VoidPtrI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 4), false);
+    cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8Ty);
+
+    funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
+    cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
+    cct.cilkInitFunction = M.getOrInsertFunction("__ctInitCilkSync", funVoidPtrVoidTy);
+
+    // void (void) functions:
+    funVoidVoidTy = FunctionType::get(cct.voidTy, false);
+    cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
+    cct.storeMemReadMarkFunction = M.getOrInsertFunction("__ctStoreMemReadMark", funVoidVoidTy);
+    cct.storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
+    cct.ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
+    cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
+    cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
+
+    // Void -> Int32 / 64
+    cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
+    cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
+    cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
+    cct.allocateTicketFunction =  M.getOrInsertFunction("__ctAllocateTicket", FunctionType::get(cct.int64Ty, false));
+
+    cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
+    cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
+
+
+    Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/, cct.int64Ty};
+    funVoidVoidPtrI32I32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 5), false);
+    cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64I64Ty);
+
+    Type* argsTC[] = {cct.int32Ty};
+
+    // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
+    funVoidI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsTC, 1), false);
+    cct.storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
+    cct.pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
+    cct.ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
+    cct.ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
+    cct.ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
+    cct.checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
+    cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
+
+    funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
+    cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
+
+    Type* argsQB[] = {cct.int8Ty};
+    funVoidI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsQB, 1), false);
+    cct.queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
+    cct.ompTaskJoinFunction = M.getOrInsertFunction("__ctOMPTaskJoin", funVoidVoidTy);
+
+    Type* argsSB[] = {cct.int8Ty, cct.voidPtrTy, cct.int64Ty};
+    funVoidI8VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSB, 3), false);
+    cct.storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
+
+    Type* argsATI[] = {cct.voidPtrTy, cct.int32Ty};
+    funVoidVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsATI, 2), false);
+    cct.storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
+
+    Type* argsSMPIXF[] = {cct.int8Ty, cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty, cct.voidPtrTy};
+    funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
+    cct.storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
+
+    Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
+    funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
+    cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
+
+    Type* argsCFC[] = {cct.voidPtrTy, cct.int64Ty, cct.int32Ty, cct.int32Ty};
+    funVoidVoidPtrI64I32I32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCFC, 4), false);
+    cct.cilkCreateFunction = M.getOrInsertFunction("__ctRecordCilkFrame", funVoidVoidPtrI64I32I32Ty);
+
+    Type* argsInit[] = {cct.voidPtrTy};
+    funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
+    cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
+    cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
+    cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
+
+    Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
+    funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
+    cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
+
+    if (currentDataLayout->getPointerSizeInBits() == 64)
     {
-        // Function types are named fun(Return type)(arg1 ... argN)Ty
-        FunctionType* funVoidPtrI32I32VoidPtrI8Ty;
-        FunctionType* funVoidVoidPtrI32VoidPtrI8Ty;
-        FunctionType* funVoidVoidPtrI32I32I64I64Ty;
-        FunctionType* funVoidPtrVoidPtrTy;
-        FunctionType* funVoidPtrVoidTy;
-        FunctionType* funVoidVoidTy;
-        FunctionType* funVoidVoidPtrTy;
-        FunctionType* funVoidI8I64VoidPtrTy;
-        FunctionType* funVoidI64VoidPtrVoidPtrTy;
-        FunctionType* funVoidI8Ty;
-        FunctionType* funVoidI32Ty;
-        FunctionType* funVoidI8VoidPtrI64Ty;
-        FunctionType* funVoidVoidPtrI32Ty;
-        FunctionType* funVoidI64I64Ty;
-        FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
-        FunctionType* funI32I32Ty;
-        FunctionType* funI32VoidPtrTy;
-        FunctionType* funI32I32I32VoidPtrI8Ty;
-        FunctionType* funVoidVoidPtrI64Ty;
-        FunctionType* funVoidVoidPtrI64I32I32Ty;
-        FunctionType* funVoidI32I64I64Ty;
+        cct.pthreadTy = cct.int64Ty;
+        cct.pthreadSize = 8;
+    }
+    else
+    {
+        cct.pthreadTy = cct.int32Ty;
+        cct.pthreadSize = 4;
+    }
 
-        // Get the different integer types required by Contech
-        LLVMContext &ctx = M.getContext();
-        currentDataLayout = &M.getDataLayout();
-        cct.int8Ty = Type::getInt8Ty(ctx);
-        cct.int32Ty = Type::getInt32Ty(ctx);
-        cct.int64Ty = Type::getInt64Ty(ctx);
-        cct.voidTy = Type::getVoidTy(ctx);
-        cct.voidPtrTy = cct.int8Ty->getPointerTo();
+    Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
+    funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
+    cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
 
-        Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
-        funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
+    Type* argsME[] = {cct.int8Ty, cct.pthreadTy, cct.voidPtrTy};
+    funVoidI8I64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsME, 3), false);
+    cct.storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
+    Type* argsBulkMem[] = {cct.pthreadTy, cct.voidPtrTy, cct.voidPtrTy};
+    funVoidI64VoidPtrVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
+    cct.storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
 
-        funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
-        cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
+    Type* argsOMPSD[] = {cct.voidPtrTy, cct.pthreadTy, cct.int32Ty, cct.int32Ty};
+    FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
+    cct.ompStoreInOutDepsFunction = M.getOrInsertFunction("__ctOMPStoreInOutDeps", funVoidVoidPtrI64I32I32);
+    cct.ompPrepareTaskFunction = NULL;
 
-        Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty};
-        funVoidPtrI32I32VoidPtrI8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 4), false);
-        cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8Ty);
+    Type* pthreadTyPtr = cct.pthreadTy->getPointerTo();
+    Type* argsCTA[] = {pthreadTyPtr,
+                       cct.voidPtrTy,
+                       static_cast<Type *>(funVoidPtrVoidPtrTy)->getPointerTo(),
+                       cct.voidPtrTy};
+    FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
+    cct.createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
 
-        funI32I32I32VoidPtrI8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 4), false);
-        cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8Ty);
+    cct.ContechMDID = ctx.getMDKindID("ContechInst");
 
-        Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty};
-        funVoidVoidPtrI32VoidPtrI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 4), false);
-        cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8Ty);
+    return true;
+}
 
-        funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
-        cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
-        cct.cilkInitFunction = M.getOrInsertFunction("__ctInitCilkSync", funVoidPtrVoidTy);
-
-        // void (void) functions:
-        funVoidVoidTy = FunctionType::get(cct.voidTy, false);
-        cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
-        cct.storeMemReadMarkFunction = M.getOrInsertFunction("__ctStoreMemReadMark", funVoidVoidTy);
-        cct.storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
-        cct.ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
-        cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
-        cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
-
-        // Void -> Int32 / 64
-        cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
-        cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
-        cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
-        cct.allocateTicketFunction =  M.getOrInsertFunction("__ctAllocateTicket", FunctionType::get(cct.int64Ty, false));
-
-        cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
-        cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
-
-
-        Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/, cct.int64Ty};
-        funVoidVoidPtrI32I32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 5), false);
-        cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64I64Ty);
-
-        Type* argsTC[] = {cct.int32Ty};
-
-        // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
-        funVoidI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsTC, 1), false);
-        cct.storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
-        cct.pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
-        cct.ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
-        cct.ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
-        cct.ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
-        cct.checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
-        cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
-
-        funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
-        cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
-
-        Type* argsQB[] = {cct.int8Ty};
-        funVoidI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsQB, 1), false);
-        cct.queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
-        cct.ompTaskJoinFunction = M.getOrInsertFunction("__ctOMPTaskJoin", funVoidVoidTy);
-
-        Type* argsSB[] = {cct.int8Ty, cct.voidPtrTy, cct.int64Ty};
-        funVoidI8VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSB, 3), false);
-        cct.storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
-
-        Type* argsATI[] = {cct.voidPtrTy, cct.int32Ty};
-        funVoidVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsATI, 2), false);
-        cct.storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
-
-        Type* argsSMPIXF[] = {cct.int8Ty, cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty, cct.voidPtrTy};
-        funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
-        cct.storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
-
-        Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
-        funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
-        cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
-
-        Type* argsCFC[] = {cct.voidPtrTy, cct.int64Ty, cct.int32Ty, cct.int32Ty};
-        funVoidVoidPtrI64I32I32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCFC, 4), false);
-        cct.cilkCreateFunction = M.getOrInsertFunction("__ctRecordCilkFrame", funVoidVoidPtrI64I32I32Ty);
-
-        Type* argsInit[] = {cct.voidPtrTy};
-        funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
-        cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
-        cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
-        cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
-
-        Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
-        funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
-        cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
-
-        if (currentDataLayout->getPointerSizeInBits() == 64)
+_CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
+{
+    for (unsigned int i = 0; i < FUNCTIONS_INSTRUMENT_SIZE; i++)
+    {
+        if (strncmp(fn, functionsInstrument[i].func_name, functionsInstrument[i].str_len - 1) == 0)
         {
-            cct.pthreadTy = cct.int64Ty;
-            cct.pthreadSize = 8;
+            return functionsInstrument[i].typeID;
+        }
+    }
+
+    return NONE;
+}
+
+//
+// addCheckAfterPhi
+//   Adds a check buffer function call after the last Phi instruction in a basic block
+//   Trying to add the check call as early as possible, but some instructions must come first
+//
+void Contech::addCheckAfterPhi(BasicBlock* B)
+{
+    if (B == NULL) return;
+
+    for (BasicBlock::iterator I = B->begin(), E = B->end(); I != E; ++I){
+        if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) {
+            continue;
+        }
+        else if (/*LandingPadInst *lpi = */dyn_cast<LandingPadInst>(&*I)){
+            continue;
         }
         else
         {
-            cct.pthreadTy = cct.int32Ty;
-            cct.pthreadSize = 4;
+            debugLog("checkBufferFunction @" << __LINE__);
+            CallInst::Create(cct.checkBufferFunction, "", convertIterToInst(I));
+            return;
         }
-
-        Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
-        funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
-        cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
-
-        Type* argsME[] = {cct.int8Ty, cct.pthreadTy, cct.voidPtrTy};
-        funVoidI8I64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsME, 3), false);
-        cct.storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
-        Type* argsBulkMem[] = {cct.pthreadTy, cct.voidPtrTy, cct.voidPtrTy};
-        funVoidI64VoidPtrVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
-        cct.storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
-
-        Type* argsOMPSD[] = {cct.voidPtrTy, cct.pthreadTy, cct.int32Ty, cct.int32Ty};
-        FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
-        cct.ompStoreInOutDepsFunction = M.getOrInsertFunction("__ctOMPStoreInOutDeps", funVoidVoidPtrI64I32I32);
-        cct.ompPrepareTaskFunction = NULL;
-
-        Type* pthreadTyPtr = cct.pthreadTy->getPointerTo();
-        Type* argsCTA[] = {pthreadTyPtr,
-                           cct.voidPtrTy,
-                           static_cast<Type *>(funVoidPtrVoidPtrTy)->getPointerTo(),
-                           cct.voidPtrTy};
-        FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
-        cct.createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
-
-        cct.ContechMDID = ctx.getMDKindID("ContechInst");
-
-        return true;
     }
+}
 
-    _CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
+//
+// Scan through each instruction in the basic block
+//   For each op used by the instruction, this instruction is 1 deeper than it
+//
+unsigned int Contech::getCriticalPathLen(BasicBlock& B)
+{
+    map<Instruction*, unsigned int> depthOfInst;
+    unsigned int maxDepth = 0;
+
+    for (BasicBlock::iterator it = B.begin(), et = B.end(); it != et; ++it)
     {
-        for (unsigned int i = 0; i < FUNCTIONS_INSTRUMENT_SIZE; i++)
+        unsigned int currIDepth = 0;
+        for (User::op_iterator itUse = it->op_begin(), etUse = it->op_end();
+                             itUse != etUse; ++itUse)
         {
-            if (strncmp(fn, functionsInstrument[i].func_name, functionsInstrument[i].str_len - 1) == 0)
+            unsigned int tDepth;
+            Instruction* inU = dyn_cast<Instruction>(itUse->get());
+            map<Instruction*, unsigned int>::iterator depI = depthOfInst.find(inU);
+
+            if (depI == depthOfInst.end())
             {
-                return functionsInstrument[i].typeID;
-            }
-        }
-
-        return NONE;
-    }
-
-    //
-    // addCheckAfterPhi
-    //   Adds a check buffer function call after the last Phi instruction in a basic block
-    //   Trying to add the check call as early as possible, but some instructions must come first
-    //
-    void Contech::addCheckAfterPhi(BasicBlock* B)
-    {
-        if (B == NULL) return;
-
-        for (BasicBlock::iterator I = B->begin(), E = B->end(); I != E; ++I){
-            if (/*PHINode *pn = */dyn_cast<PHINode>(&*I)) {
-                continue;
-            }
-            else if (/*LandingPadInst *lpi = */dyn_cast<LandingPadInst>(&*I)){
-                continue;
+                // Dependent on value from a different basic block
+                tDepth = 1;
             }
             else
             {
-                debugLog("checkBufferFunction @" << __LINE__);
-                CallInst::Create(cct.checkBufferFunction, "", convertIterToInst(I));
-                return;
-            }
-        }
-    }
-
-    //
-    // Scan through each instruction in the basic block
-    //   For each op used by the instruction, this instruction is 1 deeper than it
-    //
-    unsigned int Contech::getCriticalPathLen(BasicBlock& B)
-    {
-        map<Instruction*, unsigned int> depthOfInst;
-        unsigned int maxDepth = 0;
-
-        for (BasicBlock::iterator it = B.begin(), et = B.end(); it != et; ++it)
-        {
-            unsigned int currIDepth = 0;
-            for (User::op_iterator itUse = it->op_begin(), etUse = it->op_end();
-                                 itUse != etUse; ++itUse)
-            {
-                unsigned int tDepth;
-                Instruction* inU = dyn_cast<Instruction>(itUse->get());
-                map<Instruction*, unsigned int>::iterator depI = depthOfInst.find(inU);
-
-                if (depI == depthOfInst.end())
-                {
-                    // Dependent on value from a different basic block
-                    tDepth = 1;
-                }
-                else
-                {
-                    // The path in this block is 1 more than the dependent instruction's depth
-                    tDepth = depI->second + 1;
-                }
-
-                if (tDepth > currIDepth) currIDepth = tDepth;
+                // The path in this block is 1 more than the dependent instruction's depth
+                tDepth = depI->second + 1;
             }
 
-            depthOfInst[&*it] = currIDepth;
-            if (currIDepth > maxDepth) maxDepth = currIDepth;
+            if (tDepth > currIDepth) currIDepth = tDepth;
         }
 
-        return maxDepth;
+        depthOfInst[&*it] = currIDepth;
+        if (currIDepth > maxDepth) maxDepth = currIDepth;
     }
 
-    //
-    //  Wrapper call that appropriately adds the operations to record the memory operation
-    //
-    pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide)
+    return maxDepth;
+}
+
+//
+//  Wrapper call that appropriately adds the operations to record the memory operation
+//
+pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide)
+{
+    pllvm_mem_op tMemOp = new llvm_mem_op;
+
+    tMemOp->addr = NULL;
+    tMemOp->next = NULL;
+    tMemOp->isWrite = isWrite;
+    tMemOp->isDep = false;
+    tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
+
+    if (tMemOp->size > 4)
     {
-        pllvm_mem_op tMemOp = new llvm_mem_op;
-
-        tMemOp->addr = NULL;
-        tMemOp->next = NULL;
-        tMemOp->isWrite = isWrite;
-        tMemOp->isDep = false;
-        tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
-
-        if (tMemOp->size > 4)
-        {
-            errs() << "MemOp of size: " << tMemOp->size << "\n";
-        }
-
-        if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
-        {
-            tMemOp->isGlobal = true;
-            //errs() << "Is global - " << *addr << "\n";
-            //return tMemOp; // HACK!
-        }
-        else
-        {
-            tMemOp->isGlobal = false;
-            //errs() << "Is not global - " << *addr << "\n";
-        }
-
-        if (li != NULL)
-        {
-            Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
-            Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
-            Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
-            MarkInstAsContechInst(addrI);
-
-            Value* argsMO[] = {addrI, cPos, pos, cElide};
-            debugLog("storeMemOpFunction @" << __LINE__);
-            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
-            MarkInstAsContechInst(smo);
-
-            assert(smo != NULL);
-            smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
-        }
-
-        return tMemOp;
+        errs() << "MemOp of size: " << tMemOp->size << "\n";
     }
 
-    //
-    // Check each predecessor for whether current block's ID can be elided
-    //   - All predecessors have no function calls or atomics (that require events)
-    //   - All predecessors have unconditional branches to current block
-    //
-    bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid)
+    if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
     {
-        bool elideBasicBlockId = false;
-        BasicBlock* pred;
-        int predCount = 0;
+        tMemOp->isGlobal = true;
+        //errs() << "Is global - " << *addr << "\n";
+        //return tMemOp; // HACK!
+    }
+    else
+    {
+        tMemOp->isGlobal = false;
+        //errs() << "Is not global - " << *addr << "\n";
+    }
+
+    if (li != NULL)
+    {
+        Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
+        Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
+        Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
+        MarkInstAsContechInst(addrI);
+
+        Value* argsMO[] = {addrI, cPos, pos, cElide};
+        debugLog("storeMemOpFunction @" << __LINE__);
+        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+        MarkInstAsContechInst(smo);
+
+        assert(smo != NULL);
+        smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+    }
+
+    return tMemOp;
+}
+
+//
+// Check each predecessor for whether current block's ID can be elided
+//   - All predecessors have no function calls or atomics (that require events)
+//   - All predecessors have unconditional branches to current block
+//
+bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_inst_block>& costOfBlock)
+{
+    bool elideBasicBlockId = false;
+    BasicBlock* pred;
+    int predCount = 0;
+    //return false; // elide toggle
+#if LLVM_VERSION_MINOR>=9
+    for (BasicBlock *pred : predecessors(B))
+    {
+#else
+    for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
+    {
+        pred = *pit;
+#endif
+        TerminatorInst* ti = pred->getTerminator();
         
-    #if LLVM_VERSION_MINOR>=9
-        for (BasicBlock *pred : predecessors(B))
+        // No self loops
+        if (pred == B) {return false;}
+        
+        if (dyn_cast<BranchInst>(ti) == NULL) return false;
+        if (ti->getNumSuccessors() != 1) {return false;}
+        if (ti->isExceptional()) return false;
+        
+        // Furthermore, Contech splits basic blocks for function calls
+        //   Any tail duplication must not undo that split.
+        //   Check if the terminator was introduced by Contech
+        if (ti->getMetadata(cct.ContechMDID)) 
         {
-    #else
-        for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
-        {
-            pred = *pit;
-    #endif
-            TerminatorInst* ti = pred->getTerminator();
-            
-            // No self loops
-            if (pred == B) {return false;}
-            
-            if (dyn_cast<BranchInst>(ti) == NULL) return false;
-            if (ti->getNumSuccessors() != 1) {return false;}
-            if (ti->isExceptional()) return false;
-            
-            // Furthermore, Contech splits basic blocks for function calls
-            //   Any tail duplication must not undo that split.
-            //   Check if the terminator was introduced by Contech
-            if (ti->getMetadata(cct.ContechMDID)) 
-            {
-                return false;
-            }
-            
-            // Is it possible to record eliding ID?
-            auto bbInfo = cfgInfoMap.find(pred);
-            if (bbInfo == cfgInfoMap.end()) {return false;}
-            
-            if (bbInfo->second->containCall == true) return false;
-            if (bbInfo->second->containAtomic == true) return false;
-            predCount++;
+            return false;
         }
         
-        if (predCount == 0) return false;
-        elideBasicBlockId = true;
-        errs() << "BBID: " << bbid << " has ID elided.\n";
+        // Is it possible to record eliding ID?
+        auto bbInfo = cfgInfoMap.find(pred);
+        if (bbInfo == cfgInfoMap.end()) {return false;}
         
-    #if LLVM_VERSION_MINOR>=9
-        for (BasicBlock *pred : predecessors(B))
-        {
-    #else
-        for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
-        {
-            pred = *pit;
-    #endif
-            auto bbInfo = cfgInfoMap.find(pred);
-            bbInfo->second->next_id = (int32_t)bbid;
-        }
-        
-        return elideBasicBlockId;
+        if (bbInfo->second->containCall == true) return false;
+        if (bbInfo->second->containAtomic == true) return false;
+        predCount++;
     }
     
-    bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
+    if (predCount == 0) return false;
+    elideBasicBlockId = true;
+    errs() << "BBID: " << bbid << " has ID elided.\n";
+    
+    hash<BasicBlock*> blockHash{};
+        
+#if LLVM_VERSION_MINOR>=9
+    for (BasicBlock *pred : predecessors(B))
     {
-        // If this block has multiple predecessors
-        //   And each predecessor has an unconditional branch
-        //   Then we can duplicate this block and merge with its predecessors
-        BasicBlock* pred;
-        unsigned predCount = 0;
+#else
+    for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
+    {
+        pred = *pit;
+#endif
+        auto bbInfo = cfgInfoMap.find(pred);
+        bbInfo->second->next_id = (int32_t)bbid;
         
-        // LLVM already tries to merge returns into a single basic block
-        //   Don't undo this
-        if (dyn_cast<ReturnInst>(bbTail->getTerminator()) != NULL) return false;
-        
-        // Simplication, only duplicate with a single successor.
-        //   TODO: revisit successor update code to remove this assumption.
-        unsigned numSucc = bbTail->getTerminator()->getNumSuccessors();
-        if (numSucc > 1) return false;
-        
-        //
-        // If this block's successor has multiple predecessors, then skip
-        //   TODO: Handle this case
-        if (numSucc == 1 && 
-            bbTail->getUniqueSuccessor()->getUniquePredecessor() == NULL) return false;
-        
-        // If something requires this block's address, then it cannot be duplicated away
-        //
-        if (bbTail->hasAddressTaken()) return false;
-        
-        // Code taken from llvm::MergeBlockIntoPredecessor in BasicBlockUtils.cpp
-        // Can't merge if there is PHI loop.
-        for (BasicBlock::iterator BI = bbTail->begin(), BE = bbTail->end(); BI != BE; ++BI) 
+        int bb_val = blockHash(pred);
+        costOfBlock[bb_val].preElide = true;
+    }
+    
+    return elideBasicBlockId;
+}
+
+bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
+{
+    // If this block has multiple predecessors
+    //   And each predecessor has an unconditional branch
+    //   Then we can duplicate this block and merge with its predecessors
+    BasicBlock* pred;
+    unsigned predCount = 0;
+    
+    // LLVM already tries to merge returns into a single basic block
+    //   Don't undo this
+    if (dyn_cast<ReturnInst>(bbTail->getTerminator()) != NULL) return false;
+    
+    // Simplication, only duplicate with a single successor.
+    //   TODO: revisit successor update code to remove this assumption.
+    unsigned numSucc = bbTail->getTerminator()->getNumSuccessors();
+    if (numSucc > 1) return false;
+    
+    //
+    // If this block's successor has multiple predecessors, then skip
+    //   TODO: Handle this case
+    if (numSucc == 1 && 
+        bbTail->getUniqueSuccessor()->getUniquePredecessor() == NULL) return false;
+    
+    // If something requires this block's address, then it cannot be duplicated away
+    //
+    if (bbTail->hasAddressTaken()) return false;
+    
+    // Code taken from llvm::MergeBlockIntoPredecessor in BasicBlockUtils.cpp
+    // Can't merge if there is PHI loop.
+    for (BasicBlock::iterator BI = bbTail->begin(), BE = bbTail->end(); BI != BE; ++BI) 
+    {
+        if (PHINode *PN = dyn_cast<PHINode>(BI)) 
         {
-            if (PHINode *PN = dyn_cast<PHINode>(BI)) 
+            
+            for (Value *IncValue : PN->incoming_values())
             {
-                
-                for (Value *IncValue : PN->incoming_values())
-                {
-                    if (IncValue == PN) return false;
-                }
-            } 
+                if (IncValue == PN) return false;
+            }
+        } 
+        else
+        {
+            break;
+        }
+    }
+    
+    //
+    // Go through each predecessor and verify that a tail duplicate can be merged
+    //
+    
+// If the basic for loop is used with 3.9, the module fails with undefined symbol, unless NDEBUG matches
+//    compiled value.
+#if LLVM_VERSION_MINOR>=9
+    for (BasicBlock *pred : predecessors(bbTail))
+    {
+#else
+    for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
+    {
+        pred = *pit;
+#endif
+        TerminatorInst* ti = pred->getTerminator();
+        
+        // No self loops
+        if (pred == bbTail) return false;
+        
+        if (dyn_cast<BranchInst>(ti) == NULL) return false;
+        if (ti->getNumSuccessors() != 1) return false;
+        if (ti->isExceptional()) return false;
+        
+        // Furthermore, Contech splits basic blocks for function calls
+        //   Any tail duplication must not undo that split.
+        //   Check if the terminator was introduced by Contech
+        if (ti->getMetadata(cct.ContechMDID)) 
+        {
+            return false;
+        }
+        predCount++;
+    }
+    
+    if (predCount <= 1) return false;
+    //return false; // tailDup toggle
+    //
+    // Setup new PHINodes in the successor block in preparation for the duplication.
+    //
+    BasicBlock* bbSucc = bbTail->getTerminator()->getSuccessor(0);
+    map <unsigned, PHINode*> phiFixUp;
+    unsigned instPos = 0;
+    for (Instruction &II : *bbTail)
+    {
+        vector<Instruction*> instUsesToUpdate;
+        Value* v = dyn_cast<Value>(&II);
+        
+        //for (User::op_iterator itUse = II.op_begin(), etUse = II.op_end(); itUse != etUse; ++itUse)
+        for (auto itUse = v->user_begin(), etUse = v->user_end(); itUse != etUse; ++itUse)
+        {
+            Instruction* iUse = dyn_cast<Instruction>(*itUse);
+            if (iUse == NULL) continue;
+            
+            //errs() << *iUse << "\n";
+            if (iUse->getParent() == bbTail) continue;
+            
+            instUsesToUpdate.push_back(iUse);
+        }
+        
+        // If the value is not used outside of this block, then it will not converge
+        if (instUsesToUpdate.empty())
+        {
+            instPos++;
+            continue;
+        }
+        
+        // This value is used in another block
+        //   Therefore, its value will converge from each duplicate
+        PHINode* pn = PHINode::Create(II.getType(), 0, "", bbSucc->getFirstNonPHI());
+        II.replaceUsesOutsideBlock(pn, bbTail);
+        pn->addIncoming(&II, bbTail);
+        phiFixUp[instPos] = pn;
+        
+        instPos++;
+    }
+    
+    bool firstPred = true;
+    for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; )
+    {
+        pred = *pit;
+        ++pit;
+        TerminatorInst* ti = pred->getTerminator();
+        
+        //
+        // One predecessor must be left untouched.
+        //
+        if (firstPred)
+        {
+            firstPred = false;
+            continue;
+        }
+        
+        ValueToValueMapTy VMap;
+        // N.B. Clone does not update uses in new block
+        //   Each instruction will still use its old def and not any new instruction.
+        BasicBlock* bbAlt = CloneBasicBlock(bbTail, VMap, bbTail->getName() + "dup", bbTail->getParent(), NULL);
+        if (bbAlt == NULL) return false;
+
+        // Adapted from CloneFunctionInto:CloneFunction.cpp
+        //   This fixes the instruction uses
+        for (Instruction &II : *bbAlt)
+        {
+            RemapInstruction(&II, VMap, RF_None, NULL, NULL);
+        }
+        
+        // Get all successors into a vector
+        //vector<BasicBlock*> Succs(bbAlt->succ_begin(), bbAlt->succ_end());
+        BasicBlock* bbSucc = bbAlt->getTerminator()->getSuccessor(0);
+        
+        // Fix PHINode
+        //  In duplicating the block, the PHINodes were destroyed.  However, there may still be
+        //  a later point where the blocks converge requiring new PHINodes to be created.
+        //  Probably the successor to this block.
+        // However, at this point, there are only values without uses
+        instPos = 0;
+        for (Instruction &II : *bbAlt)
+        {
+            if (phiFixUp.find(instPos) == phiFixUp.end()) {instPos++; continue;}
+            PHINode* pn = phiFixUp[instPos];
+            pn->addIncoming(&II, bbAlt);
+            instPos++;
+        }
+        
+        //
+        // Before merging, every PHINode in the successor needs to only have one incoming value.
+        //   The merge utility assumes that the first value in every PHINode comes from the
+        //   predecessor, which is rarely true in this case.  So new PHINodes are created.
+        //
+        ti->setSuccessor(0, bbAlt);
+        for (auto it = bbAlt->begin(), et = bbAlt->end(); it != et; ++it)
+        {
+            if (PHINode* pn = dyn_cast<PHINode>(&*it))
+            {
+                // Remove incoming value may invalidate the iterators.
+                // Instead create a new PHINode
+                Value* inBlock = pn->getIncomingValueForBlock(pred);
+                PHINode* pnRepl = PHINode::Create(inBlock->getType(), 1, pn->getName() + "dup", pn);
+                pnRepl->addIncoming(inBlock, pred);
+                pn->replaceAllUsesWith(pnRepl);
+                pn->eraseFromParent();
+                it = convertInstToIter(pnRepl);
+            }
             else
             {
                 break;
             }
         }
         
-        //
-        // Go through each predecessor and verify that a tail duplicate can be merged
-        //
-        
-    // If the basic for loop is used with 3.9, the module fails with undefined symbol, unless NDEBUG matches
-    //    compiled value.
-    #if LLVM_VERSION_MINOR>=9
-        for (BasicBlock *pred : predecessors(bbTail))
+        // TODO: verify that merge will update the PHIs
+        bool mergeV = MergeBlockIntoPredecessor(bbAlt);
+        assert(mergeV && "Successful merge of bbAlt");
+        for (auto it = bbTail->begin(), et = bbTail->end(); it != et; ++it)
         {
-    #else
-        for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
-        {
-            pred = *pit;
-    #endif
-            TerminatorInst* ti = pred->getTerminator();
-            
-            // No self loops
-            if (pred == bbTail) return false;
-            
-            if (dyn_cast<BranchInst>(ti) == NULL) return false;
-            if (ti->getNumSuccessors() != 1) return false;
-            if (ti->isExceptional()) return false;
-            
-            // Furthermore, Contech splits basic blocks for function calls
-            //   Any tail duplication must not undo that split.
-            //   Check if the terminator was introduced by Contech
-            if (ti->getMetadata(cct.ContechMDID)) 
+            if (PHINode* pn = dyn_cast<PHINode>(&*it))
             {
-                return false;
-            }
-            predCount++;
-        }
-        
-        if (predCount <= 1) return false;
-        //return false;
-        //
-        // Setup new PHINodes in the successor block in preparation for the duplication.
-        //
-        BasicBlock* bbSucc = bbTail->getTerminator()->getSuccessor(0);
-        map <unsigned, PHINode*> phiFixUp;
-        unsigned instPos = 0;
-        for (Instruction &II : *bbTail)
-        {
-            vector<Instruction*> instUsesToUpdate;
-            Value* v = dyn_cast<Value>(&II);
-            
-            //for (User::op_iterator itUse = II.op_begin(), etUse = II.op_end(); itUse != etUse; ++itUse)
-            for (auto itUse = v->user_begin(), etUse = v->user_end(); itUse != etUse; ++itUse)
-            {
-                Instruction* iUse = dyn_cast<Instruction>(*itUse);
-                if (iUse == NULL) continue;
-                
-                //errs() << *iUse << "\n";
-                if (iUse->getParent() == bbTail) continue;
-                
-                instUsesToUpdate.push_back(iUse);
-            }
-            
-            // If the value is not used outside of this block, then it will not converge
-            if (instUsesToUpdate.empty())
-            {
-                instPos++;
-                continue;
-            }
-            
-            // This value is used in another block
-            //   Therefore, its value will converge from each duplicate
-            PHINode* pn = PHINode::Create(II.getType(), 0, "", bbSucc->getFirstNonPHI());
-            II.replaceUsesOutsideBlock(pn, bbTail);
-            pn->addIncoming(&II, bbTail);
-            phiFixUp[instPos] = pn;
-            
-            instPos++;
-        }
-        
-        bool firstPred = true;
-        for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; )
-        {
-            pred = *pit;
-            ++pit;
-            TerminatorInst* ti = pred->getTerminator();
-            
-            //
-            // One predecessor must be left untouched.
-            //
-            if (firstPred)
-            {
-                firstPred = false;
-                continue;
-            }
-            
-            ValueToValueMapTy VMap;
-            // N.B. Clone does not update uses in new block
-            //   Each instruction will still use its old def and not any new instruction.
-            BasicBlock* bbAlt = CloneBasicBlock(bbTail, VMap, bbTail->getName() + "dup", bbTail->getParent(), NULL);
-            if (bbAlt == NULL) return false;
-
-            // Adapted from CloneFunctionInto:CloneFunction.cpp
-            //   This fixes the instruction uses
-            for (Instruction &II : *bbAlt)
-            {
-                RemapInstruction(&II, VMap, RF_None, NULL, NULL);
-            }
-            
-            // Get all successors into a vector
-            //vector<BasicBlock*> Succs(bbAlt->succ_begin(), bbAlt->succ_end());
-            BasicBlock* bbSucc = bbAlt->getTerminator()->getSuccessor(0);
-            
-            // Fix PHINode
-            //  In duplicating the block, the PHINodes were destroyed.  However, there may still be
-            //  a later point where the blocks converge requiring new PHINodes to be created.
-            //  Probably the successor to this block.
-            // However, at this point, there are only values without uses
-            instPos = 0;
-            for (Instruction &II : *bbAlt)
-            {
-                if (phiFixUp.find(instPos) == phiFixUp.end()) {instPos++; continue;}
-                PHINode* pn = phiFixUp[instPos];
-                pn->addIncoming(&II, bbAlt);
-                instPos++;
-            }
-            
-            //
-            // Before merging, every PHINode in the successor needs to only have one incoming value.
-            //   The merge utility assumes that the first value in every PHINode comes from the
-            //   predecessor, which is rarely true in this case.  So new PHINodes are created.
-            //
-            ti->setSuccessor(0, bbAlt);
-            for (auto it = bbAlt->begin(), et = bbAlt->end(); it != et; ++it)
-            {
-                if (PHINode* pn = dyn_cast<PHINode>(&*it))
+                int idx = pn->getBasicBlockIndex(pred);
+                if (idx == -1)
                 {
-                    // Remove incoming value may invalidate the iterators.
-                    // Instead create a new PHINode
-                    Value* inBlock = pn->getIncomingValueForBlock(pred);
-                    PHINode* pnRepl = PHINode::Create(inBlock->getType(), 1, pn->getName() + "dup", pn);
-                    pnRepl->addIncoming(inBlock, pred);
-                    pn->replaceAllUsesWith(pnRepl);
-                    pn->eraseFromParent();
-                    it = convertInstToIter(pnRepl);
+                    continue;
                 }
-                else
-                {
-                    break;
-                }
-            }
-            
-            // TODO: verify that merge will update the PHIs
-            bool mergeV = MergeBlockIntoPredecessor(bbAlt);
-            assert(mergeV && "Successful merge of bbAlt");
-            for (auto it = bbTail->begin(), et = bbTail->end(); it != et; ++it)
-            {
-                if (PHINode* pn = dyn_cast<PHINode>(&*it))
-                {
-                    int idx = pn->getBasicBlockIndex(pred);
-                    if (idx == -1)
-                    {
-                        continue;
-                    }
-                    pn->removeIncomingValue(idx, false);
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-        
-        pred = *(pred_begin(bbTail));
-        assert(firstPred == false);
-        
-        bool mergeV = MergeBlockIntoPredecessor(bbTail);
-        if (!mergeV) {errs() << *pred << "\n" << *bbTail << "\n";}
-        assert(mergeV && "Successful merge of bbTail");
-        
-        for (auto it = phiFixUp.begin(), et = phiFixUp.end(); it != et; ++it)
-        {
-            PHINode* pn = it->second;
-            if (pn->getNumIncomingValues() != predCount)
-            {
-                errs() << *pn << "\n";
-                errs() << *(pn->getParent()) << "\n";
-                assert(0);
-            }
-        }
-        errs() << *pred;
-        tailCount++;
-        
-        return true;
-    }
-    
-    //
-    // findSimilarMemoryInst
-    //
-    //   A key performance feature, this function will determine whether a given memory operation
-    //     is statically offset from another memory operation within that same basic block.  If so,
-    //     then the later operation's address can be omitted and computed after execution.
-    //   If such a pair is found, then this function will compute the static offset between the two
-    //     memory accesses.
-    //
-    Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
-    {
-        vector<Value*> addrComponents;
-        Instruction* addrI = dyn_cast<Instruction>(addr);
-        int tOffset = 0, baseOffset = 0;
-
-        *offset = 0;
-
-        //return NULL;
-
-        if (addrI == NULL)
-        {
-            // No instruction generates the address, it is probably a global value
-            for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-            {
-                // Stop iterating at self
-                if (memI == dyn_cast<Instruction>(&*it)) break;
-                if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-                {
-                    Value* addrT = li->getPointerOperand();
-
-                    if (addrT == addr) return li;
-                }
-                else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-                {
-                    Value* addrT = si->getPointerOperand();
-
-                    if (addrT == addr) return si;
-                }
-            }
-
-            return NULL;
-        }
-        else if (CastInst* bci = dyn_cast<CastInst>(addr))
-        {
-            for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-            {
-                if (memI == dyn_cast<Instruction>(&*it)) break;
-                if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-                {
-                    Value* addrT = li->getPointerOperand();
-
-                    if (addrT == addr) return li;
-                }
-                else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-                {
-                    Value* addrT = si->getPointerOperand();
-
-                    if (addrT == addr) return si;
-                }
-            }
-
-            return NULL;
-        }
-
-        // Given addr, find the values that it depends on
-        GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
-        if (gepAddr == NULL)
-        {
-            //errs() << *addr << "\n";
-            //errs() << "Mem instruction did not come from GEP\n";
-            return NULL;
-        }
-
-        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
-        {
-            Value* gepI = itG.getOperand();
-
-            // If the index of GEP is a Constant, then it can vary between mem ops
-            if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
-            {
-                if (StructType *STy = dyn_cast<StructType>(*itG))
-                {
-                    unsigned ElementIdx = aConst->getZExtValue();
-                    const StructLayout *SL = currentDataLayout->getStructLayout(STy);
-                    baseOffset += SL->getElementOffset(ElementIdx);
-                }
-                else
-                {
-                    baseOffset += aConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
-                }
+                pn->removeIncomingValue(idx, false);
             }
             else
             {
-                // Reset to 0 if there is a variable offset
-                baseOffset = 0;
+                break;
             }
-
-            // TODO: if the value is a constant global, then it matters
-            addrComponents.push_back(gepI);
         }
+    }
+    
+    pred = *(pred_begin(bbTail));
+    assert(firstPred == false);
+    
+    bool mergeV = MergeBlockIntoPredecessor(bbTail);
+    if (!mergeV) {errs() << *pred << "\n" << *bbTail << "\n";}
+    assert(mergeV && "Successful merge of bbTail");
+    
+    for (auto it = phiFixUp.begin(), et = phiFixUp.end(); it != et; ++it)
+    {
+        PHINode* pn = it->second;
+        if (pn->getNumIncomingValues() != predCount)
+        {
+            errs() << *pn << "\n";
+            errs() << *(pn->getParent()) << "\n";
+            assert(0);
+        }
+    }
+    errs() << *pred;
+    tailCount++;
+    
+    return true;
+}
 
+//
+// findSimilarMemoryInst
+//
+//   A key performance feature, this function will determine whether a given memory operation
+//     is statically offset from another memory operation within that same basic block.  If so,
+//     then the later operation's address can be omitted and computed after execution.
+//   If such a pair is found, then this function will compute the static offset between the two
+//     memory accesses.
+//
+Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
+{
+    vector<Value*> addrComponents;
+    Instruction* addrI = dyn_cast<Instruction>(addr);
+    int tOffset = 0, baseOffset = 0;
+
+    *offset = 0;
+
+    //return NULL; // memdup toggle
+
+    if (addrI == NULL)
+    {
+        // No instruction generates the address, it is probably a global value
         for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
         {
-            GetElementPtrInst* gepAddrT = NULL;
-            // If the search has reached the current memory operation, then no match exists
+            // Stop iterating at self
             if (memI == dyn_cast<Instruction>(&*it)) break;
-
             if (LoadInst *li = dyn_cast<LoadInst>(&*it))
             {
                 Value* addrT = li->getPointerOperand();
 
-                gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+                if (addrT == addr) return li;
             }
             else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
             {
                 Value* addrT = si->getPointerOperand();
 
-                gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+                if (addrT == addr) return si;
             }
+        }
 
-            if (gepAddrT == NULL) continue;
-            if (gepAddrT == gepAddr)
+        return NULL;
+    }
+    else if (CastInst* bci = dyn_cast<CastInst>(addr))
+    {
+        for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+        {
+            if (memI == dyn_cast<Instruction>(&*it)) break;
+            if (LoadInst *li = dyn_cast<LoadInst>(&*it))
             {
-                *offset = 0;
-                return &*it;
+                Value* addrT = li->getPointerOperand();
+
+                if (addrT == addr) return li;
             }
-
-            unsigned int i = 0;
-            bool constMode = false, finConst = false, isMatch = true;
-            if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
-            tOffset = 0;
-            for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
             {
-                Value* gepI = itG.getOperand();
+                Value* addrT = si->getPointerOperand();
 
-                // If the index of GEP is a Constant, then it can vary between mem ops
-                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
-                {
-                    if (i == addrComponents.size())
-                    {
-                        finConst = true;
-                        // Last field was not a constant, but that can be alright
-                        if (constMode == false)
-                        {
-                            
-                        }
-                    }
-                    ConstantInt* aConst = NULL;
-                    if (finConst == true ||
-                        (aConst = dyn_cast<ConstantInt>(addrComponents[i])))
-                    {
-                        if (!finConst &&
-                            aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
-                        isMatch = true;
-                        
-                        //
-                        // GetElementPtr supports computing a constant offset; however, it requires
-                        //   all fields to be constant.  The code is reproduced here, in order to compute
-                        //   a partial constant offset along with the delta from the other GEP inst.
-                        //
-                        if (StructType *STy = dyn_cast<StructType>(*itG))
-                        {
-                            unsigned ElementIdx = gConst->getZExtValue();
-                            const StructLayout *SL = currentDataLayout->getStructLayout(STy);
-                            tOffset += SL->getElementOffset(ElementIdx);
-                            continue;
-                        }
-
-                        tOffset += gConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
-
-                        continue;
-                    }
-                    else
-                    {
-                        isMatch = false;
-                        break;
-                    }
-                }
-                else if (constMode == true)
-                {
-                    // Only can handle cases where a varying constant is at the end of the calculation
-                    //   or has non-varying constants around it.
-                    isMatch = false;
-                    break;
-                }
-
-                // temp offset remains 0 until a final sequence of constant int offsets
-                tOffset = 0;
-                if (i >= addrComponents.size() || 
-                    gepI != addrComponents[i])
-                {
-                    isMatch = false;
-                    break;
-                }
-            }
-
-            if (isMatch ||
-                (i == addrComponents.size() && (gepAddrT->getNumIndices() != gepAddr->getNumIndices())))
-            {
-                //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
-                *offset = baseOffset - tOffset;
-                return &*it;
+                if (addrT == addr) return si;
             }
         }
 
         return NULL;
     }
 
-    //
-    // Go through the module to get the basic blocks
-    //
-    bool Contech::runOnModule(Module &M)
+    // Given addr, find the values that it depends on
+    GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    if (gepAddr == NULL)
     {
-        unsigned int bb_count = 0;
-        int length = 0;
-        char* buffer = NULL;
-        doInitialization(M);
+        //errs() << *addr << "\n";
+        //errs() << "Mem instruction did not come from GEP\n";
+        return NULL;
+    }
 
-        ifstream* icontechStateFile = new ifstream(ContechStateFilename.c_str(), ios_base::in | ios_base::binary);
-        if (icontechStateFile != NULL && icontechStateFile->good())
+    for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
+    {
+        Value* gepI = itG.getOperand();
+
+        // If the index of GEP is a Constant, then it can vary between mem ops
+        if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
         {
-            icontechStateFile->seekg(0, icontechStateFile->end);
-            length = icontechStateFile->tellg();
-            icontechStateFile->seekg(0, icontechStateFile->beg);
-            buffer = new char[length];
-            icontechStateFile->read(buffer, length);
-            bb_count = *(unsigned int*)buffer;
-        }
-        else
-        {
-            //errs() << contechStateFile->rdstate() << "\t" << contechStateFile->fail() << "\n";
-            //errs() << ContechStateFilename.c_str() << "\n";
-        }
-
-        // for unknown reasons, a file that does not exist needs to clear all bits and not
-        // just eof for writing
-        icontechStateFile->close();
-        delete icontechStateFile;
-
-        for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
-            int status;
-            const char* fmn = F->getName().data();
-            char* fn = abi::__cxa_demangle(fmn, 0, 0, &status);
-            bool inMain = false;
-
-            // If status is 0, then we demangled the name
-            if (status != 0)
+            if (StructType *STy = dyn_cast<StructType>(*itG))
             {
-                // fmn is original name string
+                unsigned ElementIdx = aConst->getZExtValue();
+                const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+                baseOffset += SL->getElementOffset(ElementIdx);
             }
             else
             {
-                fmn = fn;
+                baseOffset += aConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
             }
+        }
+        else
+        {
+            // Reset to 0 if there is a variable offset
+            baseOffset = 0;
+        }
 
-            // Replace Main with a different main, if Contech is inserting the runtime
-            //   and associated instrumentation
-            if (__ctStrCmp(fmn, "main\0") == 0)
+        // TODO: if the value is a constant global, then it matters
+        addrComponents.push_back(gepI);
+    }
+
+    for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+    {
+        GetElementPtrInst* gepAddrT = NULL;
+        // If the search has reached the current memory operation, then no match exists
+        if (memI == dyn_cast<Instruction>(&*it)) break;
+
+        if (LoadInst *li = dyn_cast<LoadInst>(&*it))
+        {
+            Value* addrT = li->getPointerOperand();
+
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+        }
+        else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
+        {
+            Value* addrT = si->getPointerOperand();
+
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+        }
+
+        if (gepAddrT == NULL) continue;
+        if (gepAddrT == gepAddr)
+        {
+            *offset = 0;
+            return &*it;
+        }
+
+        unsigned int i = 0;
+        bool constMode = false, finConst = false, isMatch = true;
+        if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
+        tOffset = 0;
+        for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
+        {
+            Value* gepI = itG.getOperand();
+
+            // If the index of GEP is a Constant, then it can vary between mem ops
+            if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
             {
-                // Only rename main if this is not the marker front end
-                if (ContechMarkFrontend == false)
+                if (i == addrComponents.size())
                 {
-                    // This invalidates F->getName(), ie possibly fmn is invalid
-                    //F->setName(Twine("ct_orig_main"));
-                    inMain = true;
-                }
-            }
-            // Add other functions that Contech should not instrument here
-            // NB Main is checked above and is special cased
-            else if (classifyFunctionName(fmn) != NONE)
-            {
-                errs() << "SKIP: " << fmn << "\n";
-                if (fmn == fn)
-                {
-                    free(fn);
-                }
-                continue;
-            }
-            // If this function is one Contech adds when instrumenting for OpenMP
-            // then it can be skipped
-            else if (contechAddedFunctions.find(&*F) != contechAddedFunctions.end())
-            {
-                errs() << "SKIP: " << fmn << "\n";
-                if (fmn == fn)
-                {
-                    free(fn);
-                }
-                continue;
-            }
-
-            if (F->size() == 0)
-            {
-                if (fmn == fn)
-                {
-                    free(fn);
-                }
-                continue;
-            }
-            errs() << fmn << "\n";
-
-            // "Normalize" every basic block to have only one function call in it
-            for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
-                BasicBlock &pB = *B;
-                CallInst *ci;
-                int status = 0;
-
-                if (internalSplitOnCall(pB, &ci, &status) == false)
-                {
-                    B++;
-                    #ifdef SPLIT_DEBUG
-                    if (ci != NULL)
-                        errs() << status << "\t" << *ci << "\n";
-                    #endif
-                }
-                else {
-
-                }
-            }
-            
-            bool changed = false;
-            do {
-                changed = false;
-                for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B)
-                {
-                    if (attemptTailDuplicate(&*B))
+                    finConst = true;
+                    // Last field was not a constant, but that can be alright
+                    if (constMode == false)
                     {
-                        changed = true;
-                        break;
+                        
                     }
                 }
-            } while (changed);
+                ConstantInt* aConst = NULL;
+                if (finConst == true ||
+                    (aConst = dyn_cast<ConstantInt>(addrComponents[i])))
+                {
+                    if (!finConst &&
+                        aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
+                    isMatch = true;
+                    
+                    //
+                    // GetElementPtr supports computing a constant offset; however, it requires
+                    //   all fields to be constant.  The code is reproduced here, in order to compute
+                    //   a partial constant offset along with the delta from the other GEP inst.
+                    //
+                    if (StructType *STy = dyn_cast<StructType>(*itG))
+                    {
+                        unsigned ElementIdx = gConst->getZExtValue();
+                        const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+                        tOffset += SL->getElementOffset(ElementIdx);
+                        continue;
+                    }
 
-            // Now instrument each basic block in the function
-            for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) {
-                BasicBlock &pB = *B;
-                internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn);
-                bb_count++;
+                    tOffset += gConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
+
+                    continue;
+                }
+                else
+                {
+                    isMatch = false;
+                    break;
+                }
+            }
+            else if (constMode == true)
+            {
+                // Only can handle cases where a varying constant is at the end of the calculation
+                //   or has non-varying constants around it.
+                isMatch = false;
+                break;
             }
 
-            
+            // temp offset remains 0 until a final sequence of constant int offsets
+            tOffset = 0;
+            if (i >= addrComponents.size() || 
+                gepI != addrComponents[i])
+            {
+                isMatch = false;
+                break;
+            }
+        }
 
-            // If fmn is fn, then it was allocated by the demangle routine and we are required to free
+        if (isMatch ||
+            (i == addrComponents.size() && (gepAddrT->getNumIndices() != gepAddr->getNumIndices())))
+        {
+            //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
+            *offset = baseOffset - tOffset;
+            return &*it;
+        }
+    }
+
+    return NULL;
+}
+
+//
+// Go through the module to get the basic blocks
+//
+bool Contech::runOnModule(Module &M)
+{
+    unsigned int bb_count = 0;
+    int length = 0;
+    char* buffer = NULL;
+    doInitialization(M);
+
+    ifstream* icontechStateFile = new ifstream(ContechStateFilename.c_str(), ios_base::in | ios_base::binary);
+    if (icontechStateFile != NULL && icontechStateFile->good())
+    {
+        icontechStateFile->seekg(0, icontechStateFile->end);
+        length = icontechStateFile->tellg();
+        icontechStateFile->seekg(0, icontechStateFile->beg);
+        buffer = new char[length];
+        icontechStateFile->read(buffer, length);
+        bb_count = *(unsigned int*)buffer;
+    }
+    else
+    {
+        //errs() << contechStateFile->rdstate() << "\t" << contechStateFile->fail() << "\n";
+        //errs() << ContechStateFilename.c_str() << "\n";
+    }
+
+    // for unknown reasons, a file that does not exist needs to clear all bits and not
+    // just eof for writing
+    icontechStateFile->close();
+    delete icontechStateFile;
+
+    for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
+        int status;
+        const char* fmn = F->getName().data();
+        char* fn = abi::__cxa_demangle(fmn, 0, 0, &status);
+        bool inMain = false;
+
+        // If status is 0, then we demangled the name
+        if (status != 0)
+        {
+            // fmn is original name string
+        }
+        else
+        {
+            fmn = fn;
+        }
+
+        // Replace Main with a different main, if Contech is inserting the runtime
+        //   and associated instrumentation
+        if (__ctStrCmp(fmn, "main\0") == 0)
+        {
+            // Only rename main if this is not the marker front end
+            if (ContechMarkFrontend == false)
+            {
+                // This invalidates F->getName(), ie possibly fmn is invalid
+                //F->setName(Twine("ct_orig_main"));
+                inMain = true;
+            }
+        }
+        // Add other functions that Contech should not instrument here
+        // NB Main is checked above and is special cased
+        else if (classifyFunctionName(fmn) != NONE)
+        {
+            errs() << "SKIP: " << fmn << "\n";
             if (fmn == fn)
             {
                 free(fn);
             }
-
-            // Renaming invalidates the current name of the function
-            if (inMain == true)
+            continue;
+        }
+        // If this function is one Contech adds when instrumenting for OpenMP
+        // then it can be skipped
+        else if (contechAddedFunctions.find(&*F) != contechAddedFunctions.end())
+        {
+            errs() << "SKIP: " << fmn << "\n";
+            if (fmn == fn)
             {
-                F->setName(Twine("ct_orig_main"));
+                free(fn);
             }
+            continue;
         }
 
-        if (ContechMarkFrontend == true) goto cleanup;
+        if (F->size() == 0)
+        {
+            if (fmn == fn)
+            {
+                free(fn);
+            }
+            continue;
+        }
+        errs() << fmn << "\n";
+
+        // "Normalize" every basic block to have only one function call in it
+        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
+            BasicBlock &pB = *B;
+            CallInst *ci;
+            int status = 0;
+
+            if (internalSplitOnCall(pB, &ci, &status) == false)
+            {
+                B++;
+                #ifdef SPLIT_DEBUG
+                if (ci != NULL)
+                    errs() << status << "\t" << *ci << "\n";
+                #endif
+            }
+            else {
+
+            }
+        }
+        
+        bool changed = false;
+        do {
+            changed = false;
+            for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B)
+            {
+                if (attemptTailDuplicate(&*B))
+                {
+                    changed = true;
+                    break;
+                }
+            }
+        } while (changed);
+        
+        // static analysis
+        Function* pF = &*F;
+        
+        // the loop information
+        LoopInfo* LI = &getAnalysis<LoopInfoWrapperPass>(*pF).getLoopInfo();
+        
+        // state of loop exits
+        map<int, Loop*> loopExits;
+        collectLoopExits(pF, loopExits, LI);
+        
+        // state of loop and basic block
+        map<int, Loop*> loopBelong;
+        collectLoopBelong(pF, loopBelong, LI);
+        
+        // whether is a loop entry
+        unordered_map<Loop*, int> loopEntry{ collectLoopEntry(pF, LI) };
+
+        map<int, llvm_inst_block> costPerBlock;
+        int num_checks = 0;
+        int origin_checks = 0;
+        // Now instrument each basic block in the function
+        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) 
+        {
+            BasicBlock &pB = *B;
+            internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, 
+                                    costPerBlock, num_checks, origin_checks);
+            bb_count++;
+        }
+
+        // run the check analysis
+        BufferCheckAnalysis bufferCheckAnalysis{
+            costPerBlock,
+            loopExits,
+            loopBelong,
+            loopEntry,
+            1024
+        };
+        
+        // run analysis
+        bufferCheckAnalysis.runAnalysis(pF);
+        // see the analysis result
+        map<int, bool> needCheckAtBlock{ bufferCheckAnalysis.getNeedCheckAtBlock() };
+        
+        hash<BasicBlock*> blockHash{};
+        
+        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) 
+        {
+            int bb_val = blockHash(&*B);
+            auto isReq = needCheckAtBlock.find(bb_val);
+            if (isReq->second == false) {continue;}
+            
+            auto lib = costPerBlock.find(bb_val);
+            if (lib == costPerBlock.end())
+            {
+                errs() << "Failed to look up known block in cost table.\n" << *B;
+                assert("Missing Block" && 0);
+            }
+            
+            // HACK!  Skip blocks that are the pre elides.
+            //if(lib->second.preElide == true) {continue;}
+            assert(lib->second.preElide == false);
+            
+            Value* sbbc = lib->second.posValue;
+            Value* argsCheck[] = {sbbc};
+            Instruction* iPt = lib->second.insertPoint;
+            
+            debugLog("checkBufferFunction@" << __LINE__);
+            Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+            MarkInstAsContechInst(callChk);
+            num_checks++;
+        }
+        
+        errs() << F->getName().str() << "," << num_checks 
+               << "," << origin_checks << "\n" ;
+
+        // If fmn is fn, then it was allocated by the demangle routine and we are required to free
+        if (fmn == fn)
+        {
+            free(fn);
+        }
+
+        // Renaming invalidates the current name of the function
+        if (inMain == true)
+        {
+            F->setName(Twine("ct_orig_main"));
+        }
+    }
+
+    if (ContechMarkFrontend == true) goto cleanup;
 
 cleanup:
-        ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
-        //contechStateFile->seekp(0, ios_base::beg);
-        if (buffer == NULL)
-        {
-            // New state file starts with the basic block count
-            contechStateFile->write((char*)&bb_count, sizeof(unsigned int));
-        }
-        else
-        {
-            // Write the existing data back out
-            //   First, put a new basic block count at the start of the existing data
-            *(unsigned int*) buffer = bb_count;
-            contechStateFile->write(buffer, length);
-        }
-        //contechStateFile->seekp(0, ios_base::end);
-
-        if (ContechMarkFrontend == false && ContechMinimal == false)
-        {
-            int wcount = 0;
-            unsigned char evTy = ct_event_basic_block_info;
-            for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
-            {
-                pllvm_mem_op t = bi->second->first_op;
-
-                // Write out basic block info events
-                //   Then runtime can directly pass the events to the event list
-                contechStateFile->write((char*)&evTy, sizeof(unsigned char));
-                contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
-                contechStateFile->write((char*)&bi->second->next_id, sizeof(int32_t));
-                // This is the flags field, which is currently 0 or 1 for containing a call
-                unsigned int flags = ((unsigned int)bi->second->containCall) |
-                                     ((unsigned int)bi->second->containGlobalAccess << 1);
-                contechStateFile->write((char*)&flags, sizeof(unsigned int));
-                contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
-                contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
-                contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
-
-                int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
-                contechStateFile->write((char*)&strLen, sizeof(int));
-                *contechStateFile << bi->second->fnName;
-                //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
-
-                strLen = bi->second->fileNameSize;
-                contechStateFile->write((char*)&strLen, sizeof(int));
-                contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
-
-                strLen = bi->second->callFnName.length();
-                contechStateFile->write((char*)&strLen, sizeof(int));
-                *contechStateFile << bi->second->callFnName;
-
-                // Number of memory operations
-                contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
-
-                while (t != NULL)
-                {
-                    pllvm_mem_op tn = t->next;
-                    char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
-                    memFlags |= (t->isWrite)?0x1:0x0;
-
-                    contechStateFile->write((char*)&memFlags, sizeof(char));
-                    contechStateFile->write((char*)&t->size, sizeof(char));
-                    // Add optional dep mem op info
-                    if (t->isDep )
-                    {
-                        assert((memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP);
-                        contechStateFile->write((char*)&t->depMemOp, sizeof(unsigned short));
-                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
-                    }
-                    delete (t);
-                    t = tn;
-                }
-                wcount++;
-                free(bi->second);
-            }
-        }
-        //errs() << "Wrote: " << wcount << " basic blocks\n";
-        cfgInfoMap.clear();
-        contechStateFile->close();
-        delete contechStateFile;
-
-        errs() << "Tail Dup Count: " << tailCount << "\n";
-        
-        return true;
-    }
-
-    // returns size in bytes
-    unsigned int Contech::getSizeofType(Type* t)
+    ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
+    //contechStateFile->seekp(0, ios_base::beg);
+    if (buffer == NULL)
     {
-        unsigned int r = t->getPrimitiveSizeInBits();
-        if (r > 0) return (r + 7) / 8;  //Round up to the nearest byte
-        else if (t->isPointerTy()) { return cct.pthreadSize;}
-        else if (t->isPtrOrPtrVectorTy()) 
-        { 
-            errs() << *t << " is pointer vector\n";
-            return t->getVectorNumElements() * cct.pthreadSize;
-        }
-        else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
-        else if (t->isArrayTy()) { errs() << *t << " is array\n";}
-        else if (t->isStructTy()) { errs() << *t << " is struct\n";}
+        // New state file starts with the basic block count
+        contechStateFile->write((char*)&bb_count, sizeof(unsigned int));
+    }
+    else
+    {
+        // Write the existing data back out
+        //   First, put a new basic block count at the start of the existing data
+        *(unsigned int*) buffer = bb_count;
+        contechStateFile->write(buffer, length);
+    }
+    //contechStateFile->seekp(0, ios_base::end);
 
-        // DataLayout::getStructLayout(StructType*)->getSizeInBytes()
-        StructType* st = dyn_cast<StructType>(t);
-        if (st == NULL)
+    if (ContechMarkFrontend == false && ContechMinimal == false)
+    {
+        int wcount = 0;
+        unsigned char evTy = ct_event_basic_block_info;
+        for (map<BasicBlock*, llvm_basic_block*>::iterator bi = cfgInfoMap.begin(), bie = cfgInfoMap.end(); bi != bie; ++bi)
         {
-            errs() << "Failed get size - " << *t << "\n";
-            return 0;
-        }
-        auto stLayout = currentDataLayout->getStructLayout(st);
-        if (stLayout == NULL)
-        {
-            errs() << "Failed get size - " << *t << "\n";
-        }
-        else
-        {
-            return stLayout->getSizeInBytes();
-        }
+            pllvm_mem_op t = bi->second->first_op;
 
+            // Write out basic block info events
+            //   Then runtime can directly pass the events to the event list
+            contechStateFile->write((char*)&evTy, sizeof(unsigned char));
+            contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->next_id, sizeof(int32_t));
+            // This is the flags field, which is currently 0 or 1 for containing a call
+            unsigned int flags = ((unsigned int)bi->second->containCall) |
+                                 ((unsigned int)bi->second->containGlobalAccess << 1);
+            contechStateFile->write((char*)&flags, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->lineNum, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->numIROps, sizeof(unsigned int));
+            contechStateFile->write((char*)&bi->second->critPathLen, sizeof(unsigned int));
+
+            int strLen = bi->second->fnName.length();//(bi->second->fnName != NULL)?strlen(bi->second->fnName):0;
+            contechStateFile->write((char*)&strLen, sizeof(int));
+            *contechStateFile << bi->second->fnName;
+            //contechStateFile->write(bi->second->fnName, strLen * sizeof(char));
+
+            strLen = bi->second->fileNameSize;
+            contechStateFile->write((char*)&strLen, sizeof(int));
+            contechStateFile->write(bi->second->fileName, strLen * sizeof(char));
+
+            strLen = bi->second->callFnName.length();
+            contechStateFile->write((char*)&strLen, sizeof(int));
+            *contechStateFile << bi->second->callFnName;
+
+            // Number of memory operations
+            contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
+
+            while (t != NULL)
+            {
+                pllvm_mem_op tn = t->next;
+                char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
+                memFlags |= (t->isWrite)?0x1:0x0;
+
+                contechStateFile->write((char*)&memFlags, sizeof(char));
+                contechStateFile->write((char*)&t->size, sizeof(char));
+                // Add optional dep mem op info
+                if (t->isDep )
+                {
+                    assert((memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP);
+                    contechStateFile->write((char*)&t->depMemOp, sizeof(unsigned short));
+                    contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                }
+                delete (t);
+                t = tn;
+            }
+            wcount++;
+            free(bi->second);
+        }
+    }
+    //errs() << "Wrote: " << wcount << " basic blocks\n";
+    cfgInfoMap.clear();
+    contechStateFile->close();
+    delete contechStateFile;
+
+    errs() << "Tail Dup Count: " << tailCount << "\n";
+    
+    return true;
+}
+
+// returns size in bytes
+unsigned int Contech::getSizeofType(Type* t)
+{
+    unsigned int r = t->getPrimitiveSizeInBits();
+    if (r > 0) return (r + 7) / 8;  //Round up to the nearest byte
+    else if (t->isPointerTy()) { return cct.pthreadSize;}
+    else if (t->isPtrOrPtrVectorTy()) 
+    { 
+        errs() << *t << " is pointer vector\n";
+        return t->getVectorNumElements() * cct.pthreadSize;
+    }
+    else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
+    else if (t->isArrayTy()) { errs() << *t << " is array\n";}
+    else if (t->isStructTy()) { errs() << *t << " is struct\n";}
+
+    // DataLayout::getStructLayout(StructType*)->getSizeInBytes()
+    StructType* st = dyn_cast<StructType>(t);
+    if (st == NULL)
+    {
+        errs() << "Failed get size - " << *t << "\n";
         return 0;
     }
-
-    // base 2 log of a value
-    unsigned int Contech::getSimpleLog(unsigned int i)
+    auto stLayout = currentDataLayout->getStructLayout(st);
+    if (stLayout == NULL)
     {
-        if (i > 128) {return 8;}
-        if (i > 64) { return 7;}
-        if (i > 32) { return 6;}
-        if (i > 16) { return 5;}
-        if (i > 8) { return 4;}
-        if (i > 4) { return 3;}
-        if (i > 2) { return 2;}
-        if (i > 1) { return 1;}
-        return 0;
+        errs() << "Failed get size - " << *t << "\n";
+    }
+    else
+    {
+        return stLayout->getSizeInBytes();
     }
 
-    bool Contech::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
+    return 0;
+}
+
+// base 2 log of a value
+unsigned int Contech::getSimpleLog(unsigned int i)
+{
+    if (i > 128) {return 8;}
+    if (i > 64) { return 7;}
+    if (i > 32) { return 6;}
+    if (i > 16) { return 5;}
+    if (i > 8) { return 4;}
+    if (i > 4) { return 3;}
+    if (i > 2) { return 2;}
+    if (i > 1) { return 1;}
+    return 0;
+}
+
+bool Contech::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
+{
+    *tci = NULL;
+    for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
     {
-        *tci = NULL;
-        for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
+        // As InvokeInst are already terminator instructions, we do not have to find them here
+        if (CallInst *ci = dyn_cast<CallInst>(&*I))
         {
-            // As InvokeInst are already terminator instructions, we do not have to find them here
-            if (CallInst *ci = dyn_cast<CallInst>(&*I))
+            *tci = ci;
+            if (ci->isTerminator()) {*st = 1; return false;}
+            if (ci->doesNotReturn()) {*st = 2; return false;}
+            Function* f = ci->getCalledFunction();
+
+            //
+            // If F == NULL, then f is indirect
+            //   O.w. this function may just be an annotation and can be ignored
+            //
+            if (f != NULL)
             {
-                *tci = ci;
-                if (ci->isTerminator()) {*st = 1; return false;}
-                if (ci->doesNotReturn()) {*st = 2; return false;}
-                Function* f = ci->getCalledFunction();
-
-                //
-                // If F == NULL, then f is indirect
-                //   O.w. this function may just be an annotation and can be ignored
-                //
-                if (f != NULL)
+                const char* fn = f->getName().data();
+                if (0 == __ctStrCmp(fn, "llvm.dbg") ||
+                    0 == __ctStrCmp(fn, "llvm.lifetime"))
                 {
-                    const char* fn = f->getName().data();
-                    if (0 == __ctStrCmp(fn, "llvm.dbg") ||
-                        0 == __ctStrCmp(fn, "llvm.lifetime"))
-                    {
-                        *st = 3;
-                        continue;
-                    }
-
+                    *st = 3;
+                    continue;
                 }
 
-                I++;
+            }
 
-                // At this point, the call instruction returns and was not the last in the block
-                //   If the next instruction is a terminating, unconditional branch then splitting
-                //   is redundant.  (as splits create a terminating, unconditional branch)
-                if (I->isTerminator())
+            I++;
+
+            // At this point, the call instruction returns and was not the last in the block
+            //   If the next instruction is a terminating, unconditional branch then splitting
+            //   is redundant.  (as splits create a terminating, unconditional branch)
+            if (I->isTerminator())
+            {
+                if (BranchInst *bi = dyn_cast<BranchInst>(&*I))
                 {
-                	if (BranchInst *bi = dyn_cast<BranchInst>(&*I))
-                	{
-                        // Contech did not insert this branch, but is should claim it, so the instruction
-                        //   is not later removed.
-                		if (bi->isUnconditional()) {*st = 4; MarkInstAsContechInst(B.getTerminator()); return false;}
-                	}
-                    else if (/* ReturnInst *ri = */ dyn_cast<ReturnInst>(&*I))
-                    {
-                        *st = 5;
-                        return false;
-                    }
+                    // Contech did not insert this branch, but is should claim it, so the instruction
+                    //   is not later removed.
+                    if (bi->isUnconditional()) {*st = 4; MarkInstAsContechInst(B.getTerminator()); return false;}
                 }
-                B.splitBasicBlock(I, "");
-                MarkInstAsContechInst(B.getTerminator());
-                return true;
+                else if (/* ReturnInst *ri = */ dyn_cast<ReturnInst>(&*I))
+                {
+                    *st = 5;
+                    return false;
+                }
+            }
+            B.splitBasicBlock(I, "");
+            MarkInstAsContechInst(B.getTerminator());
+            return true;
+        }
+    }
+
+    return false;
+}
+
+//
+// For each basic block
+//
+bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName, 
+                                      map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check)
+{
+    Instruction* iPt = B.getTerminator();
+    vector<pllvm_mem_op> opsInBlock;
+    unsigned int memOpCount = 0;
+    Instruction* aPhi ;//= convertIterToInst(B.begin());
+    bool getNextI = false;
+    bool containQueueBuf = false;
+    bool hasUninstCall = true; // Any call is uninst
+    bool containKeyCall = false;
+    bool elideBasicBlockId = false;
+    Value* posValue = NULL;
+    Value* basePosValue = NULL;
+    Value* baseBufValue = NULL;
+    unsigned int lineNum = 0, numIROps = B.size();
+    unsigned int fileNameSize = 0;
+    const char* fileName;
+
+    auto abadf = B.begin();
+    aPhi = convertIterToInst(abadf);
+
+    vector<Instruction*> delayedAtomicInsts;
+    map<Instruction*, Value*> dupMemOps;
+    map<Instruction*, int> dupMemOpOff;
+    map<Value*, unsigned short> dupMemOpPos;
+
+
+    //errs() << "BB: " << bbid << "\n";
+    debugLog("Enter BBID: " << bbid);
+
+    if (lineNum == 0)
+    {
+        Instruction* gf = B.getFirstNonPHIOrDbgOrLifetime();
+        lineNum = getLineNum(gf);
+        DILocation* dis = (gf)->getDebugLoc();//.getScope();
+        if (dis != NULL)
+        {
+            fileName = dis->getFilename().str().c_str();
+            fileNameSize = (fileName != NULL)?strlen(fileName):0;
+        }
+        //dyn_cast<DIScope>(dis)->getFilename().str().c_str();
+    }
+    
+    for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
+    {
+        // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
+        //   compare with getFirstInsertionPt
+        if (/*PHINode *pn = */dyn_cast<PHINode>(&*I))
+        {
+            getNextI = true;
+            numIROps --;
+            continue;
+        }
+        else if (/*LandingPadInst *lpi = */dyn_cast<LandingPadInst>(&*I))
+        {
+            getNextI = true;
+            numIROps --;
+            continue;
+        }
+        else if (I->getMetadata(cct.ContechMDID) )
+        {
+            // This instruction was already added by the instrumentation skip!
+            getNextI = true;
+            numIROps --;
+            continue;
+        }
+        else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
+        {
+            int addrOffset = 0;
+            Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
+
+            if (addrSimilar != NULL)
+            {
+                //errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
+                dupMemOps[li] = addrSimilar;
+                dupMemOpOff[li] = addrOffset;
+                dupMemOpPos[addrSimilar] = 0;
+            }
+            else
+            {
+                memOpCount ++;
             }
         }
+        else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
+        {
+            int addrOffset = 0;
+            Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
 
+            if (addrSimilar != NULL)
+            {
+                //errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
+                dupMemOps[si] = addrSimilar;
+                dupMemOpOff[si] = addrOffset;
+                dupMemOpPos[addrSimilar] = 0;
+            }
+            else
+            {
+                memOpCount ++;
+            }
+        }
+        else if (ContechMinimal == true)
+        {
+            if (CallInst* ci = dyn_cast<CallInst>(&*I))
+            {
+                Function *f = ci->getCalledFunction();
+
+                // call is indirect
+                // TODO: add dynamic check on function called
+                if (f == NULL) { continue; }
+
+                int status;
+                const char* fmn = f->getName().data();
+                char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
+                const char* fn = fdn;
+                if (status != 0)
+                {
+                    fn = fmn;
+                }
+
+                CONTECH_FUNCTION_TYPE tID = classifyFunctionName(fn);
+                if (tID == EXIT || // We need to replace exit otherwise the trace is corrupt
+                    tID == SYNC_ACQUIRE ||
+                    tID == SYNC_RELEASE ||
+                    tID == BARRIER_WAIT ||
+                    tID == THREAD_CREATE ||
+                    tID == THREAD_JOIN ||
+                    tID == COND_WAIT ||
+                    tID == COND_SIGNAL)
+                {
+                    containKeyCall = true;
+                }
+
+                if (status == 0)
+                {
+                    free(fdn);
+                }
+            }
+
+        }
+
+        // LLVM won't do insertAfter, so we have to get the instruction after the instruction
+        // to insert before it
+        if (getNextI == true)
+        {
+            aPhi = convertIterToInst(I);
+            getNextI = false;
+        }
+    }
+
+    if (ContechMinimal == true && containKeyCall == false)
+    {
         return false;
     }
 
-    //
-    // For each basic block
-    //
-    bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName)
+    llvm_basic_block* bi = new llvm_basic_block;
+    if (bi == NULL)
     {
-        Instruction* iPt = B.getTerminator();
-        std::vector<pllvm_mem_op> opsInBlock;
-        unsigned int memOpCount = 0;
-        Instruction* aPhi ;//= convertIterToInst(B.begin());
-        bool getNextI = false;
-        bool containQueueBuf = false;
-        bool hasUninstCall = false;
-        bool containKeyCall = false;
-        bool elideBasicBlockId = false;
-        Value* posValue = NULL;
-        Value* basePosValue = NULL;
-        Value* baseBufValue = NULL;
-        unsigned int lineNum = 0, numIROps = B.size();
-        unsigned int fileNameSize = 0;
-        const char* fileName;
+        errs() << "Cannot record CFG in Contech\n";
+        return true;
+    }
+    
+    //
+    // Large blocks cannot have their IDs elided.
+    // TODO: permament value or different approach to checks
+    //
+    if (memOpCount < 160) {
+        elideBasicBlockId = checkAndApplyElideId(&B, bbid, costOfBlock);
+    }
 
-        auto abadf = B.begin();
-        aPhi = convertIterToInst(abadf);
+    bi->id = bbid;
+    bi->next_id = -1;
+    bi->first_op = NULL;
+    bi->containGlobalAccess = false;
+    bi->containAtomic = false;
+    bi->lineNum = lineNum;
+    bi->numIROps = numIROps;
+    bi->fnName.assign(fnName);
+    bi->fileName = fileName;
+    bi->fileNameSize = fileNameSize;
+    //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
+    bi->critPathLen = getCriticalPathLen(B);
 
-        vector<Instruction*> delayedAtomicInsts;
-        map<Instruction*, Value*> dupMemOps;
-        map<Instruction*, int> dupMemOpOff;
-        map<Value*, unsigned short> dupMemOpPos;
+    //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
+    //debugLog("checkBufferFunction @" << __LINE__);
+    //CallInst::Create(checkBufferFunction, "", aPhi);
+    Constant* llvm_bbid;
+    Constant* llvm_nops = NULL;
+    CallInst* sbb;
+    CallInst* sbbc = NULL;
+    unsigned int memOpPos = 0;
 
-        //errs() << "BB: " << bbid << "\n";
-        debugLog("Enter BBID: " << bbid);
+    if (markOnly == true)
+    {
+        llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
+        Value* argsBB[] = {llvm_bbid};
+        debugLog("storeBasicBlockMarkFunction @" << __LINE__);
+        sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
+        MarkInstAsContechInst(sbb);
+    }
+    else
+    {
+        Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
+        MarkInstAsContechInst(bufV);
+        baseBufValue = bufV;
 
-        if (lineNum == 0)
+        Value* argsGBF[] = {baseBufValue};
+        Instruction* bufPos = CallInst::Create(cct.getBufPosFunction, ArrayRef<Value*>(argsGBF,1), "bufPos", aPhi);
+        MarkInstAsContechInst(bufPos);
+        basePosValue = bufPos;
+
+        Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
+        llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
+        Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue, cElide};
+        debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
+        sbb = CallInst::Create(cct.storeBasicBlockFunction,
+                               ArrayRef<Value*>(argsBB, 4),
+                               string("storeBlock") + to_string(bbid),
+                               aPhi);
+        MarkInstAsContechInst(sbb);
+
+        sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
+        posValue = sbb;
+
+        // TSC_IN_BB - an optional research feature that adds a timestamp to every basic block
+        //   Including the timestamp slows overall execution and is at such a fine granularity
+        //   that many measurements can be meaningless.
+//#define TSC_IN_BB
+#ifdef TSC_IN_BB
+        Instruction* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
+        MarkInstAsContechInst(stTick);
+
+        //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
+        pllvm_mem_op tMemOp = new llvm_mem_op;
+
+        tMemOp->isWrite = true;
+        tMemOp->size = 7;
+        tMemOp->isDep = false;
+        tMemOp->depMemOp = 0;
+        tMemOp->depMemOpDelta = 0;
+
+        Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
+        Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi);
+        Value* argsMO[] = {addrI, cPos, sbb};
+        debugLog("storeMemOpFunction @" << __LINE__);
+        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", aPhi);
+        MarkInstAsContechInst(smo);
+
+        assert(smo != NULL);
+        smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+
+        tMemOp->addr = NULL;
+        tMemOp->next = NULL;
+
+        memOpPos ++;
+        memOpCount++;
+        if (bi->first_op == NULL)
         {
-            Instruction* gf = B.getFirstNonPHIOrDbgOrLifetime();
-            lineNum = getLineNum(gf);
-            DILocation* dis = (gf)->getDebugLoc();//.getScope();
-            if (dis != NULL)
-            {
-                fileName = dis->getFilename().str().c_str();
-                fileNameSize = (fileName != NULL)?strlen(fileName):0;
-            }
-            //dyn_cast<DIScope>(dis)->getFilename().str().c_str();
-        }
-        
-        for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
-        {
-            // TODO: Use BasicBlock->getFirstNonPHIOrDbgOrLifetime as insertion point
-            //   compare with getFirstInsertionPt
-            if (/*PHINode *pn = */dyn_cast<PHINode>(&*I))
-            {
-                getNextI = true;
-                numIROps --;
-                continue;
-            }
-            else if (/*LandingPadInst *lpi = */dyn_cast<LandingPadInst>(&*I))
-            {
-                getNextI = true;
-                numIROps --;
-                continue;
-            }
-            else if (I->getMetadata(cct.ContechMDID) )
-            {
-                // This instruction was already added by the instrumentation skip!
-                getNextI = true;
-                numIROps --;
-                continue;
-            }
-            else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
-            {
-                int addrOffset = 0;
-                Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
-
-                if (addrSimilar != NULL)
-                {
-                    //errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
-                    dupMemOps[li] = addrSimilar;
-                    dupMemOpOff[li] = addrOffset;
-                    dupMemOpPos[addrSimilar] = 0;
-                }
-                else
-                {
-                    memOpCount ++;
-                }
-            }
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
-            {
-                int addrOffset = 0;
-                Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
-
-                if (addrSimilar != NULL)
-                {
-                    //errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
-                    dupMemOps[si] = addrSimilar;
-                    dupMemOpOff[si] = addrOffset;
-                    dupMemOpPos[addrSimilar] = 0;
-                }
-                else
-                {
-                    memOpCount ++;
-                }
-            }
-            else if (ContechMinimal == true)
-            {
-                if (CallInst* ci = dyn_cast<CallInst>(&*I))
-                {
-                    Function *f = ci->getCalledFunction();
-
-                    // call is indirect
-                    // TODO: add dynamic check on function called
-                    if (f == NULL) { continue; }
-
-                    int status;
-                    const char* fmn = f->getName().data();
-                    char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
-                    const char* fn = fdn;
-                    if (status != 0)
-                    {
-                        fn = fmn;
-                    }
-
-                    CONTECH_FUNCTION_TYPE tID = classifyFunctionName(fn);
-                    if (tID == EXIT || // We need to replace exit otherwise the trace is corrupt
-                        tID == SYNC_ACQUIRE ||
-                        tID == SYNC_RELEASE ||
-                        tID == BARRIER_WAIT ||
-                        tID == THREAD_CREATE ||
-                        tID == THREAD_JOIN ||
-                        tID == COND_WAIT ||
-                        tID == COND_SIGNAL)
-                    {
-                        containKeyCall = true;
-                    }
-
-                    if (status == 0)
-                    {
-                        free(fdn);
-                    }
-                }
-
-            }
-
-            // LLVM won't do insertAfter, so we have to get the instruction after the instruction
-            // to insert before it
-            if (getNextI == true)
-            {
-                aPhi = convertIterToInst(I);
-                getNextI = false;
-            }
-        }
-
-        if (ContechMinimal == true && containKeyCall == false)
-        {
-            return false;
-        }
-
-        llvm_basic_block* bi = new llvm_basic_block;
-        if (bi == NULL)
-        {
-            errs() << "Cannot record CFG in Contech\n";
-            return true;
-        }
-        
-        //
-        // Large blocks cannot have their IDs elided.
-        // TODO: permament value or different approach to checks
-        //
-        if (memOpCount < 160)
-            elideBasicBlockId = checkAndApplyElideId(&B, bbid);
-        
-        bi->id = bbid;
-        bi->next_id = -1;
-        bi->first_op = NULL;
-        bi->containGlobalAccess = false;
-        bi->containAtomic = false;
-        bi->lineNum = lineNum;
-        bi->numIROps = numIROps;
-        bi->fnName.assign(fnName);
-        bi->fileName = fileName;
-        bi->fileNameSize = fileNameSize;
-        //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
-        bi->critPathLen = getCriticalPathLen(B);
-
-        //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
-        //debugLog("checkBufferFunction @" << __LINE__);
-        //CallInst::Create(checkBufferFunction, "", aPhi);
-        Constant* llvm_bbid;
-        Constant* llvm_nops = NULL;
-        CallInst* sbb;
-        CallInst* sbbc = NULL;
-        unsigned int memOpPos = 0;
-
-        if (markOnly == true)
-        {
-            llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-            Value* argsBB[] = {llvm_bbid};
-            debugLog("storeBasicBlockMarkFunction @" << __LINE__);
-            sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
-            MarkInstAsContechInst(sbb);
+            bi->first_op = tMemOp;
         }
         else
         {
-            Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
-            MarkInstAsContechInst(bufV);
-            baseBufValue = bufV;
-
-            Value* argsGBF[] = {baseBufValue};
-            Instruction* bufPos = CallInst::Create(cct.getBufPosFunction, ArrayRef<Value*>(argsGBF,1), "bufPos", aPhi);
-            MarkInstAsContechInst(bufPos);
-            basePosValue = bufPos;
-
-            Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
-            llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-            Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue, cElide};
-            debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
-            sbb = CallInst::Create(cct.storeBasicBlockFunction,
-                                   ArrayRef<Value*>(argsBB, 4),
-                                   string("storeBlock") + to_string(bbid),
-                                   aPhi);
-            MarkInstAsContechInst(sbb);
-
-            sbb->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-            posValue = sbb;
-
-            // TSC_IN_BB - an optional research feature that adds a timestamp to every basic block
-            //   Including the timestamp slows overall execution and is at such a fine granularity
-            //   that many measurements can be meaningless.
-//#define TSC_IN_BB
-#ifdef TSC_IN_BB
-            Instruction* stTick = CallInst::Create(cct.getCurrentTickFunction, "tick", aPhi);
-            MarkInstAsContechInst(stTick);
-
-            //pllvm_mem_op tMemOp = insertMemOp(aPhi, stTick, true, memOpPos, posValue);
-            pllvm_mem_op tMemOp = new llvm_mem_op;
-
-            tMemOp->isWrite = true;
-            tMemOp->size = 7;
-            tMemOp->isDep = false;
-            tMemOp->depMemOp = 0;
-            tMemOp->depMemOpDelta = 0;
-
-            Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
-            Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi);
-            Value* argsMO[] = {addrI, cPos, sbb};
-            debugLog("storeMemOpFunction @" << __LINE__);
-            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 3), "", aPhi);
-            MarkInstAsContechInst(smo);
-
-            assert(smo != NULL);
-            smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
-
-            tMemOp->addr = NULL;
-            tMemOp->next = NULL;
-
-            memOpPos ++;
-            memOpCount++;
-            if (bi->first_op == NULL)
+            pllvm_mem_op t = bi->first_op;
+            while (t->next != NULL)
             {
-                bi->first_op = tMemOp;
+                t = t->next;
             }
+            t->next = tMemOp;
+        }
+#endif
+
+        // In LLVM 3.3+, switch to Monotonic and not Acquire
+        Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SingleThread, bufV);
+        MarkInstAsContechInst(fenI);
+    }
+
+
+    bool hasInstAllMemOps = false;
+    for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
+    {
+
+        // After all of the known memOps have been instrumented, close out the basic
+        //   block event based on the number of memOps
+        if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
+        {
+            Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
+            llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
+            Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide};
+            #ifdef TSC_IN_BB
+            if (memOpCount == 1)
+            #else
+            if (memOpCount == 0)
+            #endif
+            {
+                debugLog("storeBasicBlockCompFunction @" << __LINE__);
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", aPhi);
+                MarkInstAsContechInst(sbbc);
+
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
+                MarkInstAsContechInst(fenI);
+                iPt = aPhi;
+            }
+            else
+            {
+                debugLog("storeBasicBlockCompFunction @" << __LINE__);
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", convertIterToInst(I));
+                MarkInstAsContechInst(sbbc);
+
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
+                MarkInstAsContechInst(fenI);
+                iPt = convertIterToInst(I);
+            }
+            sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
+            bi->len = memOpCount + dupMemOps.size();
+            hasInstAllMemOps = true;
+
+            // Handle the delayed atomics now
+            for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
+            {
+                Instruction* atomI = *it;
+                Value* cinst = NULL;
+                if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(atomI))
+                {
+                    cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), atomI);
+                }
+                else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(atomI))
+                {
+                    cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), atomI);
+                }
+                else
+                {
+                    assert(cinst != NULL);
+                }
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", atomI);
+                MarkInstAsContechInst(nGetTick);
+
+                Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
+                 // If sync_acquire returns int, pass it, else pass 0 - success
+                Value* retV = ConstantInt::get(cct.int32Ty, 0);
+                Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
+                Value* cArg[] = {cinst,
+                                 synType,
+                                 retV,
+                                 nGetTick,
+                                 nTicket};
+                debugLog("storeSyncFunction @" << __LINE__);
+                CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
+                                                            "", iPt);
+                MarkInstAsContechInst(nStoreSync);
+            }
+        }
+
+        // If this block is only being marked, then only memops are needed
+        if (markOnly == true)
+        {
+            // Don't bother maintaining a list of memory ops for the basic block
+            //   at this time
+            bi->len = 0;
+            if (LoadInst *li = dyn_cast<LoadInst>(&*I))
+            {
+                debugLog("storeMemReadMarkFunction @" << __LINE__);
+                CallInst::Create(cct.storeMemReadMarkFunction, "", li);
+            }
+            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
+            {
+                debugLog("storeMemWriteMarkFunction @" << __LINE__);
+                CallInst::Create(cct.storeMemWriteMarkFunction, "", si);
+            }
+            if (CallInst *ci = dyn_cast<CallInst>(&*I))
+            {
+                if (ci->doesNotReturn())
+                {
+                    iPt = ci;
+                }
+            }
+            continue;
+        }
+
+        // <result> = load [volatile] <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>][, !invariant.load !<index>]
+        // Load and store are identical except the cIsWrite is set accordingly.
+        //
+        if (LoadInst *li = dyn_cast<LoadInst>(&*I))
+        {
+            pllvm_mem_op tMemOp = NULL;
+
+            if (dupMemOps.find(li) != dupMemOps.end())
+            {
+                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
+                tMemOp->isDep = true;
+                tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
+                tMemOp->depMemOpDelta = dupMemOpOff[li];
+            }
+            else
+            {
+                assert(memOpPos < memOpCount);
+                // Skip globals for testing
+                //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
+                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
+                memOpPos ++;
+            }
+
+            if (tMemOp->isGlobal)
+            {
+                bi->containGlobalAccess = true;
+            }
+
+            unsigned short pos = 0;
+            if (bi->first_op == NULL) bi->first_op = tMemOp;
             else
             {
                 pllvm_mem_op t = bi->first_op;
                 while (t->next != NULL)
                 {
+                    pos++;
                     t = t->next;
                 }
+                if (dupMemOpPos.find(li) != dupMemOpPos.end()) {dupMemOpPos[li] = pos + 1;}
                 t->next = tMemOp;
             }
-#endif
-
-            // In LLVM 3.3+, switch to Monotonic and not Acquire
-            Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SingleThread, bufV);
-            MarkInstAsContechInst(fenI);
         }
-
-
-        bool hasInstAllMemOps = false;
-        for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
+        //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
+        else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
         {
+            pllvm_mem_op tMemOp = NULL;
 
-            // After all of the known memOps have been instrumented, close out the basic
-            //   block event based on the number of memOps
-            if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
+            if (dupMemOps.find(si) != dupMemOps.end())
             {
-                Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
-                llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
-                Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide};
-                #ifdef TSC_IN_BB
-                if (memOpCount == 1)
-                #else
-                if (memOpCount == 0)
-                #endif
-                {
-                    debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", aPhi);
-                    MarkInstAsContechInst(sbbc);
-
-                    Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
-                    MarkInstAsContechInst(fenI);
-                    iPt = aPhi;
-                }
-                else
-                {
-                    debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                    sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", convertIterToInst(I));
-                    MarkInstAsContechInst(sbbc);
-
-                    Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
-                    MarkInstAsContechInst(fenI);
-                    iPt = convertIterToInst(I);
-                }
-                sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-                bi->len = memOpCount + dupMemOps.size();
-                hasInstAllMemOps = true;
-
-                // Handle the delayed atomics now
-                for (auto it = delayedAtomicInsts.begin(), et = delayedAtomicInsts.end(); it != et; ++it)
-                {
-                    Instruction* atomI = *it;
-                    Value* cinst = NULL;
-                    if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(atomI))
-                    {
-                        cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), atomI);
-                    }
-                    else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(atomI))
-                    {
-                        cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), atomI);
-                    }
-                    else
-                    {
-                        assert(cinst != NULL);
-                    }
-                    debugLog("getCurrentTickFunction @" << __LINE__);
-                    CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", atomI);
-                    MarkInstAsContechInst(nGetTick);
-
-                    Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
-                     // If sync_acquire returns int, pass it, else pass 0 - success
-                    Value* retV = ConstantInt::get(cct.int32Ty, 0);
-                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
-                    Value* cArg[] = {cinst,
-                                     synType,
-                                     retV,
-                                     nGetTick,
-                                     nTicket};
-                    debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
-                                                                "", iPt);
-                    MarkInstAsContechInst(nStoreSync);
-                }
+                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
+                tMemOp->isDep = true;
+                tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
+                tMemOp->depMemOpDelta = dupMemOpOff[si];
+            }
+            else
+            {
+                assert(memOpPos < memOpCount);
+                // Skip globals for testing
+                //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
+                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
+                memOpPos ++;
             }
 
-            // If this block is only being marked, then only memops are needed
-            if (markOnly == true)
+            if (tMemOp->isGlobal)
             {
-                // Don't bother maintaining a list of memory ops for the basic block
-                //   at this time
-                bi->len = 0;
-                if (LoadInst *li = dyn_cast<LoadInst>(&*I))
-                {
-                    debugLog("storeMemReadMarkFunction @" << __LINE__);
-                    CallInst::Create(cct.storeMemReadMarkFunction, "", li);
-                }
-                else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
-                {
-                    debugLog("storeMemWriteMarkFunction @" << __LINE__);
-                    CallInst::Create(cct.storeMemWriteMarkFunction, "", si);
-                }
-                if (CallInst *ci = dyn_cast<CallInst>(&*I))
-                {
-                    if (ci->doesNotReturn())
-                    {
-                        iPt = ci;
-                    }
-                }
-                continue;
+                bi->containGlobalAccess = true;
             }
 
-            // <result> = load [volatile] <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>][, !invariant.load !<index>]
-            // Load and store are identical except the cIsWrite is set accordingly.
-            //
-            if (LoadInst *li = dyn_cast<LoadInst>(&*I))
+            unsigned short pos = 0;
+            if (bi->first_op == NULL) bi->first_op = tMemOp;
+            else
             {
-                pllvm_mem_op tMemOp = NULL;
-
-                if (dupMemOps.find(li) != dupMemOps.end())
+                pllvm_mem_op t = bi->first_op;
+                while (t->next != NULL)
                 {
-                    tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
-                    tMemOp->isDep = true;
-                    tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
-                    tMemOp->depMemOpDelta = dupMemOpOff[li];
+                    pos ++;
+                    t = t->next;
                 }
-                else
-                {
-                    assert(memOpPos < memOpCount);
-                    // Skip globals for testing
-                    //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
-                    tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
-                    memOpPos ++;
-                }
-
-                if (tMemOp->isGlobal)
-                {
-                    bi->containGlobalAccess = true;
-                }
-
-                unsigned short pos = 0;
-                if (bi->first_op == NULL) bi->first_op = tMemOp;
-                else
-                {
-                    pllvm_mem_op t = bi->first_op;
-                    while (t->next != NULL)
-                    {
-                        pos++;
-                        t = t->next;
-                    }
-                    if (dupMemOpPos.find(li) != dupMemOpPos.end()) {dupMemOpPos[li] = pos + 1;}
-                    t->next = tMemOp;
-                }
-            }
-            //  store [volatile] <ty> <value>, <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>]
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
-            {
-                pllvm_mem_op tMemOp = NULL;
-
-                if (dupMemOps.find(si) != dupMemOps.end())
-                {
-                    tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
-                    tMemOp->isDep = true;
-                    tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
-                    tMemOp->depMemOpDelta = dupMemOpOff[si];
-                }
-                else
-                {
-                    assert(memOpPos < memOpCount);
-                    // Skip globals for testing
-                    //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                    tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
-                    memOpPos ++;
-                }
-
-                if (tMemOp->isGlobal)
-                {
-                    bi->containGlobalAccess = true;
-                }
-
-                unsigned short pos = 0;
-                if (bi->first_op == NULL) bi->first_op = tMemOp;
-                else
-                {
-                    pllvm_mem_op t = bi->first_op;
-                    while (t->next != NULL)
-                    {
-                        pos ++;
-                        t = t->next;
-                    }
-                    if (dupMemOpPos.find(si) != dupMemOpPos.end()) {dupMemOpPos[si] = pos + 1;}
-                    t->next = tMemOp;
-                }
-            }
-            else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(&*I))
-            {
-                bi->containAtomic = true;
-                if (hasInstAllMemOps == true)
-                {
-                    debugLog("getCurrentTickFunction @" << __LINE__);
-                    CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
-                    MarkInstAsContechInst(nGetTick);
-
-                    Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
-                     // If sync_acquire returns int, pass it, else pass 0 - success
-                    Value* retV = ConstantInt::get(cct.int32Ty, 0);
-                    // ++I moves the insertion point to after the xchg inst
-                    Value* cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), convertIterToInst(++I));
-                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
-                    Value* cArg[] = {cinst,
-                                     synType,
-                                     retV,
-                                     nGetTick,
-                                     nTicket};
-                    debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
-                                                        "", convertIterToInst(I)); // Insert after xchg inst
-                    MarkInstAsContechInst(nStoreSync);
-
-                    I = convertInstToIter(nStoreSync);
-                    iPt = nStoreSync;
-                }
-                else
-                {
-                    delayedAtomicInsts.push_back(xchgI);
-                }
-            }
-            else if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(&*I))
-            {
-                bi->containAtomic = true;
-                if (hasInstAllMemOps == true)
-                {
-                    debugLog("getCurrentTickFunction @" << __LINE__);
-                    CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
-                    MarkInstAsContechInst(nGetTick);
-
-                    Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
-                     // If sync_acquire returns int, pass it, else pass 0 - success
-                    Value* retV = ConstantInt::get(cct.int32Ty, 0);
-                    // ++I moves the insertion point to after the armw inst
-                    Value* cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), convertIterToInst(++I));
-                    Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
-                    Value* cArg[] = {cinst,
-                                     synType,
-                                     retV,
-                                     nGetTick,
-                                     nTicket};
-                    debugLog("storeSyncFunction @" << __LINE__);
-                    CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
-                                                        "", convertIterToInst(I)); // Insert after armw inst
-                    MarkInstAsContechInst(nStoreSync);
-
-                    I = convertInstToIter(nStoreSync);
-                    iPt = nStoreSync;
-                }
-                else
-                {
-                    delayedAtomicInsts.push_back(armw);
-                }
-            }
-            else if (CallInst *ci = dyn_cast<CallInst>(&*I))
-            {
-                I = InstrumentFunctionCall<CallInst>(ci,
-                                                     hasUninstCall,
-                                                     containQueueBuf,
-                                                     hasInstAllMemOps,
-                                                     ContechMinimal,
-                                                     I,
-                                                     iPt,
-                                                     bi,
-                                                     &cct,
-                                                     this,
-                                                     M);
-            }
-            else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I))
-            {
-                I = InstrumentFunctionCall<InvokeInst>(ci,
-                                                     hasUninstCall,
-                                                     containQueueBuf,
-                                                     hasInstAllMemOps,
-                                                     ContechMinimal,
-                                                     I,
-                                                     iPt,
-                                                     bi,
-                                                     &cct,
-                                                     this,
-                                                     M);
+                if (dupMemOpPos.find(si) != dupMemOpPos.end()) {dupMemOpPos[si] = pos + 1;}
+                t->next = tMemOp;
             }
         }
+        else if (AtomicCmpXchgInst *xchgI = dyn_cast<AtomicCmpXchgInst>(&*I))
+        {
+            bi->containAtomic = true;
+            if (hasInstAllMemOps == true)
+            {
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
+                MarkInstAsContechInst(nGetTick);
 
-        // There could be multiple call instructions in the block, due to intrinsics and
-        //   debug "calls".  If any are real calls, then the block contains a call.
-        bi->containCall = (bi->containCall)?true:hasUninstCall;
+                Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
+                 // If sync_acquire returns int, pass it, else pass 0 - success
+                Value* retV = ConstantInt::get(cct.int32Ty, 0);
+                // ++I moves the insertion point to after the xchg inst
+                Value* cinst = castSupport(cct.voidPtrTy, xchgI->getPointerOperand(), convertIterToInst(++I));
+                Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
+                Value* cArg[] = {cinst,
+                                 synType,
+                                 retV,
+                                 nGetTick,
+                                 nTicket};
+                debugLog("storeSyncFunction @" << __LINE__);
+                CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
+                                                    "", convertIterToInst(I)); // Insert after xchg inst
+                MarkInstAsContechInst(nStoreSync);
 
+                I = convertInstToIter(nStoreSync);
+                iPt = nStoreSync;
+            }
+            else
+            {
+                delayedAtomicInsts.push_back(xchgI);
+            }
+        }
+        else if (AtomicRMWInst *armw = dyn_cast<AtomicRMWInst>(&*I))
+        {
+            bi->containAtomic = true;
+            if (hasInstAllMemOps == true)
+            {
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(cct.getCurrentTickFunction, "tick", convertIterToInst(I));
+                MarkInstAsContechInst(nGetTick);
+
+                Value* synType = ConstantInt::get(cct.int32Ty, 4); // HACK - user-defined sync type
+                 // If sync_acquire returns int, pass it, else pass 0 - success
+                Value* retV = ConstantInt::get(cct.int32Ty, 0);
+                // ++I moves the insertion point to after the armw inst
+                Value* cinst = castSupport(cct.voidPtrTy, armw->getPointerOperand(), convertIterToInst(++I));
+                Value* nTicket = ConstantInt::get(cct.int64Ty, 0);
+                Value* cArg[] = {cinst,
+                                 synType,
+                                 retV,
+                                 nGetTick,
+                                 nTicket};
+                debugLog("storeSyncFunction @" << __LINE__);
+                CallInst* nStoreSync = CallInst::Create(cct.storeSyncFunction, ArrayRef<Value*>(cArg,5),
+                                                    "", convertIterToInst(I)); // Insert after armw inst
+                MarkInstAsContechInst(nStoreSync);
+
+                I = convertInstToIter(nStoreSync);
+                iPt = nStoreSync;
+            }
+            else
+            {
+                delayedAtomicInsts.push_back(armw);
+            }
+        }
+        else if (CallInst *ci = dyn_cast<CallInst>(&*I))
+        {
+            bool huc = hasUninstCall;
+            I = InstrumentFunctionCall<CallInst>(ci,
+                                                 hasUninstCall,
+                                                 containQueueBuf,
+                                                 hasInstAllMemOps,
+                                                 ContechMinimal,
+                                                 I,
+                                                 iPt,
+                                                 bi,
+                                                 &cct,
+                                                 this,
+                                                 M);
+            if (huc == false) hasUninstCall = false;
+        }
+        else if (InvokeInst *ci = dyn_cast<InvokeInst>(&*I))
+        {
+            bool huc = hasUninstCall;
+            I = InstrumentFunctionCall<InvokeInst>(ci,
+                                                 hasUninstCall,
+                                                 containQueueBuf,
+                                                 hasInstAllMemOps,
+                                                 ContechMinimal,
+                                                 I,
+                                                 iPt,
+                                                 bi,
+                                                 &cct,
+                                                 this,
+                                                 M);
+            if (huc == false) hasUninstCall = false;
+        }
+    }
+
+    // There could be multiple call instructions in the block, due to intrinsics and
+    //   debug "calls".  If any are real calls, then the block contains a call.
+    //   If it has 
+    bi->containCall = (bi->containCall)?true:(!hasUninstCall);
+
+    
+    {
+        hash<BasicBlock*> blockHash{};
+        int bb_val = blockHash(&B);
+        llvm_inst_block lib;
+        lib.cost = memOpCount * 6 + ((elideBasicBlockId == true)? 0 : 3) 
+                             + ((hasUninstCall == false) ? 64 : 0);
+        lib.insertPoint = iPt;
+        lib.posValue = sbbc;
+        lib.hasCheck = false;
+        lib.hasElide = elideBasicBlockId;
+        lib.preElide = false;
+        lib.containQueueCall = containQueueBuf;
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
         {
             // TODO: Function not defined in ct_runtime
             Value* argsCheck[] = {llvm_nops};
             debugLog("checkBufferLargeFunction @" << __LINE__);
+            origin_check++;
+            num_checks++;
+            
             Instruction* callChk = CallInst::Create(cct.checkBufferLargeFunction, ArrayRef<Value*>(argsCheck, 1), "", sbb);
             MarkInstAsContechInst(callChk);
+            
+            lib.hasCheck = true;
         }
-        //
-        // Being conservative, if another function was called, then
-        // the instrumentation needs to check that the buffer isn't full
-        //
-        // Being really conservative every block has a check, this also
-        //   requires disabling the dominator tree traversal in the runOnModule routine
-        //
-        //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
-        else if ((B.getTerminator()->getNumSuccessors() != 1 && markOnly == false) ||
-                 (&B == &(B.getParent()->getEntryBlock())))
-        {
-            // Since calls terminate basic blocks
-            //   These blocks would have only 1 successor
-            Value* argsCheck[] = {sbbc};
-            debugLog("checkBufferFunction @" << __LINE__);
+        costOfBlock[bb_val] = lib;
+    }
+    #if 0
+    //
+    // Being conservative, if another function was called, then
+    // the instrumentation needs to check that the buffer isn't full
+    //
+    // Being really conservative every block has a check, this also
+    //   requires disabling the dominator tree traversal in the runOnModule routine
+    //
+    //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
+    else if ((B.getTerminator()->getNumSuccessors() != 1 && markOnly == false) ||
+             (&B == &(B.getParent()->getEntryBlock())))
+    {
+        // Since calls terminate basic blocks
+        //   These blocks would have only 1 successor
+        Value* argsCheck[] = {sbbc};
+        debugLog("checkBufferFunction @" << __LINE__);
+        
+        // calculate the original check counts
+        origin_check++;
+
+        hash<BasicBlock*> blockHash{};
+        int bb_val = blockHash(&B);
+        // the terminator
+        Instruction* last = &*B.end();
+        if (needCheckAtBlock.find(bb_val) == needCheckAtBlock.end()) {
+          // we do not actually need the check
+          // by the result of analysis
+          if ((&B != &(B.getParent()->getEntryBlock())) &&
+            (B.getTerminator()->getNumSuccessors() != 0) &&
+            loopExits.find(bb_val) == loopExits.end() &&
+            !isa<CallInst>(last)) {
+            // no need to check
+            // we always add checks on 
+            // (1) function entry and exit
+            // (2) loop exit
+          }
+          else {
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
+            num_checks++;
+          }
         }
-
-        // Finally record the information about this basic block
-        //  into the CFG structure, so that targets can be matched up
-        //  once all basic blocks have been parsed
-        cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
-        if (elideBasicBlockId)
-        {
-            
-        }
-
-        debugLog("Return from BBID: " << bbid);
-
-        return true;
+        else {
+          // we need to add check according to the analysis result
+          needCheckAtBlock.erase(bb_val);
+          Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+          MarkInstAsContechInst(callChk);
+          num_checks++;
+         }
     }
+    else {
+        // straight line code
+        // need to see whether we need to add check 
+         Value* argsCheck[] = {sbbc};
+        hash<BasicBlock*> blockHash{};
+        int bb_val = blockHash(&B);
+
+        if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end()) {
+          // straight line code and need check according to analysis
+          Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
+          MarkInstAsContechInst(callChk);
+          num_checks++;
+        }
+
+    }
+    #endif
+
+    // Finally record the information about this basic block
+    //  into the CFG structure, so that targets can be matched up
+    //  once all basic blocks have been parsed
+    cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
+    if (elideBasicBlockId)
+    {
+        
+    }
+
+    debugLog("Return from BBID: " << bbid);
+
+    return true;
+}
 
 // OpenMP is calling ompMicroTask with a void* struct
 //   Create a new routine that is invoked with a different struct that
@@ -2207,6 +2351,102 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
     }
     return false;
 }
+
+// collect the state of whether a block is a loop exits
+// and record the corresponding loop pointer if it is an exit
+void Contech::collectLoopExits(Function* fblock, map<int, Loop*>& loopExits,
+                               LoopInfo* LI)
+{
+    hash<BasicBlock*> blockHash{};
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) 
+    {
+        BasicBlock &bb = *B;
+        int bb_val = blockHash(&bb);
+        // get the loop it belongs to
+        Loop* motherLoop = LI->getLoopFor(&bb);
+        if (motherLoop != nullptr && motherLoop->isLoopExiting(&bb)) 
+        {
+            // the loop exits and is exit
+            loopExits[bb_val] = motherLoop;
+        }
+    }
+
+}
+
+// collect the state information of which loop a basic block belongs to
+void Contech::collectLoopBelong(Function* fblock, map<int, Loop*>& loopBelong,
+                                LoopInfo* LI)
+{
+    hash<BasicBlock*> blockHash{};
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) 
+    {
+        BasicBlock* bb = &*B;
+        Loop* motherLoop = LI->getLoopFor(bb);
+        if (motherLoop != nullptr) 
+        {
+            // the loop exists
+            loopBelong[blockHash(bb)] = motherLoop;
+        }
+    }
+}
+
+// see if a block is an entry to a loop
+Loop* Contech::isLoopEntry(BasicBlock* bb, unordered_set<Loop*>& lps)
+{
+    for (Loop* lp : lps) 
+    {
+        if (bb == (*lp->block_begin())) 
+        {
+            return lp;
+        }
+    }
+
+    return nullptr;
+}
+
+
+// collect the state information of whether a basic block is an entry
+// to the loop
+unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
+                                                    LoopInfo* LI)
+{
+    // first collect all loops inside a function
+    unordered_map<Loop*, int> loopEntry{};
+    hash<BasicBlock*> blockHash{};
+    unordered_set<Loop*> allLoops{};
+    for (Function::iterator bb = fblock->begin(); bb != fblock->end(); ++bb) 
+    {
+        BasicBlock* bptr = &*bb;
+        Loop* motherLoop = LI->getLoopFor(bptr);
+        if (motherLoop != nullptr) 
+        {
+            allLoops.insert(motherLoop);
+        }
+    }
+
+    // then iterate through all blocks to collect information
+    for (Function::iterator B = fblock->begin(); B != fblock->end(); ++B) 
+    {
+        if (B != fblock->end()) 
+        {
+            BasicBlock* bb = &*B;
+            for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
+            {
+                BasicBlock* next_bb = *NB;
+                Loop* entryLoop = isLoopEntry(next_bb, allLoops);
+                if (entryLoop != nullptr) 
+                {
+                    int next_bb_val = blockHash(next_bb);
+                    loopEntry[entryLoop] = next_bb_val;
+                    break;
+                }
+            }
+        }
+    }
+
+    return move(loopEntry);
+  }
+
 
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
