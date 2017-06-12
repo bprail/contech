@@ -575,6 +575,10 @@ namespace llvm {
                 CallInst* nThreadCreate = CallInst::Create(cct->createThreadActualFunction,
                                                            ArrayRef<Value*>(cTcArg, 4), "", ci);
                 MarkInstAsContechInst(nThreadCreate);
+                if (iPt == ci)
+                {
+                    iPt = nThreadCreate;
+                }
                 ci->replaceAllUsesWith(nThreadCreate);
                 ci->eraseFromParent();
                 I = convertInstToIter(nThreadCreate);
