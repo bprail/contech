@@ -41,7 +41,9 @@ namespace llvm{
     {
         unsigned IVUses = IV->getNumUses();
         if (IVUses != 2 && IVUses != 1)
+        {
             return false;
+        }
 
         for (auto *User : IV->users()) 
         {
@@ -50,10 +52,13 @@ namespace llvm{
 
             // User can only have one or two uses.
             if (IncOrCmpUses != 2 && IncOrCmpUses != 1)
+            {
                 return false;
+            }
 
             // Case 1
-            if (IVUses == 1) {
+            if (IVUses == 1) 
+            {
               // The only user must be the loop increment.
               // The loop increment must have two uses.
                 if (IsCompInst || IncOrCmpUses != 2)
@@ -62,17 +67,24 @@ namespace llvm{
 
             // Case 2
             if (IVUses == 2 && IncOrCmpUses != 1)
+            {
                 return false;
+            }
 
             // The users of the IV must be a binary operation or a comparison
-            if (auto *BO = dyn_cast<BinaryOperator>(User)) {
-                if (BO->getOpcode() == Instruction::Add) {
+            if (auto *BO = dyn_cast<BinaryOperator>(User)) 
+            {
+                if (BO->getOpcode() == Instruction::Add) 
+                {
                     // Loop Increment
                     // User of Loop Increment should be either PHI or CMP
                     for (auto *UU : User->users()) {
-                        if (PHINode *PN = dyn_cast<PHINode>(UU)) {
+                        if (PHINode *PN = dyn_cast<PHINode>(UU)) 
+                        {
                             if (PN != IV)
+                            {
                                 return false;
+                            }
                         }
                           // Must be a CMP or an ext (of a value with nsw) then CMP
                         else {
@@ -81,17 +93,28 @@ namespace llvm{
                             // TODO: Allow ZExt too
                             if (BO->hasNoSignedWrap() && UUser && UUser->getNumUses() == 1 &&
                                 isa<SExtInst>(UUser))
+                            {
                                 UUser = dyn_cast<Instruction>(*(UUser->user_begin()));
+                            }
                             if (!isCompareUsedByBranch(UUser))
+                            {
                                 return false;
+                            }
                         }
                     }
-                } else
-                return false;
+                } 
+                else
+                {
+                    return false;
+                }
               // Compare : can only have one use, and must be branch
-            } else if (!IsCompInst)
-            return false;
+            } 
+            else if (!IsCompInst)
+            {
+                return false;
+            }
         }
+        
         return true;
     }
 
@@ -104,38 +127,50 @@ namespace llvm{
       // If StepRecurrence of a SCEVExpr is a constant (c1 * c2, c2 = sizeof(ptr)),
       // Return c1.
         if (!MulSCEV && IV.getType()->isPointerTy())
-            if (const SCEVConstant *IncSCEV = dyn_cast<SCEVConstant>(SCEVExpr)) {
+        {
+            if (const SCEVConstant *IncSCEV = dyn_cast<SCEVConstant>(SCEVExpr)) 
+            {
                 const PointerType *PTy = cast<PointerType>(IV.getType());
                 Type *ElTy = PTy->getElementType();
-                const SCEV *SizeOfExpr =
-                SE->getSizeOfExpr(SE->getEffectiveSCEVType(IV.getType()), ElTy);
-                if (IncSCEV->getValue()->getValue().isNegative()) {
-                    const SCEV *NewSCEV =
-                    SE->getUDivExpr(SE->getNegativeSCEV(SCEVExpr), SizeOfExpr);
+                const SCEV *SizeOfExpr = SE->getSizeOfExpr(SE->getEffectiveSCEVType(IV.getType()), ElTy);
+                
+                if (IncSCEV->getValue()->getValue().isNegative()) 
+                {
+                    const SCEV *NewSCEV = SE->getUDivExpr(SE->getNegativeSCEV(SCEVExpr), SizeOfExpr);
                     return dyn_cast<SCEVConstant>(SE->getNegativeSCEV(NewSCEV));
-                } else {
+                } 
+                else 
+                {
                     return dyn_cast<SCEVConstant>(SE->getUDivExpr(SCEVExpr, SizeOfExpr));
                 }
             }
+        }
 
-            if (!MulSCEV)
+        if (!MulSCEV)
+        {
+            return nullptr;
+        }
+
+      // If StepRecurrence of a SCEVExpr is a c * sizeof(x), where c is constant,
+      // Return c.
+        const SCEVConstant *CIncSCEV = nullptr;
+        for (const SCEV *Operand : MulSCEV->operands()) 
+        {
+            if (const SCEVConstant *Constant = dyn_cast<SCEVConstant>(Operand)) 
+            {
+                CIncSCEV = Constant;
+            } 
+            else if (const SCEVUnknown *Unknown = dyn_cast<SCEVUnknown>(Operand)) 
+            {
+                Type *AllocTy;
+                if (!Unknown->isSizeOf(AllocTy)) break;
+            } 
+            else 
+            {
                 return nullptr;
-
-          // If StepRecurrence of a SCEVExpr is a c * sizeof(x), where c is constant,
-          // Return c.
-            const SCEVConstant *CIncSCEV = nullptr;
-            for (const SCEV *Operand : MulSCEV->operands()) {
-                if (const SCEVConstant *Constant = dyn_cast<SCEVConstant>(Operand)) {
-                    CIncSCEV = Constant;
-                } else if (const SCEVUnknown *Unknown = dyn_cast<SCEVUnknown>(Operand)) {
-                    Type *AllocTy;
-                    if (!Unknown->isSizeOf(AllocTy))
-                        break;
-                } else {
-                    return nullptr;
-                }
             }
-            return CIncSCEV;
+        }
+        return CIncSCEV;
     }
 
     void LoopIV::collectPossibleIVs(Loop *L) 
@@ -149,26 +184,33 @@ namespace llvm{
         {
 
             //errs() << " INST " << *I << "\n";
-            if (!isa<PHINode>(I)) {
+            if (!isa<PHINode>(I)) 
+            {
                 continue;
             }
 
-            if (!I->getType()->isIntegerTy() && !I->getType()->isPointerTy()) {
+            if (!I->getType()->isIntegerTy() && !I->getType()->isPointerTy()) 
+            {
                 //errs() << "IS NOT INTEGEER OR POINTER TYPE\n";
                 continue;
             }
 
             const SCEV *S = SE->getSCEV(&*I);
             const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(S);
-            if (SARE) {
+            if (SARE) 
+            {
                 const Loop *CurLoop = SARE->getLoop();
-                if (CurLoop == L) {
-                    if(SARE->getNumOperands() > 2) {
+                if (CurLoop == L) 
+                {
+                    if(SARE->getNumOperands() > 2) 
+                    {
                         NonLinearIvs.push_back(&*I);
                         //errs() << "\nNON_LINEAR " << *I << " = " << *SARE << "\n\n" ;
                         //errs() << "Num of operands:" << SARE->getNumOperands() << "\n";
-                        for(auto count= SARE->op_begin(); count != SARE->op_end(); count++) {
-                            if(dyn_cast<SCEVConstant>(*count)) {
+                        for(auto count= SARE->op_begin(); count != SARE->op_end(); count++) 
+                        {
+                            if(dyn_cast<SCEVConstant>(*count)) 
+                            {
                                 //errs() << "## " << *dyn_cast<SCEVConstant>(*count) << "\n";
                             }
                         }
@@ -178,32 +220,38 @@ namespace llvm{
             }
 
             //errs() << "SCEV " << *SE->getSCEV(&*I) << "\n";
-            if (const SCEVAddRecExpr *PHISCEV =
-                dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*I))) {
-                if (PHISCEV->getLoop() != L) {
+            if (const SCEVAddRecExpr *PHISCEV = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*I))) 
+            {
+                if (PHISCEV->getLoop() != L) 
+                {
                     //errs() << "GETLOOP NOT EQUAL L\n";
                     continue;
                 }
-                if(PHISCEV->isQuadratic()) {
+                if(PHISCEV->isQuadratic()) 
+                {
                     //errs() << *I << " = " << *PHISCEV << "IS QUADRATIC\n";
                 }
 
-                if (!PHISCEV->isAffine()) {
+                if (!PHISCEV->isAffine()) 
+                {
                     //errs() << "IS NOT AFFINEE\n";
                     continue;
                 }
                 
                 const SCEVConstant *IncSCEV = nullptr;
-                if (I->getType()->isPointerTy()) {
+                if (I->getType()->isPointerTy()) 
+                {
                     IncSCEV = getIncrmentFactorSCEV(SE, PHISCEV->getStepRecurrence(*SE), *I);
                     //errs() << "SCEV isPointerTy " << *I << "\n";
                 }
-                else {
+                else 
+                {
                     IncSCEV = dyn_cast<SCEVConstant>(PHISCEV->getStepRecurrence(*SE));
                     //errs() << "SCEV consant " << *I << "\n";
                 }
 
-                if (IncSCEV) {
+                if (IncSCEV) 
+                {
                     const APInt &AInt = IncSCEV->getValue()->getValue().abs();
                     if (IncSCEV->getValue()->isZero() || AInt.uge(MaxInc))
                         continue;
@@ -211,12 +259,15 @@ namespace llvm{
 
                     //errs() << "LRR: Possible IV: " << *I << " = " << *PHISCEV << "\n";
                     
-                    if (isLoopControlIV(L, &*I)) {
+                    if (isLoopControlIV(L, &*I)) 
+                    {
                           //assert(!LoopControlIV && "Found two loop control only IV");
                           //LoopControlIV = &(*I);
                          //errs() << "LRR: Possible loop control only IV: " << *I << " = "
                           //             << *PHISCEV << "\n";
-                    } else {
+                    } 
+                    else 
+                    {
                       //errs() << "PossibleIVs " << *I << "\n";
                         PossibleIVs.push_back(&*I);
                     }
@@ -229,59 +280,72 @@ namespace llvm{
     {
         DerivedIvs->clear();
         
-        for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) {
+        for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
+        {
             BasicBlock* b = (*bb);
 
-          for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I)
+            for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I)
             {
-                if (!I->getType()->isIntegerTy() && !I->getType()->isPointerTy()) {
+                if (!I->getType()->isIntegerTy() && !I->getType()->isPointerTy()) 
+                {
                     //errs() << "IS NOT INTEGEER OR POINTER TYPE\n";
                     continue;
                 }
                 
-                if(std::find(PossibleIVs.begin(), PossibleIVs.end(), (&*I)) != PossibleIVs.end()) {
+                if(std::find(PossibleIVs.begin(), PossibleIVs.end(), (&*I)) != PossibleIVs.end()) 
+                {
                     continue;
                 }
-                if(std::find(NonLinearIvs.begin(), NonLinearIvs.end(), (&*I)) != NonLinearIvs.end()) {
+                if(std::find(NonLinearIvs.begin(), NonLinearIvs.end(), (&*I)) != NonLinearIvs.end()) 
+                {
                     continue;
                 }
 
-                if (!isa<BinaryOperator>(*I)) {
+                if (!isa<BinaryOperator>(*I)) 
+                {
                     continue;
                 }
 
                 Instruction* temp = cast<Instruction>(&*I);
                 unsigned cnt = 0;
                 bool is_derived = false;
-                for(unsigned i = 0; i < temp->getNumOperands(); i++) {
+                for(unsigned i = 0; i < temp->getNumOperands(); i++) 
+                {
                     Instruction* nl = dyn_cast<Instruction>(&*temp->getOperand(i));
-                    if(isa<Argument>(temp->getOperand(i))) {
+                    if(isa<Argument>(temp->getOperand(i))) 
+                    {
                         break;
                     }
-                    if(isa<Constant>(temp->getOperand(i))) {    //if operand if const
+                    if(isa<Constant>(temp->getOperand(i)))     //if operand if const
+                    {
                         cnt++;
                     }
-                    else if(L->isLoopInvariant(temp->getOperand(i))) {    //or it is loop invariant
+                    else if(L->isLoopInvariant(temp->getOperand(i)))     //or it is loop invariant
+                    {
                         cnt++;
                     }
-                    else if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end()) {    //or it is an IV
+                    else if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end())     //or it is an IV
+                    {
                         cnt++;
                         is_derived = true;
                     }
-                    else if(nl) {
+                    else if(nl != NULL) 
+                    {
                         //if derived from non-linear
-                        if(std::find(IVs.begin(), IVs.end(), nl->getOperand(0)) != IVs.end()) {    //or it is an IV
+                        if(std::find(IVs.begin(), IVs.end(), nl->getOperand(0)) != IVs.end())     //or it is an IV
+                        {
                             cnt++;
                             is_derived = true;
                         }
-                        else if(std::find(IVs.begin(), IVs.end(), nl->getOperand(1)) != IVs.end()) {    //or it is an IV
+                        else if(std::find(IVs.begin(), IVs.end(), nl->getOperand(1)) != IVs.end())     //or it is an IV
+                        {
                             cnt++;
                             is_derived = true;
                         }
 
                     }
                 }
-                if(is_derived && cnt == temp->getNumOperands()) {
+                if (is_derived && cnt == temp->getNumOperands()) {
                     DerivedIvs->push_back(&*I);
                     //get SCEV
                 }
@@ -293,59 +357,76 @@ namespace llvm{
     {
         int cnt_elided = 0;
 
-        if (gepAddr != NULL) {
-            for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) {
+        if (gepAddr != NULL) 
+        {
+            for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
+            {
                 Value* gepI = itG.getOperand();
                 Instruction* temp = cast<Instruction>(gepI);
                 if (dyn_cast<ConstantInt>(gepI)) 
                 {
                     continue;
                 }
-                else {
-                    if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) {
+                else 
+                {
+                    if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                    {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
                         cnt_elided++;
                     }
                     //traverse the operands
-                    else if(!isa <Argument>(gepI)){ //isa<CastInst>(gepI)
+                    else if(!isa <Argument>(gepI)) //isa<CastInst>(gepI)
+                    {
                         Value* gepI = temp->getOperand(0);
-                        if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) {
+                        if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                        {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
                             cnt_elided++;
                         }
 
-                        else if(!isa <Argument>(gepI)) { //any other operation involving IV and COnst or LI Inst
+                        else if(!isa <Argument>(gepI))  //any other operation involving IV and COnst or LI Inst
+                        {
                             Instruction* temp = dyn_cast<Instruction>(gepI);
                             bool is_safe = true, is_found = false;
-                            if(!temp) {
+                            if (temp == NULL) 
+                            {
                                 continue;
                             }
+                            
                             int op = 0;
-                            if(temp->getNumOperands() == 2) {
-                                for(unsigned i = 0; i < temp->getNumOperands(); i++)
+                            if (temp->getNumOperands() == 2) 
+                            {
+                                for (unsigned i = 0; i < temp->getNumOperands(); i++)
                                 {    //assuming 2 operands in 3 add inst
-                                    if(temp->getOperand(i) == temp->getOperand(1-i)) {
+                                    if(temp->getOperand(i) == temp->getOperand(1-i)) 
+                                    {
                                         is_safe = false;
                                     }
                                     
-                                    if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end()) {
+                                    if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end()) 
+                                    {
                                         is_found = true;
                                         op = i;
                                     }
                                 }
                                 
-                                if(is_safe && is_found) {    //check for other operand 
+                                if(is_safe && is_found)     //check for other operand 
+                                {
                                     const SCEVAddRecExpr *S = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*temp->getOperand(1-op)));
-                                    if(S) {
-                                        if(!is_derived) {
+                                    if (S != NULL) 
+                                    {
+                                        if(!is_derived) 
+                                        {
                                             cnt_elided++;
                                             //errs() << "FOUND IT 2 : " << *gepAddr << "\n";
                                         }
                                     }
                                 }
                             }
-                            else if(temp->getNumOperands() == 1) {
-                                if(std::find(IVs.begin(), IVs.end(), temp->getOperand(0)) != IVs.end()) {
+                            else if (temp->getNumOperands() == 1) 
+                            {
+                                if (std::find(IVs.begin(), IVs.end(), temp->getOperand(0)) != IVs.end()) 
+                                {
                                     cnt_elided++;
                                     //errs() << "FOUND IT 3: " << *gepAddr << "\n";
                                 }
@@ -373,11 +454,11 @@ namespace llvm{
           for(LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
           {
             Loop *L = *i;
-            
-            
 
             if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
+            {
                 return false;
+            }
             
             collectPossibleIVs(L);
             collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
@@ -386,33 +467,42 @@ namespace llvm{
             for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
             {
                 BasicBlock* b = (*bb);
-                for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) {
+                for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+                {
                     GetElementPtrInst *gepAddr = NULL;
 
-                    if (LoadInst *li = dyn_cast<LoadInst>(&*I))    {
+                    if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
+                    {
                         gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
                         cnt_GetElementPtrInst++;
                     }
-                    else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) {
+                    else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+                    {
                         gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
                         cnt_GetElementPtrInst++;
                     }
                     else 
+                    {
                         continue;
-                    //errs() << "GetElementPtrInst " << *gepAddr << "\n";
-                    if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) {
+                    }
+                    
+                    if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
+                    {
                         cnt_elided++;
                         LoopMemoryOps.push_back(&*I);
                     }
-                    else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) {
+                    else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
+                    {
                         cnt_elided++;
                         LoopMemoryOps.push_back(&*I);
                     }
-                    else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) {
+                    else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
+                    {
                         cnt_elided++;
                         LoopMemoryOps.push_back(&*I);
                     }
-                    else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) {
+                    else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
+                    {
                         cnt_elided++;
                         LoopMemoryOps.push_back(&*I);
                     }
@@ -457,7 +547,8 @@ namespace llvm{
         return false;
     }
 
-    SmallInstructionVector LoopIV:: getLoopMemoryOps() {
+    SmallInstructionVector LoopIV:: getLoopMemoryOps() 
+    {
         outs() << "cnt_GetElementPtrInst\t" << cnt_GetElementPtrInst << "\n";
         outs() << "cnt_elided\t" << cnt_elided << "\n";
         return LoopMemoryOps;
