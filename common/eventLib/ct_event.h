@@ -155,6 +155,7 @@ namespace contech
             unsigned int lastID;
             unsigned int lastBBID;
             unsigned int lastType;
+            uint64_t lastBBIDPos;
             uint32_t next_basic_block_id;
             
             typedef struct _ct_event_debug
@@ -193,6 +194,8 @@ namespace contech
             {
                 unsigned int len;
                 int32_t next_basic_block_id;
+                int count;
+                uint32_t totalBytes;
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
 
@@ -204,6 +207,7 @@ namespace contech
     
         public:
             EventLib();
+            ~EventLib();
             pct_event createContechEvent(FILE*);
             static void deleteContechEvent(pct_event);
             void displayContechEventDebugInfo();

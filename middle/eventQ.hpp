@@ -30,6 +30,7 @@ namespace contech {
         
         public:
         EventList(FILE*);
+        ~EventList();
         pct_event getNextContechEvent();
         void readyEvents(unsigned int);
         int mpiRank;

@@ -5,14 +5,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-//#if 0
-//#ifndef __cplusplus
-//typedef char bool;
-//#define false 0
-//#define true 1
-//#endif
-//#endif
-
 #define CONTECH_EVENT_VERSION 8
 
 typedef uint64_t ct_tsc_t;
