@@ -83,6 +83,14 @@ EventList::EventList(FILE* f)
     eventQueueCurrent = queuedEvents.begin();
 }
 
+EventList::~EventList()
+{
+    if (el != NULL)
+    {
+        delete el;
+    }
+}
+
 void EventList::rescanMinTicket()
 {
     for (auto it = queuedEvents.begin(), et = queuedEvents.end(); it != et; ++it)
