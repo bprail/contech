@@ -37,6 +37,24 @@ EventLib::EventLib()
     bb_info_table = NULL;
 }
 
+EventLib::~EventLib()
+{
+    if (bb_info_table != NULL) 
+    {
+        uint64_t thresh = sum / 100;
+        for (int i = 0; i < bb_count; i++)
+        {
+            uint64_t prod = bb_info_table[i].count * bb_info_table[i].totalBytes;
+           
+            if (prod > thresh)
+            {
+                printf("%u\t%d\t%u\t%lu\n", i, bb_info_table[i].count, bb_info_table[i].totalBytes, prod);
+            }
+        }
+    }
+    resetEventLib();
+}
+
 /* unpack: unpack packed items from buf, return length */
 // This code is derived from a description in Practice of Programming
 int EventLib::unpack(uint8_t *buf, char const fmt[], ...)
@@ -121,6 +139,7 @@ void EventLib::resetEventLib()
         }
         free(bb_info_table);
     }
+    
     bb_info_table = NULL;
     version = 0;
     sum = 0;
@@ -280,7 +299,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                     fread_check(npe->bb.mem_op_array, sizeof(ct_memory_op), npe->bb.len, fptr);
                 }
                 else
-                {for (int i = 0; i < npe->bb.len; i++)
+                {
+                    for (int i = 0; i < npe->bb.len; i++)
                     {
                         npe->bb.mem_op_array[i].data = 0;
                         
@@ -454,6 +474,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             {
                 bb_info_table[id].mem_op_info = NULL;
             }
+            
+            bb_info_table[id].count = 0;
+            bb_info_table[id].totalBytes = 0;
         }
         break;
         
@@ -652,6 +675,30 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             dumpAndTerminate(fptr);
         }
         break;
+    }
+    
+    // If this is a basic block, then record all of the prior space
+    if (npe->event_type == ct_event_basic_block)
+    {
+        if (lastBBIDPos > 0)
+        {
+            if (bb_info_table[lastBBID].totalBytes == 0)
+            {
+                bb_info_table[lastBBID].totalBytes = startSum - lastBBIDPos;
+            }
+        }
+        if (lastBBID < bb_count)
+        {
+            bb_info_table[lastBBID].count++;
+        }
+        
+        lastBBIDPos = startSum;
+    }
+    else if (npe->event_type == ct_event_delay ||
+             npe->event_type == ct_event_buffer)
+    {
+        // Do not record space across artificial events
+        lastBBIDPos = 0;
     }
     
     lastID = npe->contech_id;
