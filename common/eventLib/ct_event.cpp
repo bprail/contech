@@ -48,7 +48,7 @@ EventLib::~EventLib()
            
             if (prod > thresh)
             {
-                printf("%u\t%d\t%u\t%lu\n", i, bb_info_table[i].count, bb_info_table[i].totalBytes, prod);
+                printf("BBID:%u\t%d\t%u\t%lu\n", i, bb_info_table[i].count, bb_info_table[i].totalBytes, prod);
             }
         }
     }
