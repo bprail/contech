@@ -214,7 +214,19 @@ namespace llvm {
             iPt = ci;
         }
 
-        bi->callFnName.assign(fn);
+        if (0 != __ctStrCmp(fn, "__ct"))
+        {
+            bi->callFnName.assign(fn);
+        }
+        else
+        {
+            if (status == 0)
+            {
+                free(fdn);
+            }
+            return I;
+        }
+        
         CONTECH_FUNCTION_TYPE funTy = ctPass->classifyFunctionName(fn);
         //errs() << funTy << "\n";
         switch(funTy)
@@ -1248,6 +1260,7 @@ namespace llvm {
                 }
             }
         }
+
         if (status == 0)
         {
             free(fdn);

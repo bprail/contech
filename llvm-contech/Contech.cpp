@@ -153,6 +153,7 @@ bool Contech::doInitialization(Module &M)
     FunctionType* funVoidPtrVoidTy;
     FunctionType* funVoidVoidTy;
     FunctionType* funVoidVoidPtrTy;
+    FunctionType* funVoidVoidPtrVoidPtrI32Ty;
     FunctionType* funVoidI8I64VoidPtrTy;
     FunctionType* funVoidI64VoidPtrVoidPtrTy;
     FunctionType* funVoidI8Ty;
@@ -266,7 +267,12 @@ bool Contech::doInitialization(Module &M)
     cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
     cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
     cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
+    cct.writeElideGVEventsFunction =  M.getOrInsertFunction("__ctWriteElideGVEvents", funVoidVoidPtrTy);
 
+    Type* argsSGV[] = {cct.voidPtrTy, cct.voidPtrTy, cct.int32Ty};
+    funVoidVoidPtrVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSGV, 3), false);
+    cct.storeGVEventFunction = M.getOrInsertFunction("__ctStoreGVEvent", funVoidVoidPtrVoidPtrI32Ty);
+    
     Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
     funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
     cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
@@ -390,9 +396,53 @@ unsigned int Contech::getCriticalPathLen(BasicBlock& B)
 }
 
 //
+//  Determine if the global value (Constant*) has already been elided
+//    If it has, return its id
+//    If not, then add it to the elide constant function
+//
+int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
+{
+    assert(NULL != dyn_cast<GlobalValue>(consGV));
+    auto id = elidedGlobalValues.find(consGV);
+    if (id == elidedGlobalValues.end())
+    {
+        int nextId = lastAssignedElidedGVId + 1;
+        
+        // All Elide GV IDs must fit in 2 bytes.
+        if (nextId > 0xffff) return -1;
+        
+        Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
+        if (f == NULL) return -1;
+        Instruction* iPt;
+        if (f->empty())
+        {
+            BasicBlock* bbEntry = BasicBlock::Create(M.getContext(), "", f, NULL);
+            iPt = ReturnInst::Create(M.getContext(), bbEntry);
+        }
+        else 
+        {
+            iPt = f->getEntryBlock().getFirstNonPHIOrDbgOrLifetime();
+        }
+         
+        Constant* constID = ConstantInt::get(cct.int32Ty, nextId);
+        Function::ArgumentListType& argList = f->getArgumentList();
+        auto it = argList.begin();
+        Instruction* addrI = new BitCastInst(consGV, cct.voidPtrTy, Twine("Cast as void"), iPt);
+        Value* gvEventArgs[] = {dyn_cast<Value>(it), addrI, constID};
+        CallInst* ci = CallInst::Create(cct.storeGVEventFunction, ArrayRef<Value*>(gvEventArgs, 3), "", iPt);
+        
+        lastAssignedElidedGVId = nextId;
+        elidedGlobalValues[consGV] = nextId;
+        return nextId;
+    }
+    
+    return id->second;
+}
+
+//
 //  Wrapper call that appropriately adds the operations to record the memory operation
 //
-pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide)
+pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide, Module &M)
 {
     pllvm_mem_op tMemOp = new llvm_mem_op;
 
@@ -410,12 +460,50 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
     {
         tMemOp->isGlobal = true;
+        tMemOp->addr = addr;
         //errs() << "Is global - " << *addr << "\n";
-        //return tMemOp; // HACK!
+        
+        int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+        if (elideGVId != -1)
+        {
+            tMemOp->isDep = true;
+            tMemOp->depMemOp = elideGVId;
+            tMemOp->depMemOpDelta = 0;
+        }
+        
+        return tMemOp;
     }
     else
     {
-        tMemOp->isGlobal = false;
+        GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+        if (gepAddr != NULL &&
+            NULL != dyn_cast<GlobalValue>(gepAddr->getPointerOperand()) &&
+            gepAddr->hasAllConstantIndices())
+        {
+            tMemOp->isGlobal = true;
+            tMemOp->addr = gepAddr->getPointerOperand();
+            
+            APInt* constOffset = new APInt(64, 0, true);
+            gepAddr->accumulateConstantOffset(*currentDataLayout, *constOffset);
+            if (!constOffset->isSignedIntN(32)) return tMemOp;
+            int64_t offset = constOffset->getSExtValue();
+            errs() << offset << "\n";
+            int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+            if (elideGVId != -1)
+            {
+                tMemOp->isDep = true;
+                tMemOp->depMemOp = elideGVId;
+                tMemOp->depMemOpDelta = offset;
+            }
+        
+            delete constOffset;
+        
+            return tMemOp;
+        }
+        else
+        {
+            tMemOp->isGlobal = false;
+        }
         //errs() << "Is not global - " << *addr << "\n";
     }
 
@@ -1012,7 +1100,8 @@ bool Contech::runOnModule(Module &M)
         }
         // Add other functions that Contech should not instrument here
         // NB Main is checked above and is special cased
-        else if (classifyFunctionName(fmn) != NONE)
+        else if (classifyFunctionName(fmn) != NONE ||
+                 __ctStrCmp(fmn, "__ct") == 0)
         {
             errs() << "SKIP: " << fmn << "\n";
             if (fmn == fn)
@@ -1224,14 +1313,18 @@ cleanup:
                 pllvm_mem_op tn = t->next;
                 char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
                 memFlags |= (t->isWrite)?0x1:0x0;
+                if (t->isDep)
+                {
+                    memFlags |= (t->isGlobal)?BBI_FLAG_MEM_GV:0x0;
+                }
 
                 contechStateFile->write((char*)&memFlags, sizeof(char));
                 contechStateFile->write((char*)&t->size, sizeof(char));
                 // Add optional dep mem op info
-                if (t->isDep )
+                if (t->isDep)
                 {
                     assert((memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP);
-                    contechStateFile->write((char*)&t->depMemOp, sizeof(unsigned short));
+                    contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
                     contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
                 }
                 delete (t);
@@ -1365,7 +1458,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 {
     Instruction* iPt = B.getTerminator();
     vector<pllvm_mem_op> opsInBlock;
-    unsigned int memOpCount = 0;
+    unsigned int memOpCount = 0, memOpGVElide = 0;
     Instruction* aPhi ;//= convertIterToInst(B.begin());
     bool getNextI = false;
     bool containQueueBuf = false;
@@ -1673,7 +1766,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 iPt = convertIterToInst(I);
             }
             sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-            bi->len = memOpCount + dupMemOps.size();
+            bi->len = memOpCount + dupMemOps.size() + memOpGVElide;
             hasInstAllMemOps = true;
 
             // Handle the delayed atomics now
@@ -1748,7 +1841,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(li) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
+                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[li];
@@ -1756,10 +1849,16 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             else
             {
                 assert(memOpPos < memOpCount);
-                // Skip globals for testing
-                //if (NULL != dyn_cast<GlobalValue>(li->getPointerOperand())) {memOpCount--;continue;}
-                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId);
-                memOpPos ++;
+                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
+                if (tMemOp->isGlobal && tMemOp->isDep)
+                {
+                    memOpCount--;
+                    memOpGVElide++;
+                }
+                else
+                {
+                    memOpPos ++;
+                }
             }
 
             if (tMemOp->isGlobal)
@@ -1788,7 +1887,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(si) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
+                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[si];
@@ -1798,8 +1897,16 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 assert(memOpPos < memOpCount);
                 // Skip globals for testing
                 //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId);
-                memOpPos ++;
+                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
+                if (tMemOp->isGlobal && tMemOp->isDep)
+                {
+                    memOpCount--;
+                    memOpGVElide++;
+                }
+                else
+                {
+                    memOpPos ++;
+                }
             }
 
             if (tMemOp->isGlobal)
