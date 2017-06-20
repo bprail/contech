@@ -268,6 +268,17 @@ bool Contech::doInitialization(Module &M)
     cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
     cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
     cct.writeElideGVEventsFunction =  M.getOrInsertFunction("__ctWriteElideGVEvents", funVoidVoidPtrTy);
+    
+    Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
+    if (f != NULL) 
+    {
+        Instruction* iPt;
+        if (f->empty())
+        {
+            BasicBlock* bbEntry = BasicBlock::Create(M.getContext(), "", f, NULL);
+            iPt = ReturnInst::Create(M.getContext(), bbEntry);
+        }
+    }
 
     Type* argsSGV[] = {cct.voidPtrTy, cct.voidPtrTy, cct.int32Ty};
     funVoidVoidPtrVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSGV, 3), false);
@@ -450,6 +461,9 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     tMemOp->next = NULL;
     tMemOp->isWrite = isWrite;
     tMemOp->isDep = false;
+    tMemOp->isGlobal = false;
+    tMemOp->depMemOp = 0;
+    tMemOp->depMemOpDelta = 0;
     tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
 
     if (tMemOp->size > 4)
@@ -457,21 +471,26 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         errs() << "MemOp of size: " << tMemOp->size << "\n";
     }
 
-    if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr))
+    if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr) &&
+        NULL == dyn_cast<GetElementPtrInst>(addr))
     {
         tMemOp->isGlobal = true;
         tMemOp->addr = addr;
         //errs() << "Is global - " << *addr << "\n";
         
-        int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
-        if (elideGVId != -1)
+        if (li != NULL)
         {
-            tMemOp->isDep = true;
-            tMemOp->depMemOp = elideGVId;
-            tMemOp->depMemOpDelta = 0;
+            int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+            if (elideGVId != -1)
+            {
+                tMemOp->isDep = true;
+                tMemOp->depMemOp = elideGVId;
+                tMemOp->depMemOpDelta = 0;
+                return tMemOp;
+            }
         }
         
-        return tMemOp;
+        // Fall through to instrumentation
     }
     else
     {
@@ -481,24 +500,27 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             gepAddr->hasAllConstantIndices())
         {
             tMemOp->isGlobal = true;
-            tMemOp->addr = gepAddr->getPointerOperand();
-            
-            APInt* constOffset = new APInt(64, 0, true);
-            gepAddr->accumulateConstantOffset(*currentDataLayout, *constOffset);
-            if (!constOffset->isSignedIntN(32)) return tMemOp;
-            int64_t offset = constOffset->getSExtValue();
-            errs() << offset << "\n";
-            int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
-            if (elideGVId != -1)
+            if (li != NULL)
             {
-                tMemOp->isDep = true;
-                tMemOp->depMemOp = elideGVId;
-                tMemOp->depMemOpDelta = offset;
+                tMemOp->addr = gepAddr->getPointerOperand();
+                
+                APInt* constOffset = new APInt(64, 0, true);
+                gepAddr->accumulateConstantOffset(*currentDataLayout, *constOffset);
+                if (!constOffset->isSignedIntN(32)) return tMemOp;
+                int64_t offset = constOffset->getSExtValue();
+                errs() << offset << "\n";
+                int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+                delete constOffset;
+                
+                if (elideGVId != -1)
+                {
+                    tMemOp->isDep = true;
+                    tMemOp->depMemOp = elideGVId;
+                    tMemOp->depMemOpDelta = offset;
+                
+                    return tMemOp;
+                }
             }
-        
-            delete constOffset;
-        
-            return tMemOp;
         }
         else
         {
@@ -1327,6 +1349,7 @@ cleanup:
                     contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
                     contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
                 }
+                
                 delete (t);
                 t = tn;
             }
@@ -1845,6 +1868,12 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[li];
+                
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
+                    tMemOp->isGlobal = false;
+                }
             }
             else
             {
@@ -1891,6 +1920,12 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[si];
+                
+                if (tMemOp->isGlobal)
+                {
+                    bi->containGlobalAccess = true;
+                    tMemOp->isGlobal = false;
+                }
             }
             else
             {
