@@ -342,7 +342,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             uint32_t gvid = bb_info_table[id].mem_op_info[i].constGVAddrId;
                             if (gvid >= maxConstGVId)
                             {
-                                fprintf(stderr, "ERROR: Request for GV ID greater than max\n", gvid, maxConstGVId);
+                                fprintf(stderr, "ERROR: Request for GV ID %d greater than max %d\n", gvid, maxConstGVId);
                                 dumpAndTerminate(fptr);
                             }
                             npe->bb.mem_op_array[i].addr = (constGVAddr[gvid]) + offset;
