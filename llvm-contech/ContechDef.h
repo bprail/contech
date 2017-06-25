@@ -131,6 +131,8 @@ namespace llvm {
         Constant* checkBufferLargeFunction;
         Constant* getBufPosFunction;
         Constant* getBufFunction;
+        Constant* writeElideGVEventsFunction;
+        Constant* storeGVEventFunction;
 
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
@@ -183,8 +185,11 @@ namespace llvm {
 
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
+        int lastAssignedElidedGVId;
+        std::map<Constant*, uint16_t> elidedGlobalValues;
 
         Contech() : ModulePass(ID) {
+            lastAssignedElidedGVId = -1;
         }
 
         virtual bool doInitialization(Module &M);
@@ -194,8 +199,9 @@ namespace llvm {
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
         bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid, std::map<int, llvm_inst_block>& costOfBlock);
+        int assignIdToGlobalElide(Constant*, Module&);
         bool attemptTailDuplicate(BasicBlock* bbTail);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide);
+        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide, Module&);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);

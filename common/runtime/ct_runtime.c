@@ -720,6 +720,14 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     #endif
 }
 
+void __ctStoreGVEvent(FILE* serialFile, void* addr, int id)
+{
+    ct_event_id ty = ct_event_gv_info;
+    fwrite(&ty, sizeof(ty), 1, serialFile);
+    fwrite(&id, sizeof(id), 1, serialFile);
+    fwrite(&addr, sizeof(addr), 1, serialFile);
+}
+
 void __ctStoreSync(void* addr, int syncType, int success, ct_tsc_t start_t, uint64_t ordNum)
 {
     #ifdef __NULL_CHECK
