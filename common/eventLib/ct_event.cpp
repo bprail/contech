@@ -345,7 +345,27 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                 fprintf(stderr, "ERROR: Request for GV ID %d greater than max %d\n", gvid, maxConstGVId);
                                 dumpAndTerminate(fptr);
                             }
+                            
                             npe->bb.mem_op_array[i].addr = (constGVAddr[gvid]) + offset;
+                            
+                            /*
+                             * The following code verified the global value elide addresses are computed
+                             *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
+                             */
+                             /*ct_memory_op tmo;
+                             tmo.data = 0;
+                             fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                            fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                            
+                            
+                            
+                            if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                            {
+                                fprintf(stderr, "%d.%d\n", id, i);
+                                fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                fprintf(stderr, "[%d] + %d -> %p\n", gvid, bb_info_table[id].mem_op_info[i].baseOffset, constGVAddr[gvid]);
+                                assert(0);
+                            }*/
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
