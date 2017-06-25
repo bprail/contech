@@ -1886,8 +1886,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                   memOpCount--;
-                   memOpGVElide++;
+                    memOpCount--;
+                    memOpGVElide++;
                 }
                 else
                 {
@@ -1940,8 +1940,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                   memOpCount--;
-                   memOpGVElide++;
+                    memOpCount--;
+                    memOpGVElide++;
                 }
                 else
                 {
