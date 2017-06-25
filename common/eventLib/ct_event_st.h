@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define CONTECH_EVENT_VERSION 8
+#define CONTECH_EVENT_VERSION 9
 
 typedef uint64_t ct_tsc_t;
 typedef uint64_t ct_addr_t;
@@ -41,6 +41,7 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_mpi_transfer,
     ct_event_mpi_wait,
     ct_event_roi,
+    ct_event_gv_info,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
 
@@ -56,5 +57,6 @@ typedef enum _ct_sync_type ct_sync_type;
 
 #define BBI_FLAG_CONTAIN_CALL 0x1
 #define BBI_FLAG_MEM_DUP 0x2
+#define BBI_FLAG_MEM_GV 0x4
 
 #endif
