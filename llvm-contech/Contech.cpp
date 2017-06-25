@@ -413,7 +413,8 @@ unsigned int Contech::getCriticalPathLen(BasicBlock& B)
 //
 int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
 {
-    assert(NULL != dyn_cast<GlobalValue>(consGV));
+    GlobalValue* gv = dyn_cast<GlobalValue>(consGV);
+    assert(NULL != gv);
     auto id = elidedGlobalValues.find(consGV);
     if (id == elidedGlobalValues.end())
     {
@@ -421,6 +422,10 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
         
         // All Elide GV IDs must fit in 2 bytes.
         if (nextId > 0xffff) return -1;
+        
+        // Thread locals are not really global.  Their assembly is equivalent, but
+        //   the fs: (or other approach) generates the unique address
+        if (gv->isThreadLocal()) return -1;
         
         Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
         if (f == NULL) return -1;
@@ -1881,8 +1886,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                    memOpCount--;
-                    memOpGVElide++;
+                   memOpCount--;
+                   memOpGVElide++;
                 }
                 else
                 {
@@ -1935,8 +1940,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                    memOpCount--;
-                    memOpGVElide++;
+                   memOpCount--;
+                   memOpGVElide++;
                 }
                 else
                 {
