@@ -4,7 +4,7 @@ OBJECTS = main.o
 #TEST_PROJECT = lockAnalysis_test
 #TEST_OBJECTS = ct_event_mock.o LockAnalysis.o lockAnalysis_test.o 
 CPPFLAGS  = -O3 -g --std=c++11
-LIBS = -lct_event -L../../common/eventLib/ -L../../common/taskLib/ -lTask -lz
+LIBS = -lct_event -L../../common/eventLib/ -L../../common/taskLib/ -lTask -lz -Wl,-rpath=../../common/taskLib/
 
 all: $(PROJECT)
 

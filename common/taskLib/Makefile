@@ -1,4 +1,4 @@
-PROJECT = libTask.a
+PROJECT = libTask.so
 OBJECTS = TaskGraph.o TaskGraphInfo.o Task.o Action.o ct_file.o Backend.o
 CC = gcc
 CFLAGS = -O3 -g -Wall -pthread -fPIC
@@ -9,7 +9,8 @@ HEADERS = Task.h
 all: $(PROJECT)
 
 $(PROJECT): $(OBJECTS)
-	ar rc $(PROJECT) $(OBJECTS)
+	#ar rc $(PROJECT) $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -shared -o $(PROJECT) -lz $(OBJECTS)
 
 objects: $(OBJECTS)
 

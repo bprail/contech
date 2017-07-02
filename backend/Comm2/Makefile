@@ -4,7 +4,7 @@ CFLAGS= -g -O3
 CXXFLAGS= -g -std=c++11 -O3
 OBJECTS= comm.o commFileIO.o
 INCLUDES=
-LIBS= -L../../common/taskLib/ -lTask -L../CommTracker -lCommTracker -lz
+LIBS= -L../../common/taskLib/ -lTask -L../CommTracker -lCommTracker -lz -Wl,-rpath=../../common/taskLib/
 EXTERNALS=
 
 all: taskLib comm 
