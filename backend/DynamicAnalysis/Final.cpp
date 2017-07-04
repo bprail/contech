@@ -1,5 +1,8 @@
 #include "DynamicAnalysis.h"
 
+using namespace llvm;
+using namespace SplayTree;
+
 /* An alternative to optimize calculateSpan could be merging the
  AvailableCyclesTree and FullOccupancyCyclesTree and doing and
  ca inorder/ postoder travesal */

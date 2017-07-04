@@ -224,10 +224,7 @@ enum {
 #define SANDY_BRIDGE 0
 #define ATOM 1
 
-using namespace llvm;
 using namespace std;
-using namespace SplayTree;
-using namespace SplayTreeBoolean;
 using namespace SimpleSplayTree;
 using namespace ComplexSplayTree;
 
@@ -413,7 +410,7 @@ private:
     uint64_t LastLoadIssueCycle;
     uint64_t LastStoreIssueCycle;
     
-    vector< Tree<uint64_t> * > AvailableCyclesTree;
+    vector< SplayTree::Tree<uint64_t> * > AvailableCyclesTree;
     ACT ACTFinal;
     
     vector< TBV> FullOccupancyCyclesTree; 
@@ -424,11 +421,11 @@ private:
     uint64_t MaxDispatchToLoadBufferQueueTree;
     vector<ComplexTree<uint64_t> *> PointersToRemove;
     
-    map <Value*, uint64_t> InstructionValueIssueCycleMap;
-    map <Value*, uint64_t> InstructionValueUseCycleMap;
+    map <llvm::Value*, uint64_t> InstructionValueIssueCycleMap;
+    map <llvm::Value*, uint64_t> InstructionValueUseCycleMap;
     map <uint64_t , CacheLineInfo> CacheLineIssueCycleMap;
     map <uint64_t , uint64_t> MemoryAddressIssueCycleMap;
-    Tree<uint64_t> * ReuseTree;
+    SplayTree::Tree<uint64_t> * ReuseTree;
     
     map<int,int> ReuseDistanceDistribution;
     
@@ -488,15 +485,15 @@ public:
                     int LineFillBufferSize,
                     bool ReportOnlyPerformance);
 
-    uint64_t analyzeInstruction (Instruction &I, uint64_t addr);
+    uint64_t analyzeInstruction (llvm::Instruction &I, uint64_t addr);
     
-    void insertInstructionValueIssueCycle(Value* v,uint64_t InstructionIssueCycle, bool isPHINode = 0 );
+    void insertInstructionValueIssueCycle(llvm::Value* v,uint64_t InstructionIssueCycle, bool isPHINode = 0 );
     void insertCacheLineLastAccess(uint64_t v,uint64_t LastAccess );
     void insertCacheLineInfo(uint64_t v,CacheLineInfo Info );
     void insertMemoryAddressIssueCycle(uint64_t v,uint64_t Cycle );
     
     
-    uint64_t getInstructionValueIssueCycle(Value* v);
+    uint64_t getInstructionValueIssueCycle(llvm::Value* v);
     uint64_t getCacheLineLastAccess(uint64_t v);
     CacheLineInfo getCacheLineInfo(uint64_t v);
     uint64_t getMemoryAddressIssueCycle(uint64_t v);
@@ -525,7 +522,7 @@ public:
     bool IsEmptyLevelFinal(unsigned ExecutionResource, uint64_t Level);
 
     unsigned CalculateResourceStallSpan(int resource, int stall);
-    void CalculateResourceStallOverlapCycles(Tree<uint64_t> * n, int resource, uint64_t & OverlapCycles);
+    void CalculateResourceStallOverlapCycles(SplayTree::Tree<uint64_t> * n, int resource, uint64_t & OverlapCycles);
     
     uint64_t FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Level);
 
@@ -596,12 +593,12 @@ public:
     //void dumpDepth();
     void printHeaderStat(string Header);
     
-    int getInstructionType(Instruction &I);
-    void processNonPhiNode(Instruction& UseI, map<unsigned, uint64_t>* useDegree);
-    void processPhiNode(Instruction& UseI, map<unsigned, uint64_t>* useDegree);
+    int getInstructionType(llvm::Instruction &I);
+    void processNonPhiNode(llvm::Instruction& UseI, map<unsigned, uint64_t>* useDegree);
+    void processPhiNode(llvm::Instruction& UseI, map<unsigned, uint64_t>* useDegree);
     //void processPhiNode(PHINode& PN, map<unsigned, uint64_t>* useDegree);
     
-    void ComputeAvailableTreeFinalHelper(uint p, Tree<uint64_t>* t, uint d);
+    void ComputeAvailableTreeFinalHelper(uint p, SplayTree::Tree<uint64_t>* t, uint d);
     void ComputeAvailableTreeFinal();
     void DebugACT(uint p);
 

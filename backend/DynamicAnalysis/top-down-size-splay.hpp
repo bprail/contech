@@ -55,7 +55,6 @@
 #include <boost/dynamic_bitset.hpp>
 
 // Needed to use report_fatal_error
-using namespace llvm;
 using namespace boost;
 using namespace std;
 

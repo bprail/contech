@@ -4,7 +4,7 @@
 
 //VCA
 #include "DynamicAnalysis.h"
-
+using namespace llvm;
 
 static cl::opt<bool> PrintVolatile("interpreter-print-volatile", cl::Hidden,
           cl::desc("make the interpreter print every volatile load and store"));

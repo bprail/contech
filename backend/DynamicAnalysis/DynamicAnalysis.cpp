@@ -6,6 +6,9 @@
 
 #include "DynamicAnalysis.h"
 
+using namespace SplayTree;
+using namespace llvm;
+
 //===----------------------------------------------------------------------===//
 //                                General functions for the analysis
 //===----------------------------------------------------------------------===//

@@ -1,5 +1,7 @@
 #include "DynamicAnalysis.h"
 
+using namespace llvm;
+
 #define DEBUG_TYPE "dynamic-analysis"
 
 DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,

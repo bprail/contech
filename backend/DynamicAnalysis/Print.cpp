@@ -1,6 +1,8 @@
 
 #include "DynamicAnalysis.h"
 
+using namespace llvm;
+
 // Main use is to check config
 void
 DynamicAnalysis::PrintMe()
