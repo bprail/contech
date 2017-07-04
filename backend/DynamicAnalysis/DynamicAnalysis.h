@@ -32,7 +32,6 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <iomanip>
-#include <glob.h>
 #include <fstream>
 #include <random>
 
@@ -272,15 +271,6 @@ struct StructMemberLessThanOrEqualThanValuePred
 
   
 class TBV {
-    class TBV_node 
-    {
-        public:
-        TBV_node():BitVector(MAX_RESOURCE_VALUE) 
-        {
-            
-        }
-        vector<bool> BitVector;
-    };
     
     private:
         vector<bool> BitVector;

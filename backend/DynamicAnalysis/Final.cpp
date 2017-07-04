@@ -3,9 +3,8 @@
 /* An alternative to optimize calculateSpan could be merging the
  AvailableCyclesTree and FullOccupancyCyclesTree and doing and
  ca inorder/ postoder travesal */
-uint64_t
-DynamicAnalysis::CalculateSpanFinal(int ResourceType){
-    
+uint64_t DynamicAnalysis::CalculateSpanFinal(int ResourceType)
+{    
     uint64_t Span = 0;
     
     //If there are instructions of this type....
@@ -16,7 +15,7 @@ DynamicAnalysis::CalculateSpanFinal(int ResourceType){
         uint64_t DominantLevel = First;
         uint64_t LastCycle = LastIssueCycleVector[ResourceType];
         
-        Span+= Latency;
+        Span += Latency;
         
         //Start from next level to first non-emtpy level
         for (unsigned i = First + 1; i <= LastCycle; i += 1)
@@ -24,22 +23,23 @@ DynamicAnalysis::CalculateSpanFinal(int ResourceType){
             //Check whether there is instruction scheduled in this cycle!
             if (IsEmptyLevelFinal( ResourceType,i) == false) 
             {
-                if ( DominantLevel+Latency!= 0 && i <= DominantLevel+Latency-1)
+                if ( DominantLevel+Latency != 0 && i <= (DominantLevel + Latency - 1))
                 {
-                    if (i+Latency > DominantLevel+Latency && Latency!=0) 
+                    if (i + Latency > DominantLevel + Latency && Latency != 0) 
                     {
-                        Span+=((i+Latency)-max((DominantLevel+Latency),(uint64_t)1));
+                        Span += ((i+Latency)-max((DominantLevel+Latency),(uint64_t)1));
                         DominantLevel = i;
                     }
                 }
                 else
                 {
-                    Span+=Latency;
+                    Span += Latency;
                     DominantLevel = i;
                 }
             }
         }
     }
+    
     return Span;
 }
 
@@ -126,7 +126,9 @@ DynamicAnalysis::CalculateGroupSpanFinal(vector<int> & ResourcesVector)
                     MaxLatency = ExecutionUnitsLatency[ResourceType];
                 }
                 else
+                {
                     MaxLatency = max(ExecutionUnitsLatency[ResourceType],(unsigned)ceil(AccessWidth/ExecutionUnitsThroughput[ResourceType]));
+                }
             }
             else
             {
@@ -137,7 +139,9 @@ DynamicAnalysis::CalculateGroupSpanFinal(vector<int> & ResourcesVector)
                         MaxLatency = max(MaxLatency,ExecutionUnitsLatency[ResourceType]);
                     }
                     else
+                    {
                         MaxLatency = max(MaxLatency,max(ExecutionUnitsLatency[ResourceType],(unsigned)ceil(AccessWidth/ExecutionUnitsThroughput[ResourceType])));
+                    }
                 }
                 else
                 {
@@ -149,7 +153,9 @@ DynamicAnalysis::CalculateGroupSpanFinal(vector<int> & ResourcesVector)
                             MaxLatency =ExecutionUnitsLatency[ResourceType];
                         }
                         else
+                        {
                             MaxLatency = max(ExecutionUnitsLatency[ResourceType],(unsigned)ceil(AccessWidth/ExecutionUnitsThroughput[ResourceType]));
+                        }
                     }
                 }
             }
@@ -229,9 +235,9 @@ DynamicAnalysis::CalculateGroupSpanFinal(vector<int> & ResourcesVector)
             }
             else
             {
-                if ( i > DominantLevel+MaxLatency-1)
+                if ( i > (DominantLevel + MaxLatency - 1))
                 {
-                    if (NResources==1 && IsGap == false) 
+                    if (NResources == 1 && IsGap == false) 
                     {
                         SpanGaps[ResourceType]++;
                         IsGap = true;
@@ -316,10 +322,14 @@ DynamicAnalysis::CalculateIssueSpanFinal(vector<int> & ResourcesVector)
         if (InstructionsCountExtended[ResourceType]>0) 
         {
             AccessWidth = AccessWidths[ResourceType];
-            if (ExecutionUnitsThroughput[ResourceType]==INF)
+            if (ExecutionUnitsThroughput[ResourceType] == INF)
+            {
                 TmpLatency = 1;
+            }
             else
+            {
                 TmpLatency = ceil(AccessWidth/ExecutionUnitsThroughput[ResourceType]);
+            }
             
             if (EmptyLevel == true) 
             { // This will be only executed the first time of a non-empty level
@@ -331,12 +341,16 @@ DynamicAnalysis::CalculateIssueSpanFinal(vector<int> & ResourcesVector)
             else
             {
                 if (First == FirstNonEmptyLevel[ResourceType])
+                {
                     MaxLatency = max(MaxLatency,TmpLatency);
+                }
                 else
                 {
                     First = min(First,FirstNonEmptyLevel[ResourceType]);
                     if (First == FirstNonEmptyLevel[ResourceType])
+                    {
                         MaxLatency = TmpLatency;
+                    }
                 }
             }
             ResourceLastCycle = LastIssueCycleVector[ResourceType];
@@ -373,10 +387,14 @@ DynamicAnalysis::CalculateIssueSpanFinal(vector<int> & ResourcesVector)
                     if (IsEmptyLevelFinal(ResourceType, i) == false) 
                     {
                         AccessWidth = AccessWidths[ResourceType];
-                        if (ExecutionUnitsThroughput[ResourceType]==INF)
+                        if (ExecutionUnitsThroughput[ResourceType] == INF)
+                        {
                             TmpLatency = 1;
+                        }
                         else
+                        {
                             TmpLatency = ceil(AccessWidth/ExecutionUnitsThroughput[ResourceType]);
+                        }
                         MaxLatencyLevel = max(MaxLatencyLevel, TmpLatency);
                     }
                 }
@@ -389,14 +407,14 @@ DynamicAnalysis::CalculateIssueSpanFinal(vector<int> & ResourcesVector)
                 {
                     if (i+MaxLatencyLevel > DominantLevel+MaxLatency && MaxLatencyLevel!=0) 
                     {                  
-                        Span+=((i+MaxLatencyLevel)-max((DominantLevel+MaxLatency),(unsigned)1));
+                        Span += ((i+MaxLatencyLevel)-max((DominantLevel+MaxLatency),(unsigned)1));
                         DominantLevel = i;
                         MaxLatency = MaxLatencyLevel;
                     }
                 }
                 else
                 {
-                    Span+=MaxLatencyLevel;
+                    Span += MaxLatencyLevel;
                     DominantLevel = i;
                     MaxLatency = MaxLatencyLevel;
                 }
@@ -719,10 +737,14 @@ DynamicAnalysis::finishAnalysis(bool isBnkReqd)
     }
     
     for (unsigned i = 0; i < nCompNodes; i++)
+    {
         compResources.push_back(i);
+    }
     
     for (unsigned i = N_MEM_NODES_START ; i <= N_MEM_NODES_END; i++)
+    {
         memResources.push_back(i);
+    }
     
     for (unsigned j = 0; j < nExecutionUnits + nAGUs + nPorts + nBuffers; j++)
     {

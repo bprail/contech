@@ -288,8 +288,8 @@ DynamicAnalysis::PrintDispatchToLineFillBuffer()
 }
 
 void
-DynamicAnalysis::printHeaderStat(string Header){
-    
+DynamicAnalysis::printHeaderStat(string Header)
+{    
     dbgs() << "//===--------------------------------------------------------------===//\n";
     dbgs() << "//                                         "<<Header <<"                                                                        \n";
     dbgs() << "//===--------------------------------------------------------------===//\n";

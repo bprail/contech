@@ -1,4 +1,3 @@
-
 //
 //                                         The LLVM Compiler Infrastructure
 //
@@ -209,7 +208,9 @@ DynamicAnalysis::getCacheLineLastAccess(uint64_t v)
     //&I
     IssueCycleMapIt = CacheLineIssueCycleMap.find(v);
     if (IssueCycleMapIt != CacheLineIssueCycleMap.end())
+    {
         InstructionLastAccess = IssueCycleMapIt->second.LastAccess;
+    }
     
     return InstructionLastAccess;
 }
@@ -225,7 +226,9 @@ DynamicAnalysis::getMemoryAddressIssueCycle(uint64_t v)
     //&I
     IssueCycleMapIt = MemoryAddressIssueCycleMap.find(v);
     if (IssueCycleMapIt != MemoryAddressIssueCycleMap.end())
+    {
         IssueCycle = IssueCycleMapIt->second;
+    }
     
     return IssueCycle;
 }
@@ -241,13 +244,18 @@ DynamicAnalysis::insertInstructionValueIssueCycle(Value* v,uint64_t InstructionI
     if (IssueCycleMapIt != InstructionValueIssueCycleMap.end())
     {
         if (isPHINode == true)
+        {
             IssueCycleMapIt->second = InstructionIssueCycle;
+        }
         else
+        {
             IssueCycleMapIt->second = max(IssueCycleMapIt->second, InstructionIssueCycle/*+1*/);
+        }
     }
     else //Insert an entry for the instruction.
+    {
         InstructionValueIssueCycleMap[v] = InstructionIssueCycle/*+1*/;
-    
+    }
 }
 
 
@@ -278,10 +286,14 @@ DynamicAnalysis::insertCacheLineLastAccess(uint64_t v,uint64_t LastAccess)
     map <uint64_t, CacheLineInfo>::iterator IssueCycleMapIt;
     //*i
     IssueCycleMapIt = CacheLineIssueCycleMap.find(v);
-    if (IssueCycleMapIt != CacheLineIssueCycleMap.end()){
+    if (IssueCycleMapIt != CacheLineIssueCycleMap.end())
+    {
         IssueCycleMapIt->second.LastAccess = LastAccess;
-    }else//Insert an entry for the instrucion.
+    }
+    else//Insert an entry for the instrucion.
+    {
         CacheLineIssueCycleMap[v].LastAccess = LastAccess;
+    }
 }
 
 
@@ -292,10 +304,14 @@ DynamicAnalysis::insertMemoryAddressIssueCycle(uint64_t v,uint64_t Cycle )
     map <uint64_t, uint64_t>::iterator IssueCycleMapIt;
     //*i
     IssueCycleMapIt = MemoryAddressIssueCycleMap.find(v);
-    if (IssueCycleMapIt != MemoryAddressIssueCycleMap.end()){
+    if (IssueCycleMapIt != MemoryAddressIssueCycleMap.end())
+    {
         IssueCycleMapIt->second = Cycle;
-    }else //Insert an entry for the instrucion.
+    }
+    else //Insert an entry for the instrucion.
+    {
         MemoryAddressIssueCycleMap[v] = Cycle;
+    }
 }
 
 
@@ -582,7 +598,7 @@ DynamicAnalysis::FindNextAvailableIssueCycle(unsigned OriginalCycle, unsigned Ex
             }
             else
             {
-                if (FoundInFullOccupancyCyclesTree ==true) 
+                if (FoundInFullOccupancyCyclesTree == true) 
                 {    
                     while (FoundInFullOccupancyCyclesTree) 
                     {
@@ -618,7 +634,8 @@ DynamicAnalysis::FindNextAvailableIssueCycle(unsigned OriginalCycle, unsigned Ex
         {
             
             // Full is NULL, but check that TreeChunk is not zero. Otherwise, Full is not really NULL
-            if (ExecutionResource <= nExecutionUnits) {
+            if (ExecutionResource <= nExecutionUnits) 
+            {
 #ifdef DEBUG_GENERIC
                 DEBUG(dbgs() << "ExecutionResource <= nExecutionUnits\n");
                 DEBUG(dbgs() << "ExecutionResource "<< ExecutionResource<<"\n");
@@ -874,9 +891,14 @@ DynamicAnalysis::ReuseTreeSearchDelete(uint64_t Original, uint64_t address)
             if (Original < Node->key) 
             {
                 if (Node->right != NULL)
+                {
                     Distance = Distance + Node->right->size;
+                }
+                
                 if (Node->left == NULL)
+                {
                     break;
+                }
                 
                 Distance = Distance + 1/*Node->last_record*/;
                 Node = Node->left;
@@ -886,18 +908,22 @@ DynamicAnalysis::ReuseTreeSearchDelete(uint64_t Original, uint64_t address)
                 if (Original > Node-> key) 
                 {
                     if (Node->right == NULL)
+                    {
                         break;
+                    }
                     Node = Node->right;
                 }
                 else
                 { // Last = Node->key, i.e., Node is the host node
                     if (Node->right != NULL)
+                    {
                         Distance = Distance + Node->right->size;
+                    }
                     
                     //increase by one so that we can calculate directly the hit rate
                     // for a cache size multiple of powers of two.
                     
-                    Distance = Distance+1;
+                    Distance = Distance + 1;
                     
                     if (Node->address == address)
                     {
@@ -1224,7 +1250,9 @@ DynamicAnalysis::GetMinIssueCycleReservationStation()
     
     uint64_t MinIssueCycle = ReservationStationIssueCycles.front();
     for (it = ReservationStationIssueCycles.begin(); it != ReservationStationIssueCycles.end(); ++it)
+    {
         MinIssueCycle = min(MinIssueCycle, *it);
+    }
     
     return MinIssueCycle;
 }
@@ -1266,7 +1294,8 @@ DynamicAnalysis::GetMinCompletionCycleStoreBuffer()
 }
 
 uint64_t
-DynamicAnalysis::GetMinCompletionCycleLineFillBuffer(){
+DynamicAnalysis::GetMinCompletionCycleLineFillBuffer()
+{
     
     vector<uint64_t>::iterator it;
     
@@ -1328,7 +1357,7 @@ DynamicAnalysis::FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Leve
                         {
                             // We don't want the loop to finish.
                             // Splay on key and search for the next one.
-                            AvailableCyclesTree[ExecutionResource]= splay(Node->key,AvailableCyclesTree[ExecutionResource]);
+                            AvailableCyclesTree[ExecutionResource] = splay(Node->key,AvailableCyclesTree[ExecutionResource]);
                             Node = AvailableCyclesTree[ExecutionResource];
                             //Keep searching starting from the next one
                             Original = Node->key+1;
@@ -1358,7 +1387,7 @@ DynamicAnalysis::FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Leve
                         {
                             dbgs() << "Is in available, but not for this resource, so keep searching\n";
                             dbgs() << "Splay tree to "<< Node->key<<"\n";
-                            AvailableCyclesTree[ExecutionResource]= splay(Node->key,AvailableCyclesTree[ExecutionResource]);
+                            AvailableCyclesTree[ExecutionResource] = splay(Node->key,AvailableCyclesTree[ExecutionResource]);
                             Node =    AvailableCyclesTree[ExecutionResource];
                             dbgs() << "Root of the tree "<< Node->key<<"\n";
                             //Keep searching starting from the next one
@@ -1375,11 +1404,11 @@ DynamicAnalysis::FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Leve
                         //Search for a even smaller one
                         
                         // Node = Node-> left;
-                        if (Node->left==NULL) 
+                        if (Node->left == NULL) 
                         {
                             dbgs() << "Node->left is NULL\n";
                             //If, moreover, Node->right ==NULL, then break
-                            if (Node->right==NULL) 
+                            if (Node->right == NULL) 
                             {
                                 dbgs() << "Node->right is NULL\n";
                                 Closest = Node->key;
@@ -1395,7 +1424,7 @@ DynamicAnalysis::FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Leve
                             {
                                 // We don't want the loop to finish.
                                 // Splay on key and search for the next one.
-                                AvailableCyclesTree[ExecutionResource]= splay(Node->key,AvailableCyclesTree[ExecutionResource]);
+                                AvailableCyclesTree[ExecutionResource] = splay(Node->key,AvailableCyclesTree[ExecutionResource]);
                                 Node =    AvailableCyclesTree[ExecutionResource];
                                 //Keep searching starting from the next one
                                 Original = Node->key+1;
@@ -1415,7 +1444,7 @@ DynamicAnalysis::FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Leve
                         // Search for a larger one
                         
                         Node = Node->right;
-                        if (Node->right==NULL) {
+                        if (Node->right == NULL) {
                             IsInAvailableCyclesTree = false;
                         }
                         
@@ -1523,14 +1552,17 @@ void
 DynamicAnalysis::RemoveFromReorderBuffer(uint64_t Cycle)
 {    
     while (!ReorderBufferCompletionCycles.empty() && ReorderBufferCompletionCycles.front() <= Cycle)
+    {
         ReorderBufferCompletionCycles.pop_front();
+    }
 }
 
 void
 DynamicAnalysis::RemoveFromLoadBuffer(uint64_t Cycle)
 {    
     LessThanOrEqualValuePred Predicate = {Cycle};
-    LoadBufferCompletionCycles.erase(std::remove_if(LoadBufferCompletionCycles.begin(), LoadBufferCompletionCycles.end(), Predicate), LoadBufferCompletionCycles.end());
+    LoadBufferCompletionCycles.erase(std::remove_if(LoadBufferCompletionCycles.begin(), LoadBufferCompletionCycles.end(), Predicate), 
+                                     LoadBufferCompletionCycles.end());
 }
 
 void
@@ -1575,7 +1607,8 @@ void
 DynamicAnalysis::RemoveFromStoreBuffer(uint64_t Cycle)
 {   
     LessThanOrEqualValuePred Predicate = {Cycle};
-    StoreBufferCompletionCycles.erase(std::remove_if(StoreBufferCompletionCycles.begin(), StoreBufferCompletionCycles.end(), Predicate), StoreBufferCompletionCycles.end());
+    StoreBufferCompletionCycles.erase(std::remove_if(StoreBufferCompletionCycles.begin(), StoreBufferCompletionCycles.end(), Predicate), 
+                                      StoreBufferCompletionCycles.end());
 }
 
 
@@ -1584,7 +1617,8 @@ void
 DynamicAnalysis::RemoveFromLineFillBuffer(uint64_t Cycle)
 {    
     LessThanOrEqualValuePred Predicate = {Cycle};
-    LineFillBufferCompletionCycles.erase(std::remove_if(LineFillBufferCompletionCycles.begin(), LineFillBufferCompletionCycles.end(), Predicate), LineFillBufferCompletionCycles.end());
+    LineFillBufferCompletionCycles.erase(std::remove_if(LineFillBufferCompletionCycles.begin(), LineFillBufferCompletionCycles.end(), Predicate), 
+                                         LineFillBufferCompletionCycles.end());
 }
 
 
@@ -1593,7 +1627,8 @@ void
 DynamicAnalysis::RemoveFromDispatchToLoadBufferQueue(uint64_t Cycle)
 {    
     StructMemberLessThanOrEqualThanValuePred Predicate = {Cycle};
-    DispatchToLoadBufferQueue.erase(std::remove_if(DispatchToLoadBufferQueue.begin(), DispatchToLoadBufferQueue.end(), Predicate), DispatchToLoadBufferQueue.end());
+    DispatchToLoadBufferQueue.erase(std::remove_if(DispatchToLoadBufferQueue.begin(), DispatchToLoadBufferQueue.end(), Predicate), 
+                                    DispatchToLoadBufferQueue.end());
 }
 
 
@@ -1602,7 +1637,8 @@ void
 DynamicAnalysis::RemoveFromDispatchToStoreBufferQueue(uint64_t Cycle)
 {
     StructMemberLessThanOrEqualThanValuePred Predicate = {Cycle};
-    DispatchToStoreBufferQueue.erase(std::remove_if(DispatchToStoreBufferQueue.begin(), DispatchToStoreBufferQueue.end(), Predicate), DispatchToStoreBufferQueue.end());
+    DispatchToStoreBufferQueue.erase(std::remove_if(DispatchToStoreBufferQueue.begin(), DispatchToStoreBufferQueue.end(), Predicate), 
+                                     DispatchToStoreBufferQueue.end());
 }
 
 
@@ -1620,7 +1656,7 @@ void
 DynamicAnalysis::DispatchToLoadBuffer(uint64_t Cycle)
 {
     vector<InstructionDispatchInfo>::iterator it = DispatchToLoadBufferQueue.begin();
-    for(; it != DispatchToLoadBufferQueue.end();) 
+    for (; it != DispatchToLoadBufferQueue.end();) 
     {
         if ((*it).IssueCycle == InstructionFetchCycle) 
         {
@@ -1629,7 +1665,9 @@ DynamicAnalysis::DispatchToLoadBuffer(uint64_t Cycle)
             it = DispatchToLoadBufferQueue.erase(it);
         }
         else
+        {
             ++it;
+        }
     }
 }
 
@@ -1652,7 +1690,7 @@ void DynamicAnalysis::inOrder(uint64_t i, ComplexTree<uint64_t> * n)
         
         
         DEBUG(dbgs() << "Inserting into LB node with issue cycle " << n->IssueCycle << " and key " << n->key << "\n");
-        LoadBufferCompletionCyclesTree= insert_node(n->key , LoadBufferCompletionCyclesTree);
+        LoadBufferCompletionCyclesTree = insert_node(n->key , LoadBufferCompletionCyclesTree);
         PointersToRemove.push_back(n);
     }
     
@@ -1678,7 +1716,7 @@ void
 DynamicAnalysis::DispatchToStoreBuffer(uint64_t Cycle)
 {
     vector<InstructionDispatchInfo>::iterator it = DispatchToStoreBufferQueue.begin();
-    for(; it != DispatchToStoreBufferQueue.end(); ) 
+    for (; it != DispatchToStoreBufferQueue.end(); ) 
     {
         if ((*it).IssueCycle == InstructionFetchCycle) 
         {
@@ -1686,7 +1724,9 @@ DynamicAnalysis::DispatchToStoreBuffer(uint64_t Cycle)
             it = DispatchToStoreBufferQueue.erase(it);
         }
         else
+        {
             ++it;
+        }
     }
 }
 
@@ -1696,7 +1736,7 @@ void
 DynamicAnalysis::DispatchToLineFillBuffer(uint64_t Cycle)
 {
     vector<InstructionDispatchInfo>::iterator it = DispatchToLineFillBufferQueue.begin();
-    for(; it != DispatchToLineFillBufferQueue.end();) 
+    for (; it != DispatchToLineFillBufferQueue.end();) 
     {    
         if ((*it).IssueCycle == InstructionFetchCycle) 
         {
@@ -1704,7 +1744,9 @@ DynamicAnalysis::DispatchToLineFillBuffer(uint64_t Cycle)
             it = DispatchToLineFillBufferQueue.erase(it);
         }
         else
+        {
             ++it;
+        }
     }
 }
 
@@ -1725,7 +1767,7 @@ DynamicAnalysis::FindIssueCycleWhenLineFillBufferIsFull()
         {
             // Iterate from end-LineFillBufferSize
             uint64_t EarliestCompletion = DispatchToLineFillBufferQueue.back().CompletionCycle;
-            for(vector<InstructionDispatchInfo>::iterator it = DispatchToLineFillBufferQueue.end()-1;
+            for (vector<InstructionDispatchInfo>::iterator it = DispatchToLineFillBufferQueue.end()-1;
                     it >= DispatchToLineFillBufferQueue.end()-LineFillBufferSize; --it)
             {
                 if ((*it).CompletionCycle < EarliestCompletion) 
@@ -1796,7 +1838,7 @@ DynamicAnalysis::FindIssueCycleWhenLoadBufferIsFull()
                 // Initialize with the Completion cycle of the last element of the
                 // DispatchToLoadBufferQueue
                 IssueCycle = DispatchToLoadBufferQueue.back().CompletionCycle;
-                for(vector<InstructionDispatchInfo>::iterator it = DispatchToLoadBufferQueue.begin();
+                for (vector<InstructionDispatchInfo>::iterator it = DispatchToLoadBufferQueue.begin();
                         it != DispatchToLoadBufferQueue.end(); ++it)
                 {
                     if ((*it).CompletionCycle > EarliestDispatchCycle)
@@ -1812,7 +1854,7 @@ DynamicAnalysis::FindIssueCycleWhenLoadBufferIsFull()
                 // the min completion cycle always. If the max completion cycle
                 // is smaller than the EarliestDispatchCycle, then it is not necessary
                 // to iterate over the LB.
-                for(vector<uint64_t>::iterator it = LoadBufferCompletionCycles.begin();
+                for (vector<uint64_t>::iterator it = LoadBufferCompletionCycles.begin();
                         it != LoadBufferCompletionCycles.end(); ++it)
                 {
                     if ((*it) > EarliestDispatchCycle+1)
@@ -2065,11 +2107,12 @@ DynamicAnalysis::FindIssueCycleWhenStoreBufferIsFull()
         if (BufferSize >= (unsigned)StoreBufferSize) 
         {
             uint64_t EarliestCompletion = DispatchToStoreBufferQueue.back().CompletionCycle;
-            for(vector<InstructionDispatchInfo>::iterator it = DispatchToStoreBufferQueue.end()-1;
+            for (vector<InstructionDispatchInfo>::iterator it = DispatchToStoreBufferQueue.end()-1;
                     it >= DispatchToStoreBufferQueue.end()-StoreBufferSize; --it)
             {
-                if ((*it).CompletionCycle < EarliestCompletion) {
-                    EarliestCompletion =(*it).CompletionCycle;
+                if ((*it).CompletionCycle < EarliestCompletion) 
+                {
+                    EarliestCompletion = (*it).CompletionCycle;
                 }
             }
             return EarliestCompletion;
@@ -2132,7 +2175,7 @@ DynamicAnalysis::IncreaseInstructionFetchCycle(bool EmptyBuffers)
         }
         
         
-        for (uint64_t i = CurrentInstructionFetchCycle + 1; i< InstructionFetchCycle; i++) 
+        for (uint64_t i = CurrentInstructionFetchCycle + 1; i < InstructionFetchCycle; i++) 
         {
             TreeChunk = GetTreeChunk(i);
             FullOccupancyCyclesTree[TreeChunk].insert_node(i, RS_STALL);
@@ -2149,7 +2192,7 @@ DynamicAnalysis::IncreaseInstructionFetchCycle(bool EmptyBuffers)
         
         if (InstructionFetchCycle > CurrentInstructionFetchCycle + 1) 
         {
-            FirstNonEmptyLevel[ROB_STALL] = (FirstNonEmptyLevel[ROB_STALL]==0)?CurrentInstructionFetchCycle+1:FirstNonEmptyLevel[ROB_STALL];
+            FirstNonEmptyLevel[ROB_STALL] = (FirstNonEmptyLevel[ROB_STALL]==0)?(CurrentInstructionFetchCycle+1):FirstNonEmptyLevel[ROB_STALL];
         }
         
         for (uint64_t i = CurrentInstructionFetchCycle + 1; i < InstructionFetchCycle; i++) 
@@ -2256,9 +2299,9 @@ DynamicAnalysis::IncreaseInstructionFetchCycle(bool EmptyBuffers)
         
         if (DispatchToStoreBufferQueue.empty() == false) 
         {
-            if (InstructionsCountExtended[SB_STALL]==0)
+            if (InstructionsCountExtended[SB_STALL] == 0)
                 FirstIssue[SB_STALL] = true;
-            if (FirstIssue[SB_STALL]==true) 
+            if (FirstIssue[SB_STALL] == true) 
             {
                 FirstNonEmptyLevel[SB_STALL] = PrevInstructionFetchCycle;
                 FirstIssue[SB_STALL] = false;
@@ -2323,61 +2366,6 @@ DynamicAnalysis::processPhiNode(Instruction& UseI, map<unsigned, uint64_t>* useD
     }
 }
 
-#if 0
-// Conservatively update all possible (i.e., all who eventually use PHI directly) resources' contribution (to histogram)
-void
-DynamicAnalysis::processPhiNode(PHINode& PN, map<unsigned, uint64_t>* useDegree)
-{
-    for (unsigned i = 0; i < PN.getNumIncomingValues(); ++i)
-    {
-        Value* use = PN.getIncomingValue(i);
-        if (Instruction* PhiUse = dyn_cast<Instruction>(use))
-        {
-            if (!dyn_cast<PHINode>(use))
-            {
-                errs() << PN << ":\t" << *PhiUse << "\n";
-                processNonPhiNode(*PhiUse, useDegree);
-            }
-            else
-            {
-                PHINode* UPN = dyn_cast<PHINode>(use);
-                processPhiNode(*UPN, useDegree);
-            }
-        }
-    }
-}
-#endif
-
-#if 0
-void
-getDepth(User& UU, uint64_t* depth)
-{
-    errs() << UU.getName() << "\t" << UU << "\n";
-    uint64_t tmp = 0;
-    for (Value::use_iterator UUI = UU.use_begin(), UUE = UU.use_end(); UUI != UUE; ++UUI)
-    {
-        User *U = *UUI;
-        bool isUUuseOfU = false;
-        for (Value::use_iterator UUJ = U->use_begin(), UUJE = U->use_end(); UUJ != UUJE; ++UUJ)
-        {
-            if ((*UUJ)->getName() == UU.getName())
-            {
-                isUUuseOfU = true;
-                break;
-            }
-            if (*depth != 0 || tmp != 0)
-                errs() << **UUJ << " != " << UU << "\n";
-        }
-        if (!isUUuseOfU)
-        {
-            getDepth(*U, &tmp);
-        }
-    }
-    *depth += tmp;
-    if (*depth != 0)
-       errs() << UU << "\t" << *depth << "\n";
-}
-#endif
 
 
 //===----------------------------------------------------------------------===//
@@ -2396,7 +2384,6 @@ getDepth(User& UU, uint64_t* depth)
 uint64_t
 DynamicAnalysis::analyzeInstruction(Instruction &I, uint64_t addr)
 {
-    int k = 0;
     int Distance = 0;
     int InstructionType = getInstructionType(I);
     uint64_t CacheLine = 0;
@@ -2937,6 +2924,7 @@ DynamicAnalysis::analyzeInstruction(Instruction &I, uint64_t addr)
                     // Make sure it is an LLVM-well-defined funciton
                     if (static_cast<Function*>(F)) 
                     {
+                        int k = 0;
                         for (Function::arg_iterator AI = F->arg_begin(), E = F->arg_end();
                                  AI != E; ++AI, ++k)
                         {

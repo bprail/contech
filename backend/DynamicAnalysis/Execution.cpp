@@ -6,20 +6,18 @@
 #include "llvm/CodeGen/IntrinsicLowering.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Instructions.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Pass.h"
 #include <algorithm>
 #include <cmath>
-#include <map>
 #include <vector>
 #include <deque>
 
 #include "llvm/IR/Module.h"
 #include <cxxabi.h>
+#include <glob.h>
 
 //VCA
 #include "DynamicAnalysis.h"
@@ -325,8 +323,10 @@ bool EnginePass::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
     BasicBlock::iterator IoldAcquire = B.begin();
     CallInst *ciBeforeMultipleRelease = NULL;
     
-    for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I){
-        if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
+    for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
+    {
+        if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+        {
             *tci = ci;
             if (ci->isTerminator()) {*st = 1; return false;}
             if (ci->doesNotReturn()) {*st = 2; return false;}
@@ -348,9 +348,11 @@ bool EnginePass::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
                     0 == __ctStrCmp(fn, "llvm.lifetime") ||
                     0 == __ctStrCmp(fn, "__ct")) 
                 {
-                    if (0 == __ctStrCmp(fn, "__ctStoreBasicBlock")) {
+                    if (0 == __ctStrCmp(fn, "__ctStoreBasicBlock")) 
+                    {
                         ciBeforeMultipleRelease = ci;
-                        if (tmp) {
+                        if (tmp) 
+                        {
 #ifdef PRINT_ALL
                             errs() << "Splitting merged BB at:\n\t" << *Iold << "\n\t"<< *I << "\n";
 #endif
@@ -385,29 +387,40 @@ bool EnginePass::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
             B.splitBasicBlock(I, "");
             return true;
         }
-        if (FenceInst *fi = dyn_cast<FenceInst>(&*I)) {
-            if (fi->getOrdering() == AtomicOrdering::Acquire) {
-                if (!isFirstAcquire) {
+        if (FenceInst *fi = dyn_cast<FenceInst>(&*I)) 
+        {
+            if (fi->getOrdering() == AtomicOrdering::Acquire) 
+            {
+                if (!isFirstAcquire) 
+                {
                     //errs() << "Multiple Fence Acquire\n";
                     tmp = true;
                     Iold = I;
-                } else {
+                } 
+                else 
+                {
                     //errs() << "First Fence Acquire\n";
                     IoldAcquire = I;
                     isFirstAcquire = false;
                 }
-            } else if (fi->getOrdering() == AtomicOrdering::Release) {
-                if (!isFirstRelease) {
+            } 
+            else if (fi->getOrdering() == AtomicOrdering::Release) 
+            {
+                if (!isFirstRelease) 
+                {
                     //errs() << "Multiple Fence Release\n";
                     //assert(IoldAcquire);
                     Iold = IoldAcquire;
-                    if (ciBeforeMultipleRelease != NULL) {
+                    if (ciBeforeMultipleRelease != NULL) 
+                    {
                         *tci = ciBeforeMultipleRelease;
                         //errs() << "Splitting merged BB with optimized acquire at:\n\t" << *Iold << "\n\t" << *ciBeforeMultipleRelease << "\n";
                         B.splitBasicBlock(Iold, "");
                         return true;
                     }
-                } else {
+                } 
+                else 
+                {
                     //errs() << "First Fence Release\n";
                     //IoldAcquire = NULL;
                     isFirstRelease = false;
@@ -426,7 +439,8 @@ bool EnginePass::runOnModule(Module &M)
         // Split basic blocks, as the toolchain may combine basic blocks
         //   that were split for function calls
         // "Normalize" every basic block to have only one function call in it
-        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
+        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) 
+        {
             BasicBlock &pB = *B;
             CallInst *ci;
             int status = 0;
@@ -435,7 +449,8 @@ bool EnginePass::runOnModule(Module &M)
             {
                 B++;
             }
-            else {
+            else 
+            {
                 
             }
         }
@@ -446,7 +461,8 @@ bool EnginePass::runOnModule(Module &M)
             
             for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
             {
-                if (CallInst *ci = dyn_cast<CallInst>(&*I)) {
+                if (CallInst *ci = dyn_cast<CallInst>(&*I)) 
+                {
                     Function *f = ci->getCalledFunction();
                     
                     // call is indirect
@@ -529,9 +545,12 @@ bool EnginePass::runOnModule(Module &M)
         startTaskId = startTaskId.getNext();
         
 #ifndef DEBUG_TASK
-        if (taskId == tg->getROIStart()) {
+        if (taskId == tg->getROIStart()) 
+        {
             inROI = true;
-        } else if (taskId == tg->getROIEnd()) {
+        } 
+        else if (taskId == tg->getROIEnd()) 
+        {
             inROI = false;
         }
        
