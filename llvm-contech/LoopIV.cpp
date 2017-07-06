@@ -449,6 +449,8 @@ namespace llvm{
           cnt_GetElementPtrInst = 0;
           cnt_elided = 0;
 
+          //errs() << F;
+          
           LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
           SE = ctThis->getAnalysisSCEV(F);
           for(LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
@@ -459,52 +461,56 @@ namespace llvm{
             {
                 return false;
             }
-            
-            collectPossibleIVs(L);
-            collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
-            collectDerivedIVs(L, NonLinearIvs, &DerivedNonlinearIvs);
 
-            for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
+            // Iterate on subloops of Loop L
+            // TODO: check if this will still execute on loop L if it contains no sub loops
+            for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
             {
-                BasicBlock* b = (*bb);
-                for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+                collectPossibleIVs((*subL));
+                collectDerivedIVs((*subL), PossibleIVs, &DerivedLinearIvs);
+                collectDerivedIVs((*subL), NonLinearIvs, &DerivedNonlinearIvs);
+                for(Loop::block_iterator bb = (*subL)->block_begin(); bb != (*subL)->block_end(); ++bb) 
                 {
-                    GetElementPtrInst *gepAddr = NULL;
+                    BasicBlock* b = (*bb);
+                    for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+                    {
+                        GetElementPtrInst *gepAddr = NULL;
 
-                    if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
-                    {
-                        gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
-                        cnt_GetElementPtrInst++;
-                    }
-                    else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
-                    {
-                        gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
-                        cnt_GetElementPtrInst++;
-                    }
-                    else 
-                    {
-                        continue;
-                    }
-                    
-                    if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
-                    {
-                        cnt_elided++;
-                        LoopMemoryOps.push_back(&*I);
-                    }
-                    else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
-                    {
-                        cnt_elided++;
-                        LoopMemoryOps.push_back(&*I);
-                    }
-                    else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
-                    {
-                        cnt_elided++;
-                        LoopMemoryOps.push_back(&*I);
-                    }
-                    else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
-                    {
-                        cnt_elided++;
-                        LoopMemoryOps.push_back(&*I);
+                        if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
+                        {
+                            gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
+                            cnt_GetElementPtrInst++;
+                        }
+                        else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+                        {
+                            gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
+                            cnt_GetElementPtrInst++;
+                        }
+                        else 
+                        {
+                            continue;
+                        }
+                        
+                        if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
+                        {
+                            cnt_elided++;
+                            LoopMemoryOps.push_back(&*I);
+                        }
+                        else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
+                        {
+                            cnt_elided++;
+                            LoopMemoryOps.push_back(&*I);
+                        }
+                        else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
+                        {
+                            cnt_elided++;
+                            LoopMemoryOps.push_back(&*I);
+                        }
+                        else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
+                        {
+                            cnt_elided++;
+                            LoopMemoryOps.push_back(&*I);
+                        }
                     }
                 }
             }
