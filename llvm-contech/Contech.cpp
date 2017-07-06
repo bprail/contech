@@ -1179,13 +1179,7 @@ bool Contech::runOnModule(Module &M)
         }
         errs() << fmn << "\n";
         
-        // TODO: Invoke LoopIV here
-        LoopIV* liv = new LoopIV(this);
-        liv->runOnFunction(*F);
-        vector <Instruction*> temp = liv->getLoopMemoryOps();
-        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
-                                      temp.begin(), temp.end());
-        delete liv;
+
 
         // "Normalize" every basic block to have only one function call in it
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
@@ -1218,6 +1212,14 @@ bool Contech::runOnModule(Module &M)
                 }
             }
         } while (changed);
+        
+        // TODO: Invoke LoopIV here
+        LoopIV* liv = new LoopIV(this);
+        liv->runOnFunction(*F);
+        vector <Instruction*> temp = liv->getLoopMemoryOps();
+        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
+                                      temp.begin(), temp.end());
+        delete liv;
         
         // static analysis
         Function* pF = &*F;
