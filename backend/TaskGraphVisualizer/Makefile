@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS= -g -std=c++11 -O3
 OBJECTS= taskViz.o
 INCLUDES= -I.
-LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -lgvc -lcgraph -L../../common/taskLib/ -lTask -L../CommTracker -lCommTracker -lz
+LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -lgvc -lcgraph -L../../common/taskLib/ -lTask -L../CommTracker -lCommTracker -lz -Wl,-rpath=../../common/taskLib/
 EXTERNALS=
 
 all: taskLib taskViz
