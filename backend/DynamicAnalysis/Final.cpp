@@ -662,13 +662,6 @@ DynamicAnalysis::resetAnalysis()
 
     MinLoadBuffer = 0;
     MaxDispatchToLoadBufferQueueTree = 0;
-    unsigned j = 0;
-    for (auto PI = PointersToRemove.begin(), PIe = PointersToRemove.end(); PI != PIe; ++PI, ++j) 
-    {
-        ComplexTree<uint64_t>* tree = PointersToRemove[j];
-        delete_all(tree);
-        PointersToRemove[j] = NULL;
-    }
 
     InstructionValueIssueCycleMap.clear();
     //CacheLineIssueCycleMap.clear(); // Clear => Reuse distance info lost

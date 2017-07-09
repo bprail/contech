@@ -419,10 +419,11 @@ private:
     
     uint64_t MinLoadBuffer;
     uint64_t MaxDispatchToLoadBufferQueueTree;
-    vector<ComplexTree<uint64_t> *> PointersToRemove;
     
+    // the following maps (<value*>) are the most expensive for CPU cycles
     map <llvm::Value*, uint64_t> InstructionValueIssueCycleMap;
     map <llvm::Value*, uint64_t> InstructionValueUseCycleMap;
+    
     map <uint64_t , CacheLineInfo> CacheLineIssueCycleMap;
     map <uint64_t , uint64_t> MemoryAddressIssueCycleMap;
     SplayTree::Tree<uint64_t> * ReuseTree;
@@ -550,7 +551,7 @@ public:
     void RemoveFromDispatchToLineFillBufferQueue(uint64_t Cycle);
     
     ComplexTree<uint64_t> * RemoveFromDispatchAndInsertIntoLoad(uint64_t i, ComplexTree<uint64_t> * t);
-    void inOrder(uint64_t i, ComplexTree<uint64_t> * n);
+    ComplexTree<uint64_t> * inOrder(uint64_t i, ComplexTree<uint64_t> * n);
     
     void DispatchToLoadBuffer(uint64_t Cycle);
     void DispatchToLoadBufferTree(uint64_t Cycle);
@@ -596,7 +597,6 @@ public:
     int getInstructionType(llvm::Instruction &I);
     void processNonPhiNode(llvm::Instruction& UseI, map<unsigned, uint64_t>* useDegree);
     void processPhiNode(llvm::Instruction& UseI, map<unsigned, uint64_t>* useDegree);
-    //void processPhiNode(PHINode& PN, map<unsigned, uint64_t>* useDegree);
     
     void ComputeAvailableTreeFinalHelper(uint p, SplayTree::Tree<uint64_t>* t, uint d);
     void ComputeAvailableTreeFinal();

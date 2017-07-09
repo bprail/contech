@@ -1674,12 +1674,17 @@ DynamicAnalysis::DispatchToLoadBuffer(uint64_t Cycle)
     }
 }
 
-
-void DynamicAnalysis::inOrder(uint64_t i, ComplexTree<uint64_t> * n) 
+//
+// inOrder(i, n)
+//   Perform an inOrder traversal of tree n and remove nodes less than equal to i.
+//   Nodes are added to LoadBufferCompletionCyclesTree
+//
+ComplexTree<uint64_t> * DynamicAnalysis::inOrder(uint64_t i, ComplexTree<uint64_t> * n) 
 {
-    if (n == NULL) return;
+    bool deleteNode = false;
+    if (n == NULL) return NULL;
     
-    inOrder(i,n->left);
+    n->left = inOrder(i,n->left);
     if (n->IssueCycle <= i && n->IssueCycle != 0) 
     {
         if (node_size(LoadBufferCompletionCyclesTree) == 0) 
@@ -1694,24 +1699,22 @@ void DynamicAnalysis::inOrder(uint64_t i, ComplexTree<uint64_t> * n)
         
         DEBUG(dbgs() << "Inserting into LB node with issue cycle " << n->IssueCycle << " and key " << n->key << "\n");
         LoadBufferCompletionCyclesTree = insert_node(n->key , LoadBufferCompletionCyclesTree);
-        PointersToRemove.push_back(n);
+        deleteNode = true;
     }
     
-    inOrder(i,n->right);
+    n->right = inOrder(i,n->right);
+    if (deleteNode)
+    {
+        return delete_node(n->key, n);
+    }
+    return n;
 }
 
 
 void
 DynamicAnalysis::DispatchToLoadBufferTree(uint64_t Cycle)
 {
-    inOrder(Cycle, DispatchToLoadBufferQueueTree);
-    
-    for(size_t i = 0; i< PointersToRemove.size(); ++i)
-    {    
-        DispatchToLoadBufferQueueTree = delete_node(PointersToRemove.at(i)->key, DispatchToLoadBufferQueueTree);   
-    }
-    
-    PointersToRemove.clear();
+    DispatchToLoadBufferQueueTree = inOrder(Cycle, DispatchToLoadBufferQueueTree);
 }
 
 
