@@ -521,8 +521,6 @@ public:
 
     unsigned CalculateResourceStallSpan(int resource, int stall);
     void CalculateResourceStallOverlapCycles(SplayTree::Tree<uint64_t> * n, int resource, uint64_t & OverlapCycles);
-    
-    uint64_t FindNextNonEmptyLevel(unsigned ExecutionResource, uint64_t Level);
 
     unsigned GetExtendedInstructionType(int OpCode, int ReuseDistance=0);
     unsigned GetPositionSourceCodeLineInfoVector(uint64_t Resource);
