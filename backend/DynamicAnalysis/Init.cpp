@@ -42,6 +42,8 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         nAGUs = SANDY_BRIDGE_AGU;
         nNodes = SANDY_BRIDGE_NODES;
         
+        TotalResources = (nExecutionUnits + nAGUs + nPorts + nBuffers);
+        
         // Mapping between nodes and execution units. ExecutionUnit[] vector contains
         // one entry for every type of node, and the associated execution unit.
         
@@ -220,6 +222,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     
     // We have latency and throughput for every resource in which we schedule nodes.
     // Latency and throughput of execution resources can be specified via command line.
+    AccessGranularities = new unsigned[TotalResources];
     for (unsigned i = 0; i< nExecutionUnits; i++) 
     {
         this->ExecutionUnitsLatency.push_back(1); //Default value for latency
@@ -229,11 +232,11 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         
         if (i < nCompExecutionUnits) 
         {
-            AccessGranularities.push_back(1);
+            AccessGranularities[i] = 1;
         }
         else
         {
-            AccessGranularities.push_back(this->MemoryWordSize);
+            AccessGranularities[i] = this->MemoryWordSize;
         }
 
         map<uint64_t, unsigned> tempMap;
@@ -296,10 +299,9 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     if (nAGUs > 0) 
     {
         this->ExecutionUnitsLatency.push_back(1);
-        
         this->ExecutionUnitsThroughput.push_back(-1);
         this->ExecutionUnitsParallelIssue.push_back(-1);
-        AccessGranularities.push_back(1);
+        AccessGranularities[AGU_NODE] = 1;
     }
     
     // Latency and throughput of ports
@@ -308,7 +310,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         this->ExecutionUnitsLatency.push_back(1); //Default value for latency
         this->ExecutionUnitsThroughput.push_back(-1); // Infinite throughput
         this->ExecutionUnitsParallelIssue.push_back(-1);
-        AccessGranularities.push_back(1);
+        AccessGranularities[PORT_0_NODE + i] = 1;
     }
     
     // Latency and throughput of buffers. Although it has no effect, these
@@ -318,19 +320,21 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         this->ExecutionUnitsLatency.push_back(1); //Default value for latency
         this->ExecutionUnitsThroughput.push_back(1); // Infinite throughput
         this->ExecutionUnitsParallelIssue.push_back(1);
-        AccessGranularities.push_back(1);
+        AccessGranularities[RS_STALL_NODE + i] = 1;
     }
     
     
     // We need AccessWidth and Throughput for every resource for which we calculate
     // span, including ports
-    for (unsigned i = 0; i < nExecutionUnits + nAGUs +nPorts + nBuffers; i++) 
+    IssueCycleGranularities = new unsigned[TotalResources];
+    AccessWidths = new unsigned[TotalResources];
+    for (unsigned i = 0; i < TotalResources; i++) 
     {
-        
         unsigned IssueCycleGranularity = 0;
         unsigned AccessWidth = 0;
         
-        if (i < nCompExecutionUnits){
+        if (i < nCompExecutionUnits)
+        {
             AccessWidth = 1;
             // Computational units throughput must also be rounded
             if(this->ExecutionUnitsThroughput[i]!= INF){
@@ -340,8 +344,11 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
                 
                 
             }
-        }else{
-            if (i >= nCompExecutionUnits && i < nCompExecutionUnits + nMemExecutionUnits) {
+        }
+        else
+        {
+            if (i >= nCompExecutionUnits && i < nCompExecutionUnits + nMemExecutionUnits) 
+            {
                 AccessWidth = roundNextMultiple(MemoryWordSize, AccessGranularities[i]);
                 // Round throughput of memory resources to the next multiple of AccessWidth
                 // (before it was MemoryWordSize)
@@ -352,37 +359,47 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
                             float Inverse =ceil(1/this->ExecutionUnitsThroughput[i]);
                             float Rounded =roundNextPowerOfTwo(Inverse);
                             
-                            if (Inverse == Rounded) {
-                                
+                            if (Inverse == Rounded) 
+                            {
                                 this->ExecutionUnitsThroughput[i] = float(1)/float(Rounded);
-                                
-                            }else{
-                                
+                            }
+                            else
+                            {
                                 this->ExecutionUnitsThroughput[i] = float(1)/float((Rounded/float(2)));
                             }
-                        }else{
+                        }
+                        else
+                        {
                             this->ExecutionUnitsThroughput[i] = roundNextPowerOfTwo(ceil(this->ExecutionUnitsThroughput[i]));
                         }
-                    } else{
+                    } 
+                    else
+                    {
                         // Round to the next multiple of AccessGranularities...
                         //                    this->ExecutionUnitsThroughput[i] = roundNextMultiple(this->ExecutionUnitsThroughput[i],this->MemoryWordSize);
                         this->ExecutionUnitsThroughput[i] = roundNextMultiple(this->ExecutionUnitsThroughput[i],AccessGranularities[i]);
                     }
                 }
-            }else{
+            }
+            else
+            {
                 AccessWidth = 1;
             }
         }
         
-        if (this->ExecutionUnitsThroughput[i]>0) {
+        if (this->ExecutionUnitsThroughput[i]>0) 
+        {
             DEBUG(dbgs() << "AccessWidth " << AccessWidth << "\n");
             DEBUG(dbgs() << "ExecutionUnitsThroughput[i] " << this->ExecutionUnitsThroughput[i] << "\n");
             IssueCycleGranularity = ceil(AccessWidth/this->ExecutionUnitsThroughput[i]);
-        }else
+        }
+        else
+        {
             IssueCycleGranularity = 1;
+        }
         
-        AccessWidths.push_back(AccessWidth);
-        IssueCycleGranularities.push_back(IssueCycleGranularity);
+        AccessWidths[i] = AccessWidth;
+        IssueCycleGranularities[i] = IssueCycleGranularity;
         DEBUG(dbgs() << "IssueCycleGranularities["<<i<<"]=" << IssueCycleGranularities[i] << "\n");
     }
     

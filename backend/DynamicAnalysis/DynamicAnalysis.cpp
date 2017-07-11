@@ -1249,13 +1249,7 @@ DynamicAnalysis::GetExtendedInstructionType(int OpCode, int ReuseDistance)
 uint64_t
 DynamicAnalysis::GetMinIssueCycleReservationStation()
 {
-    vector<uint64_t>::iterator it;
-    
-    uint64_t MinIssueCycle = ReservationStationIssueCycles.front();
-    for (it = ReservationStationIssueCycles.begin(); it != ReservationStationIssueCycles.end(); ++it)
-    {
-        MinIssueCycle = min(MinIssueCycle, *it);
-    }
+    uint64_t MinIssueCycle = *std::min_element( std::begin(ReservationStationIssueCycles), std::end(ReservationStationIssueCycles) );
     
     return MinIssueCycle;
 }
@@ -1265,13 +1259,7 @@ DynamicAnalysis::GetMinIssueCycleReservationStation()
 uint64_t
 DynamicAnalysis::GetMinCompletionCycleLoadBuffer()
 {    
-    vector<uint64_t>::iterator it;
-    
-    uint64_t MinCompletionCycle = LoadBufferCompletionCycles.front();
-    for (it = LoadBufferCompletionCycles.begin(); it != LoadBufferCompletionCycles.end(); ++it) 
-    {
-        MinCompletionCycle = min(MinCompletionCycle, *it);
-    }
+    uint64_t MinCompletionCycle = *std::min_element( std::begin(LoadBufferCompletionCycles), std::end(LoadBufferCompletionCycles) );
     
     return MinCompletionCycle;
 }
@@ -1285,55 +1273,23 @@ DynamicAnalysis::GetMinCompletionCycleLoadBufferTree()
 uint64_t
 DynamicAnalysis::GetMinCompletionCycleStoreBuffer()
 {
-    vector<uint64_t>::iterator it;
-    
-    uint64_t MinCompletionCycle = StoreBufferCompletionCycles.front();
-    for (it = StoreBufferCompletionCycles.begin(); it != StoreBufferCompletionCycles.end(); ++it) 
-    {
-        MinCompletionCycle = min(MinCompletionCycle, *it);
-    }
-    
+    uint64_t MinCompletionCycle = *std::min_element( std::begin(StoreBufferCompletionCycles), std::end(StoreBufferCompletionCycles) );
+
     return MinCompletionCycle;
 }
 
 uint64_t
 DynamicAnalysis::GetMinCompletionCycleLineFillBuffer()
 {
-    
-    vector<uint64_t>::iterator it;
-    
-    uint64_t MinCompletionCycle = LineFillBufferCompletionCycles.front();
-    for (it = LineFillBufferCompletionCycles.begin(); it != LineFillBufferCompletionCycles.end(); ++it) {
-        MinCompletionCycle = min(MinCompletionCycle, *it);
-    }
+    uint64_t MinCompletionCycle = *std::min_element( std::begin(LineFillBufferCompletionCycles), std::end(LineFillBufferCompletionCycles) );
+
     return MinCompletionCycle;
 }
 
-
-uint64_t
-DynamicAnalysis::GetLastIssueCycle(unsigned ExecutionResource)
-{    
-    Tree<uint64_t> * NodeAvailable = NULL;
-    unsigned IssueCycleGranularity = IssueCycleGranularities[ExecutionResource];
-    uint64_t LastCycle = InstructionsLastIssueCycle[ExecutionResource];
-    
-    if(ExecutionResource <= nExecutionUnits)
-    {    
-        AvailableCyclesTree[ExecutionResource] = splay(LastCycle,AvailableCyclesTree[ExecutionResource]);
-        NodeAvailable =AvailableCyclesTree[ExecutionResource];
-        
-        if ( NodeAvailable != NULL && NodeAvailable->key== LastCycle && NodeAvailable->issueOccupancy == 0 ) 
-        {
-            LastCycle = LastCycle-IssueCycleGranularity;
-        }
-    }
-    return LastCycle;
-}
-
-
 void
 DynamicAnalysis::RemoveFromReservationStation(uint64_t Cycle)
-{    
+{  
+    // Predicates are significantly faster than manually creating a new vector and copying over
     LessThanOrEqualValuePred Predicate = {Cycle};
     ReservationStationIssueCycles.erase(std::remove_if(ReservationStationIssueCycles.begin(), ReservationStationIssueCycles.end(), Predicate), ReservationStationIssueCycles.end());
 }
@@ -1550,7 +1506,7 @@ DynamicAnalysis::FindIssueCycleWhenLineFillBufferIsFull()
 {    
     size_t BufferSize = DispatchToLineFillBufferQueue.size();
     
-    if ( BufferSize== 0) 
+    if ( BufferSize == 0) 
     {
         return GetMinCompletionCycleLineFillBuffer();
     }
@@ -1600,7 +1556,7 @@ DynamicAnalysis::FindIssueCycleWhenLoadBufferIsFull()
         // At the same time,
         uint64_t EarliestDispatchCycle = 0;
         
-        for(vector<InstructionDispatchInfo>::iterator it = DispatchToLoadBufferQueue.begin();
+        for (vector<InstructionDispatchInfo>::iterator it = DispatchToLoadBufferQueue.begin();
                 it != DispatchToLoadBufferQueue.end(); ++it)
         {
             EarliestDispatchCycle = max(EarliestDispatchCycle, (*it).IssueCycle);
@@ -1609,7 +1565,7 @@ DynamicAnalysis::FindIssueCycleWhenLoadBufferIsFull()
         
         //Traverse LB and count how many elements are there smaller than EarliestDispathCycle
         unsigned counter = 0;
-        for(vector<uint64_t>::iterator it = LoadBufferCompletionCycles.begin();
+        for (vector<uint64_t>::iterator it = LoadBufferCompletionCycles.begin();
                 it != LoadBufferCompletionCycles.end(); ++it)
         {
             if ((*it) <= EarliestDispatchCycle)

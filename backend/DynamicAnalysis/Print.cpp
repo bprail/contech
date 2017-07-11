@@ -81,13 +81,13 @@ DynamicAnalysis::PrintMe()
     PrintVector(ExecutionUnitsParallelIssue);
 
     dbgs() << "IssueCycleGranularities\n";
-    PrintVector(IssueCycleGranularities);
+    PrintArray(IssueCycleGranularities, TotalResources);
 
     dbgs() << "AccessWidths\n";
-    PrintVector(AccessWidths);
+    PrintArray(AccessWidths, TotalResources);
 
     dbgs() << "AccessGranularities\n";
-    PrintVector(AccessGranularities);
+    PrintArray(AccessGranularities, TotalResources);
 
     dbgs() << "ReservationStationSize:\t" << ReservationStationSize << "\n";
     dbgs() << "ReorderBufferSize:\t" << ReorderBufferSize << "\n";
@@ -103,6 +103,17 @@ DynamicAnalysis::PrintMe()
     //dbgs() << "TaskCFW:\t" << TaskCFW << "\n";
 
     dbgs() << "residingTask:\t" << residingTask.toString() << "\n";
+}
+
+template<class T> void
+DynamicAnalysis::PrintArray(T* arr, size_t len)
+{
+    size_t i;
+    for (i = 0; i < len; i++)
+    {
+        cerr << std::setprecision(3) << arr[i] << " ";    
+    }
+    dbgs() << "\n";
 }
 
 template<class T> void

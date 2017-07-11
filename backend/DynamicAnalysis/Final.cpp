@@ -46,6 +46,28 @@ uint64_t DynamicAnalysis::CalculateSpanFinal(int ResourceType)
     return Span;
 }
 
+uint64_t
+DynamicAnalysis::GetLastIssueCycle(unsigned ExecutionResource)
+{    
+    Tree<uint64_t> * NodeAvailable = NULL;
+    unsigned IssueCycleGranularity = IssueCycleGranularities[ExecutionResource];
+    uint64_t LastCycle = InstructionsLastIssueCycle[ExecutionResource];
+    
+    if (ExecutionResource <= nExecutionUnits)
+    {    
+        AvailableCyclesTree[ExecutionResource] = splay(LastCycle,AvailableCyclesTree[ExecutionResource]);
+        NodeAvailable = AvailableCyclesTree[ExecutionResource];
+        
+        if ( NodeAvailable != NULL && 
+             NodeAvailable->key== LastCycle && 
+             NodeAvailable->issueOccupancy == 0 ) 
+        {
+            LastCycle = LastCycle-IssueCycleGranularity;
+        }
+    }
+    return LastCycle;
+}
+
 bool
 DynamicAnalysis::IsEmptyLevelFinal(unsigned ExecutionResource, uint64_t Level)
 {
@@ -625,7 +647,7 @@ DynamicAnalysis::resetAnalysis()
     #endif
 
     //TotalSpan = 0;
-    for (unsigned i = 0; i< nExecutionUnits + nPorts + nAGUs /*+ nLoadAGUs + nStoreAGUs*/ + nBuffers; i++) 
+    for (unsigned i = 0; i< TotalResources; i++) 
     {
         InstructionsCount[i] = 0;
         InstructionsCountExtended[i] = 0;
@@ -706,8 +728,8 @@ DynamicAnalysis::finishAnalysis(bool isBnkReqd)
     uint64_t T1, T2, OverlapCycles;
     vector<int> compResources;
     vector<int> memResources;
-    vector<uint64_t> ResourcesSpan(nExecutionUnits+nPorts+nAGUs + nBuffers);
-    vector<uint64_t> ResourcesTotalStallSpanVector(nExecutionUnits+nPorts+nAGUs + nBuffers);
+    vector<uint64_t> ResourcesSpan(TotalResources);
+    vector<uint64_t> ResourcesTotalStallSpanVector(TotalResources);
     vector< vector<uint64_t> > ResourcesResourcesNoStallSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
     vector< vector<uint64_t> > ResourcesResourcesSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
     vector< vector<uint64_t> > ResourcesStallSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
@@ -740,7 +762,7 @@ DynamicAnalysis::finishAnalysis(bool isBnkReqd)
         memResources.push_back(i);
     }
     
-    for (unsigned j = 0; j < nExecutionUnits + nAGUs + nPorts + nBuffers; j++)
+    for (unsigned j = 0; j < TotalResources; j++)
     {
         LastIssueCycleVector.push_back(GetLastIssueCycle(j));
         

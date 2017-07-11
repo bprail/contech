@@ -437,9 +437,9 @@ public:
     vector<float> ExecutionUnitsBaselineThroughput;
     vector<int> ExecutionUnitsParallelIssue;
 
-    vector<unsigned> IssueCycleGranularities;
-    vector<unsigned> AccessWidths;
-    vector<unsigned> AccessGranularities;
+    unsigned* IssueCycleGranularities;
+    unsigned* AccessWidths;
+    unsigned* AccessGranularities;
 
     unsigned ReservationStationSize;
     unsigned ReorderBufferSize;
@@ -597,6 +597,7 @@ public:
     void ComputeAvailableTreeFinal();
     void DebugACT(uint p);
 
+    template<class T> void PrintArray(T* arr, size_t len);
     template<class T> void PrintVector(vector<T>& vec);
     void PrintMe(); 
 };
