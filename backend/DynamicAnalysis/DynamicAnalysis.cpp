@@ -98,7 +98,7 @@ DynamicAnalysis::getInstructionType(Instruction &I)
             
             // Memory instructions...
         case Instruction::Alloca:                return MISC_MEM;
-        case Instruction::Load:                    HANDLE_MEMORY_TYPE(LD, Load, 0)
+        case Instruction::Load:                    HANDLE_MEMORY_TYPE(LD, Load, 0);
         case Instruction::Store:                 HANDLE_MEMORY_TYPE(ST, Store, 1);
         case Instruction::AtomicCmpXchg: return MISC_MEM;
         case Instruction::AtomicRMW:         return MISC_MEM;

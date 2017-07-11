@@ -40,8 +40,6 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         nPorts = SANDY_BRIDGE_DISPATCH_PORTS;
         nBuffers = SANDY_BRIDGE_BUFFERS;
         nAGUs = SANDY_BRIDGE_AGU;
-        nLoadAGUs = SANDY_BRIDGE_LOAD_AGUS;
-        nStoreAGUs = SANDY_BRIDGE_STORE_AGUS;
         nNodes = SANDY_BRIDGE_NODES;
         
         // Mapping between nodes and execution units. ExecutionUnit[] vector contains
@@ -304,22 +302,6 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         AccessGranularities.push_back(1);
     }
     
-    if (nLoadAGUs > 0) 
-    {
-        this->ExecutionUnitsLatency.push_back(1);
-        this->ExecutionUnitsThroughput.push_back(1);
-        this->ExecutionUnitsParallelIssue.push_back(nLoadAGUs);
-        AccessGranularities.push_back(1);
-    }
-    
-    if (nStoreAGUs > 0) 
-    {
-        this->ExecutionUnitsLatency.push_back(1);
-        this->ExecutionUnitsThroughput.push_back(1);
-        this->ExecutionUnitsParallelIssue.push_back(nStoreAGUs);
-        AccessGranularities.push_back(1);
-    }
-    
     // Latency and throughput of ports
     for (unsigned i = 0; i< nPorts; i++) 
     {
@@ -406,7 +388,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     
     
     
-    DEBUG(dbgs() << "Number of resources " << nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs + nBuffers << "\n");
+    DEBUG(dbgs() << "Number of resources " << nExecutionUnits + nPorts + nAGUs /*+ nLoadAGUs+nStoreAGUs*/ + nBuffers << "\n");
     
     ResourcesNames.push_back("INT_ADDER");
     ResourcesNames.push_back("INT_MULT");
@@ -474,7 +456,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     NodesNames.push_back("LFB_STALL_NODE");
     
     //Some checks....
-    if (ResourcesNames.size() !=    nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs + nBuffers)
+    if (ResourcesNames.size() !=    nExecutionUnits + nPorts + nAGUs + nBuffers)
         report_fatal_error("ResourcesNames does not match with number of resources");
     
     if (LoadBufferSize > 0 && ReservationStationSize == 0)
@@ -507,7 +489,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     
     // For resources with throughput and latency, i.e., resources for which we insert
     // cycles
-    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs + nBuffers; i++) 
+    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs + nBuffers; i++) 
     {
         InstructionsCount.push_back(0);
         InstructionsCountExtended.push_back(0);
@@ -521,10 +503,10 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         FirstIssue.push_back(false);
     }
     
-    for (unsigned i = 0; i <nBuffers; i++)
+    for (unsigned i = 0; i < nBuffers; i++)
         BuffersOccupancy.push_back(0);
     
-    for (unsigned i = 0; i< nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs; i++)
+    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs; i++)
         AvailableCyclesTree.push_back(NULL);    
     
     CGSFCache.resize(MAX_RESOURCE_VALUE);

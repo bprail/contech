@@ -138,8 +138,6 @@ enum {
     MEM_LOAD_CHANNEL,
     MEM_STORE_CHANNEL = MEM_LOAD_CHANNEL,
     ADDRESS_GENERATION_UNIT,
-    //STORE_ADDRESS_GENERATION_UNIT,
-    //LOAD_ADDRESS_GENERATION_UNIT,
     PORT_0,
     PORT_1,
     PORT_2,
@@ -308,6 +306,7 @@ uint64_t BitScan(vector< TBV> &FullOccupancyCyclesTree, uint64_t key, unsigned b
 class DynamicAnalysis {
     
 private:
+    // rd generates random values used as part of comm factor
     random_device rd;
 
     float CommFactorRead;
@@ -331,8 +330,6 @@ private:
     unsigned TotalResources;
     unsigned nPorts;
     unsigned nAGUs;
-    unsigned nLoadAGUs;
-    unsigned nStoreAGUs;
     unsigned nNodes;
     unsigned nCompNodes;
     unsigned nMemNodes;

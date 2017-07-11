@@ -572,8 +572,6 @@ DynamicAnalysis::resetAnalysis()
     nExecutionUnits = SANDY_BRIDGE_EXECUTION_UNITS;
     nPorts = SANDY_BRIDGE_DISPATCH_PORTS;
     nAGUs = SANDY_BRIDGE_AGU;
-    nLoadAGUs = SANDY_BRIDGE_LOAD_AGUS;
-    nStoreAGUs = SANDY_BRIDGE_STORE_AGUS;
     nBuffers = SANDY_BRIDGE_BUFFERS;
 
 //    for (unsigned i = 0; i< nExecutionUnits; ++i)
@@ -627,7 +625,7 @@ DynamicAnalysis::resetAnalysis()
     #endif
 
     //TotalSpan = 0;
-    for (unsigned i = 0; i< nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs + nBuffers; i++) 
+    for (unsigned i = 0; i< nExecutionUnits + nPorts + nAGUs /*+ nLoadAGUs + nStoreAGUs*/ + nBuffers; i++) 
     {
         InstructionsCount[i] = 0;
         InstructionsCountExtended[i] = 0;
@@ -649,7 +647,7 @@ DynamicAnalysis::resetAnalysis()
     LastStoreIssueCycle = 0;
 
     // Don't leak memory by naively .clear()ing even though program semantics may not be affected at this point
-    for (unsigned i = 0; i< nExecutionUnits + nPorts + nAGUs + nLoadAGUs + nStoreAGUs; i++) 
+    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs; i++) 
     {
         Tree<uint64_t>* tree = AvailableCyclesTree[i];
         delete_all(tree);
@@ -708,8 +706,8 @@ DynamicAnalysis::finishAnalysis(bool isBnkReqd)
     uint64_t T1, T2, OverlapCycles;
     vector<int> compResources;
     vector<int> memResources;
-    vector<uint64_t> ResourcesSpan(nExecutionUnits+nPorts+nAGUs + nLoadAGUs+nStoreAGUs + nBuffers);
-    vector<uint64_t> ResourcesTotalStallSpanVector(nExecutionUnits+nPorts+nAGUs + nLoadAGUs+nStoreAGUs + nBuffers);
+    vector<uint64_t> ResourcesSpan(nExecutionUnits+nPorts+nAGUs + nBuffers);
+    vector<uint64_t> ResourcesTotalStallSpanVector(nExecutionUnits+nPorts+nAGUs + nBuffers);
     vector< vector<uint64_t> > ResourcesResourcesNoStallSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
     vector< vector<uint64_t> > ResourcesResourcesSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
     vector< vector<uint64_t> > ResourcesStallSpanVector(nExecutionUnits, vector<uint64_t>(nExecutionUnits));
