@@ -271,13 +271,13 @@ class TBV {
         vector<bool> BitVector;
         bool e;
     
-  public:
-    TBV();
-    bool get_node(uint64_t key, unsigned bitPosition);
-    bool get_node_nb(uint64_t key, unsigned bitPosition);
-    void insert_node(uint64_t key, unsigned bitPosition);
-    void delete_node(uint64_t key, unsigned bitPosition);
-    bool empty();
+    public:
+        TBV();
+        bool get_node(uint64_t key, unsigned bitPosition);
+        bool get_node_nb(uint64_t key, unsigned bitPosition);
+        void insert_node(uint64_t key, unsigned bitPosition);
+        void delete_node(uint64_t key, unsigned bitPosition);
+        bool empty();
 };
 
 struct ACTNode {
@@ -316,12 +316,6 @@ private:
     // map maps number of in-flight instructions to number of issue cycles
     vector<map<uint64_t, unsigned> > histogram;
 
-    // vector iterates over execution unit types
-    //  records total degree distribution of, say INT_DIV ops, in the DDG per task
-    //  map maps resource to degree of usage of the INT_DIV
-    // Of course, as reuse distance of future uses by memops is unknown, all memop uses are collapsed
-    vector<map<unsigned, uint64_t> > nUsesHist;
-
     #if 0
     //  records total recursive depth. Repititions are re-counted. Too slow?
     vector<uint64_t> ddgDepth;
@@ -355,7 +349,6 @@ private:
     vector<string> NodesNames;
     
     uint64_t BasicBlockBarrier;
-    uint64_t BasicBlockLookAhead;
     int64_t RemainingInstructionsFetch;
     uint64_t InstructionFetchCycle;
     uint64_t LoadDispatchCycle;
@@ -412,14 +405,18 @@ private:
     
     vector< TBV> FullOccupancyCyclesTree; 
     
+    #if DEBUG
     vector <uint64_t> NInstructionsStalled; // debug
+    #endif
     
     uint64_t MinLoadBuffer;
     uint64_t MaxDispatchToLoadBufferQueueTree;
     
-    // the following maps (<value*>) are the most expensive for CPU cycles
+    // the following map (<value*>) are the most expensive for CPU cycles
+    //  This maps instructions to their current issue cycle.  Its size is
+    //    bounded by the number of unique static instructions in the basic
+    //    blocks executed by a trace.
     map <llvm::Value*, uint64_t> InstructionValueIssueCycleMap;
-    map <llvm::Value*, uint64_t> InstructionValueUseCycleMap;
     
     map <uint64_t , CacheLineInfo> CacheLineIssueCycleMap;
     map <uint64_t , uint64_t> MemoryAddressIssueCycleMap;

@@ -242,10 +242,6 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         map<uint64_t, unsigned> tempMap;
         this->histogram.push_back(tempMap);
 
-        map<unsigned, uint64_t> tMap;
-        this->nUsesHist.push_back(tMap);
-//        this->ddgDepth.push_back(0);
-
         vector<float> BnkVec;
         for (unsigned j = 0; j < nBuffers + 2; ++j)
         {
@@ -421,11 +417,6 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     ResourcesNames.push_back("L3");
     ResourcesNames.push_back("MEM");
     
-    /*
-     ResourcesNames.push_back("L2_PREFETCH");
-     ResourcesNames.push_back("L3_PREFETCH");
-     ResourcesNames.push_back("MEM_PREFETCH");
-     */
     ResourcesNames.push_back("AGU");
     
     ResourcesNames.push_back("PORT_0");
@@ -495,7 +486,6 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     InstOffset = 0;
     TotalInstructions = 0;
     BasicBlockBarrier = 0;
-    BasicBlockLookAhead = 0;
     InstructionFetchCycle = 0;
     LoadDispatchCycle = 0;
     StoreDispatchCycle = 0;
@@ -516,8 +506,11 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         SpanGaps.push_back(0);
         FirstNonEmptyLevel.push_back(0);
         MaxOccupancy.push_back(0);
-        NInstructionsStalled.push_back(0);
         FirstIssue.push_back(false);
+        
+        #if DEBUG
+        NInstructionsStalled.push_back(0);
+        #endif
     }
     
     for (unsigned i = 0; i < nBuffers; i++)

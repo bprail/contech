@@ -2571,10 +2571,12 @@ DynamicAnalysis::analyzeInstruction(Instruction &I, uint64_t addr)
                 
                 Latency = ExecutionUnitsLatency[ExtendedInstructionType];
                 
+            #if DEBUG
                 if (InstructionIssueCycle > OriginalInstructionIssueCycle) 
                 {
                     NInstructionsStalled[ExtendedInstructionType]++;
                 }
+            #endif
                 InstructionIssueThroughputAvailable = FindNextAvailableIssueCyclePortAndThroughtput(InstructionIssueCycle, ExtendedInstructionType);
                 
                 InstructionIssueCycle = max(InstructionIssueCycle, InstructionIssueThroughputAvailable);

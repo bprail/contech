@@ -596,16 +596,6 @@ DynamicAnalysis::resetAnalysis()
     nAGUs = SANDY_BRIDGE_AGU;
     nBuffers = SANDY_BRIDGE_BUFFERS;
 
-//    for (unsigned i = 0; i< nExecutionUnits; ++i)
-//    { 
-//        histogram[i].clear();
-//        nUsesHist[i].clear();
-//        ddgDepth[i] = 0;
-//
-//        // Don't reset BnkMatrix here since others may need it
-//        // Anyway, finishAnalysis explicitly populates every entry.
-//    }
-
     BasicBlockBarrier = 0;
     RemainingInstructionsFetch = InstructionFetchBandwidth; 
     InstructionFetchCycle = 0;
@@ -656,13 +646,17 @@ DynamicAnalysis::resetAnalysis()
         SpanGaps[i] = 0;
         FirstNonEmptyLevel[i] = 0;
         MaxOccupancy[i] = 0;
-        NInstructionsStalled[i] = 0;
         FirstIssue[i] = false;
+        #if DEBUG
+        NInstructionsStalled[i] = 0;
+        #endif
     }
+    
     for (unsigned i = 0; i <nBuffers; i++) 
     {
         BuffersOccupancy[i] = 0;
     }
+    
     LastIssueCycleVector.clear();
 
     LastLoadIssueCycle = 0;
@@ -709,6 +703,8 @@ DynamicAnalysis::finishAnalysis(contech::TaskId taskId, bool reset, bool isBnkRe
 
     finishAnalysis(isBnkReqd);
 
+    errs() << InstructionValueIssueCycleMap.size()  << "\n";
+    
     if (reset)
     {
         resetAnalysis();
@@ -1735,8 +1731,6 @@ DynamicAnalysis::finishAnalysis(bool isBnkReqd)
         #endif
 
         //dumpHistogram();
-    
-        //dumpNuses();
 
         //dumpDepth();
 
@@ -1755,21 +1749,6 @@ DynamicAnalysis::dumpHistogram()
         {
             dbgs() << "\t" << std::get<0>(occupancy) << ":\t" << std::get<1>(occupancy) << " issues\n";
         } 
-    }
-}
-
-void
-DynamicAnalysis::dumpNuses()
-{
-    dbgs() << "DDG Degree Histogram\n";
-    for (unsigned i = 0; i < nExecutionUnits; ++i)
-    {
-        const auto& useMap = nUsesHist[i];
-        dbgs() << ResourcesNames[i] << "\n";
-        for (auto useDegree : useMap)
-        {
-            dbgs() << "\t" << ResourcesNames[std::get<0>(useDegree)] << ":\t" << std::get<1>(useDegree) << " uses\n";
-        }
     }
 }
 
