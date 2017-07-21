@@ -20,6 +20,7 @@ class Benchmarks:
     #nas = ["bt", "cg", "dc", "ep", "ft", "is", "lu", "mg", "sp"] #, "ua" <- does not terminate
     nas = ["mg", "cg", "ep", "ft", "is"]
     rodinia = ["bfs", "btree", "hotspot", "lavaMD", "leukocyte", "lud", "nn", "nw", "particlefilter", "pathfinder", "srad"]
+    headers = ["name",     "llvmBuildTime",        "llvmTime", "llvmParallel",  "contechBuildTime",        "contechTime",     "contechFlushTime", "contechSlowdown",     "middleTime",      "llvmMemoryUsage",      "contechMemoryUsage",      "uncompressedBytes",      "compressedBytes", "Total Tasks", "Average Basic Blocks per Task", "Average MemOps per Basic Block"]
 
 def print_header(text):
     print '\033[92m' + text + '\033[0m'
@@ -33,7 +34,7 @@ def print_progress(text):
     sys.stdout.flush()
 print_progress.spinCount = 1
 
-def pcall(args, silent=False, suppressOutput=False, returnCode=False):
+def pcall(args, silent=False, suppressOutput=False, returnCode=False, outputFile=None):
     # Prepare and print the command
     command = ""
     for arg in args:
@@ -43,7 +44,10 @@ def pcall(args, silent=False, suppressOutput=False, returnCode=False):
     
     try:
         # Open a process to run the command
-        p = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, shell = True)
+        if (outputFile is None):
+            p = subprocess.Popen(command, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, shell = True)
+        else:
+            p = subprocess.Popen(command, stdout = outputFile, stderr = subprocess.STDOUT, shell = True)
         o, e = p.communicate()
         # Print the output
         if o != None:
