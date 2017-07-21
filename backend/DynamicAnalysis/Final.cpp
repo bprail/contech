@@ -702,8 +702,6 @@ DynamicAnalysis::finishAnalysis(contech::TaskId taskId, bool reset, bool isBnkRe
     residingTask = taskId;
 
     finishAnalysis(isBnkReqd);
-
-    errs() << InstructionValueIssueCycleMap.size()  << "\n";
     
     if (reset)
     {

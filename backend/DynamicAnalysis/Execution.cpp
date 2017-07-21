@@ -36,12 +36,6 @@ static DynamicAnalysis* Analyzer;
 static DynamicAnalysis* RelaxAnalyzer;
 #endif
 
-//#define DEBUG_PARALLEL_ANALYSIS
-#ifdef DEBUG_PARALLEL_ANALYSIS
-static DynamicAnalysis* AnalyzerBaseline;
-static DynamicAnalysis* AnalyzerSm;
-#endif
-
 STATISTIC(NumDynamicInsts, "Number of dynamic instructions executed");
 
 #define __ctStrCmp(x, y) strncmp(x, y, sizeof(y) - 1)
@@ -197,46 +191,6 @@ bool EnginePass::populateCommFactors(const char* TaskGraphFileName)
 
 bool EnginePass::doInitialization(Module &M)
 {
-#ifdef DEBUG_PARALLEL_ANALYSIS
-    AnalyzerBaseline = new DynamicAnalysis(PerTaskCommFactor,
-                                   CommFactorRead,
-                                   CommFactorWrite,
-                                   Microarchitecture, 
-                                   MemoryWordSize, 
-                                   CacheLineSize, 
-                                   L1CacheSize, 
-                                   L2CacheSize, 
-                                   LLCCacheSize, 
-                                   ExecutionUnitsLatency, 
-                                   ExecutionUnitsThroughput, 
-                                   ExecutionUnitsParallelIssue, 
-                                   MemAccessGranularity, 
-                                   IFB, 
-                                   ReservationStation, 
-                                   ReorderBuffer, 
-                                   LoadBuffer, 
-                                   StoreBuffer, 
-                                   LineFillBuffer, 
-                                   ReportOnlyPerformance);
-    ExecutionUnitsThroughput[4] *= 2;
-    vector<float> ExecutionUnitsThroughput2;
-    unsigned int i = 0;
-    for (auto II = ExecutionUnitsThroughput.begin(), IE = ExecutionUnitsThroughput.end(); II != IE; ++II, ++i)
-    {
-        if (i == 2)
-        {
-            ExecutionUnitsThroughput2.push_back(2 * (*II));
-        }
-        else if (i == 4)
-        {
-            ExecutionUnitsThroughput2.push_back((*II) / 2);
-        }
-        else
-        {
-            ExecutionUnitsThroughput2.push_back(*II);
-        }
-    }
-#endif
 
     Analyzer = new DynamicAnalysis(PerTaskCommFactor,
                                    CommFactorRead,
@@ -286,29 +240,6 @@ bool EnginePass::doInitialization(Module &M)
                                    LineFillBuffer, 
                                    ReportOnlyPerformance);
     #endif
-
-#ifdef DEBUG_PARALLEL_ANALYSIS                                   
-    AnalyzerSm = new DynamicAnalysis(PerTaskCommFactor,
-                                   CommFactorRead,
-                                   CommFactorWrite,
-                                   Microarchitecture, 
-                                   MemoryWordSize, 
-                                   CacheLineSize, 
-                                   L1CacheSize, 
-                                   L2CacheSize, 
-                                   LLCCacheSize, 
-                                   ExecutionUnitsLatency, 
-                                   ExecutionUnitsThroughput2, 
-                                   ExecutionUnitsParallelIssue, 
-                                   MemAccessGranularity, 
-                                   IFB, 
-                                   ReservationStation, 
-                                   ReorderBuffer, 
-                                   LoadBuffer, 
-                                   StoreBuffer, 
-                                   LineFillBuffer, 
-                                   ReportOnlyPerformance);
-#endif
 
     return true;
 }
@@ -520,11 +451,7 @@ bool EnginePass::runOnModule(Module &M)
     //         Or the ROI is with a barrier, et cetera to provide the ordering with all threads
     //  All this to say, one could use tg->getTaskById(ContextId(ContextNumber, 0)) and increment
     //    the sequence id instead.
-#ifdef DEBUG_TASK
-    SeqId seqi(0);
-    ContextId coni(2);
-    TaskId startTaskId(coni, seqi);
-#else
+
     TaskId startTaskId;
     if (ContextNumber == (uint32_t) tg->getROIStart().getContextId())
     {
@@ -537,14 +464,12 @@ bool EnginePass::runOnModule(Module &M)
         startTaskId = TaskId(coni, seqi);
     }
 
-#endif
     while (Task* currentTask = tg->getTaskById(startTaskId))
     {
         TaskId taskId = currentTask->getTaskId();
         
         startTaskId = startTaskId.getNext();
         
-#ifndef DEBUG_TASK
         if (taskId == tg->getROIStart()) 
         {
             inROI = true;
@@ -555,27 +480,14 @@ bool EnginePass::runOnModule(Module &M)
         }
        
         if (!inROI) { delete currentTask; continue; }
-#endif
 
         ContextId ctId(ContextNumber);
         if (currentTask->getContextId() != ctId) { delete currentTask; continue;}
-
-#ifdef DEBUG_TASK
-        SeqId sid(170);
-        TaskId tmpTaskId(ctId, sid);
-        if (taskId == tmpTaskId) { delete currentTask; break;}
-#endif
 
         switch(currentTask->getType())
         {
             case task_type_basic_blocks:
             {
-
-                #ifdef DEBUG_TASK
-                //dbgs() << "Analyzer (base config) ################\n";
-                //Analyzer->PrintMe();
-                #endif
-
                 if (Analyzer->PerTaskCommFactor)
                 {
                     Analyzer->TaskCFR = taskCFRmap[taskId];
@@ -583,14 +495,9 @@ bool EnginePass::runOnModule(Module &M)
                 }
                 auto bba = currentTask->getBasicBlockActions();
 
-                #ifdef DEBUG_PARALLEL_ANALYSIS
-                bool done = false;
-                #endif
                 for (auto f = bba.begin(), e = bba.end(); f != e; f++)
                 {
                     BasicBlockAction bb = *f;
-                    
-                    //if (bbcount > 10000000) {Analyzer->finishAnalysis();return false;}
                     
                     auto bbm = basicBlockMap.find((uint)bb.basic_block_id);
                     if (bbm == basicBlockMap.end())
@@ -605,7 +512,6 @@ bool EnginePass::runOnModule(Module &M)
                         // Send instructions from block bbm->second to DynamicAnalysis
                         BasicBlock* currentBB = bbm->second;
                         auto iMemOps = f.getMemoryActions().begin();
-                        //errs() << *currentBB << "\n";
                         for (auto it = currentBB->begin(), et = currentBB->end(); it != et; ++it)
                         {
                             uint64_t addr = 0;
@@ -661,52 +567,14 @@ bool EnginePass::runOnModule(Module &M)
                             }
                             //errs() << *it << "\n";
                             uint64_t cycB = Analyzer->analyzeInstruction(*it, addr);
-                            #ifdef DEBUG_TASK
-                            //SeqId tmpi(56);
-                            //TaskId tmpid(ctId, tmpi);
-                            //if (taskId == tmpid)
-                            //    errs() << cycB << "\t" << *it << "\n";
-                            #endif
-                            #ifdef DEBUG_PARALLEL_ANALYSIS  
-                            uint64_t cycBase = AnalyzerBaseline->analyzeInstruction(*it, addr);
-                            uint64_t cycS = AnalyzerSm->analyzeInstruction(*it, addr);
-                            //if (cycB < 40 && cycB > 35)
-                            //if (cycB != cycS)
-                            //{
-                            //    //errs() << cycB << "+=+" << cycS << "\t" << *it << "\n";
-                            //    errs() << "!=\t" ;
-                            //}
-                            //errs() << cycB << "+=+" << cycS << "\t" << *it << "\n";
-                            if (cycB > 160000)
-                            {
-                                done =true;
-                                break;
-                            }
-                            #endif
                         }
                         bbcount ++;
-                                
-                        #ifdef DEBUG_PARALLEL_ANALYSIS
-                        if (done)
-                        {
-                            break;
-                        }
-                        #endif
-    
                     }
                 }
                 
                 // CacheLineIssueCycleMap helps carry reuse distance across tasks 
                 bool CompareGroupSpans = false;
-                //errs() << "2fpaddonly\n";
                 Analyzer->finishAnalysis(taskId, !CompareGroupSpans, true);
-                #ifdef DEBUG_PARALLEL_ANALYSIS  
-                //errs() << "baseline\n";
-                AnalyzerBaseline->finishAnalysis(taskId, !CompareGroupSpans, true);
-                //errs() << "2divonly\n";
-                AnalyzerSm->finishAnalysis(taskId, !CompareGroupSpans, true);
-                #endif
-                
                 if (CompareGroupSpans)
                 {
                     for (unsigned int i = 0; i < Analyzer->CGSFCache.size(); i++)
@@ -761,11 +629,6 @@ bool EnginePass::runOnModule(Module &M)
             case task_type_basic_blocks:
             {
                 configureRelaxation(RelaxAnalyzer, taskId, *Analyzer, false); 
-
-                #ifdef DEBUG_TASK
-                //dbgs() << "RelaxAnalyzer after Configure################\n";
-                //RelaxAnalyzer->PrintMe();
-                #endif
 
                 if (RelaxAnalyzer->PerTaskCommFactor)
                 {
@@ -846,12 +709,6 @@ bool EnginePass::runOnModule(Module &M)
                             }
                             //errs() << *it << "\n";
                             uint64_t cycB = RelaxAnalyzer->analyzeInstruction(*it, addr);
-                            #ifdef DEBUG_TASK
-                            //SeqId tmpi(56);
-                            //TaskId tmpid(ctId, tmpi);
-                            //if (taskId == tmpid)
-                            //    errs() << cycB << "\t" << *it << "\n";
-                            #endif
                         }
                         bbcount ++;
                     }
@@ -924,11 +781,6 @@ void EnginePass::configureRelaxation(DynamicAnalysis* RelaxAnalyzer, TaskId tid,
         for (unsigned nn = 0; nn < n; ++nn)
         {
             bool done = false;
-            #if 0
-            errs() << i << ": " << mini << "\n";
-            for (auto mm : relaxFU) { errs() << "\t" << mm.first << ": " << mm.second << "\t"; }
-            errs() << "\n";
-            #endif 
 
             if (relaxFU.size() > nn)
             {
@@ -937,9 +789,7 @@ void EnginePass::configureRelaxation(DynamicAnalysis* RelaxAnalyzer, TaskId tid,
                     auto m = *I;
                     if (m.second > mini)
                     {
-                        //errs() << i << ": " << mini << ": Push\n";
                         relaxFU.insert(I, make_pair(i, mini));
-                        //errs() << relaxFU.back().first << ": " << relaxFU.back().second << ": Pop\n";
                         if (relaxFU.size() > n)
                         {
                             relaxFU.pop_back();
@@ -951,30 +801,15 @@ void EnginePass::configureRelaxation(DynamicAnalysis* RelaxAnalyzer, TaskId tid,
             }
             else
             {
-                //errs() << i << ": " << mini << ": Push\n";
                 relaxFU.push_back(make_pair(i, mini));
                 break;
             }
 
-            #if 0
-            for (auto mm : relaxFU) { errs() << "\t" << mm.first << ": " << mm.second << "\t"; }
-            errs() << "\n";
-            #endif
-    
             if (done) { break; }
         }
 
         //errs() << "\n";
     }
-
-    #if 0
-    errs() << tid.toString() << "\t";
-    for (auto m : relaxFU)
-    {
-        errs() << m.first << ":\t" << m.second << "\t\t";
-    }
-    errs() << "\n";
-    #endif
 
     doConfiguration(RelaxAnalyzer, BaseAnalyzer, false, n, degree);
 }
@@ -1048,8 +883,6 @@ void EnginePass::doConfiguration(DynamicAnalysis* RelaxAnalyzer, DynamicAnalysis
                     RelaxAnalyzer->ExecutionUnitsThroughput[i] *= 2;
                     manualL1 = true;
                 } 
-//                errs() << i << ": " <<
-//                    BaseAnalyzer.ExecutionUnitsThroughput[i] << "->" << RelaxAnalyzer->ExecutionUnitsThroughput[i] << "\n";
                 break;
             }
         }
