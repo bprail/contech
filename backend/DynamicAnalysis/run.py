@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-# run this - opt  -o foo.bc   -context-number=1
-
 import os
 import sys
 import argparse
@@ -9,18 +7,9 @@ sys.path.append(os.path.join(os.environ["CONTECH_HOME"], "scripts"))
 import util
 import subprocess
 import shutil
-import time
-import datetime
-import glob
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
-import matplotlib as matplotlib
-import json
-import math
-import csv
 
 def main(arg):
+    # TODO: usage should be based on argparse
     if (len(arg)) == 1:
         print "Usage: {0} input\n".format(arg[0])
         exit()
