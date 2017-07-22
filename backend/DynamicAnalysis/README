@@ -1,4 +1,7 @@
+Dynamic Analysis - Simulate a computer architecture for a sequence of LLVM IR instructions
+  extracted from a Contech insturmented program and corresponding taskgraph
 
+See https://github.com/bprail/contech/wiki/Dynamic-Analysis for instructions on running
+the backend.
 
-
-Requires libboost-dev
+Requires libboost-dev to build.
