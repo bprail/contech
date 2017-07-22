@@ -15,8 +15,8 @@ def main(arg):
         exit()
     
     parser = argparse.ArgumentParser(description="Runs dynamic analysis backend on benchmark")
-    parser.add_argument("-b", help="Bitcode file to analyze")
-    parser.add_argument("-t", help="Taskgraph file to analyze")
+    parser.add_argument("-b", "--bitcode", help="Bitcode file to analyze")
+    parser.add_argument("-t", "--taskgraph", help="Taskgraph file to analyze")
     parser.add_argument("-o", default="output", help="Output directory")
     parser.add_argument("-n", default="9", help="Number of contexts to analyze")
     args = parser.parse_args()
