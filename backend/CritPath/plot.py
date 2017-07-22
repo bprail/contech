@@ -43,7 +43,7 @@ def mergeBar(mergeCycle, barValLeft, barValHeight, barValBottom, barValColor):
     
     return (l, h, b, c)
 
-#This script parses the Harmony backend output to plot (thread count, exec count) tuples
+#This script parses the CritPath backend output to plot (thread count, exec count) tuples
 def main(arg):
     if (len(arg)) == 1:
         print "Usage: {0} input\n".format(arg[0])
@@ -52,7 +52,7 @@ def main(arg):
     for iVal in range(3, 5):#range(0, 4):
         fig = plt.figure(figsize=(10, 6)) #(7,7)
         p = 1
-        for harmony_in in arg[1:]:
+        for critpath_in in arg[1:]:
             
             nRes = 0
             cycBaselineRes = []
@@ -62,7 +62,7 @@ def main(arg):
             barValBottom = []
             barValColor = []
             
-            with open(harmony_in, "r") as csvfile:
+            with open(critpath_in, "r") as csvfile:
                 inputCSV = csv.reader(csvfile)
                 
                 #Critical Path CSV file has three sections:
@@ -180,45 +180,6 @@ def main(arg):
                                     barValLeft.append(cnum - 0.5)
                         nCon += 1
                         continue
-                    # if "C" in row[0]:
-                        # if (iVal == 3):
-                            # cnum = int(row[0][1:])
-                            # val = map(int, row[1:])
-                            # nCon += 1
-                            # t = 0
-                            # bot = 0
-                            # height = 0
-                            # hc = 0
-                            # count = 0
-                            # for v in val:
-                                # if t == 0:
-                                    # t = 1
-                                    # bot = v
-                                # elif t == 1:
-                                    # t = 2
-                                    # height = v
-                                    # if (v < minH and v > 0):
-                                        # minH = v
-                                # elif t == 2:
-                                    # t = 0
-                                    # if (v == 0):
-                                        # continue
-                                    # elif (v == 1):
-                                        # c = 'g'
-                                    # elif (v == 2):
-                                        # c = 'r'
-                                    # elif (v == 3):
-                                        # c = 'b'
-                                    # elif (v == 4):
-                                        # c = 'k'
-                                    # if (height == 0):
-                                        # continue
-                                    # count += 1
-                                    # barValBottom.append(bot)
-                                    # barValHeight.append(height)
-                                    # barValColor.append(c)
-                                    # barValLeft.append(cnum - 0.5)
-                        # continue
                     if (iVal > 1): 
                         continue
                     val = map(int, row)
@@ -226,7 +187,7 @@ def main(arg):
                     nRes+=1
             if (iVal == 2):
                 if (gStaticSum > 0):
-                    print harmony_in, (gStaticMax / gStaticSum), np.median(perCon) #, perStatic
+                    print critpath_in, (gStaticMax / gStaticSum), np.median(perCon) #, perStatic
                 continue
                     
             if (nRes == 0 and len(barValLeft) == 0):
@@ -277,14 +238,14 @@ def main(arg):
                     plt.xticks(fontsize=5)
                     plt.yticks(fontsize=5)
                     plt.rc('font', size=5)
-                harmony_l = harmony_in.split('/')
-                harmony_in = harmony_l[-1]
-                harmony_l = harmony_in.split('.')
-                harmony_in = harmony_l[-2]
+                critpath_l = critpath_in.split('/')
+                critpath_in = critpath_l[-1]
+                critpath_l = critpath_in.split('.')
+                critpath_in = critpath_l[-2]
                 
                 if (iVal == 3 or iVal == 4):
-                    print harmony_in, len(barValLeft), minH, mergeCycle / 2
-                t = plt.title(harmony_in, fontsize=5, verticalalignment='bottom')
+                    print critpath_in, len(barValLeft), minH, mergeCycle / 2
+                t = plt.title(critpath_in, fontsize=5, verticalalignment='bottom')
                 (x,y) = t.get_position()
                 t.set_position((x, (y- 0.05)))
                 p += 1
