@@ -35,7 +35,7 @@ def main(arg):
         # Skip any files with suffixes
         if (len(ctFile.split(".")) > 1):
             continue
-        print "Now open " + ctFile
+
         ctFileIn = open(arg[1] + "/" + ctFile, "r")
         
         # for each line, first is the context:sequence ID pair
