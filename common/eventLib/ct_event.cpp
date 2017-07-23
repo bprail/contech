@@ -26,6 +26,7 @@ EventLib::EventLib()
     lastBBID = 0;
     lastType = 0;
     next_basic_block_id = -1;
+    bbid_function_prefix = 0;
     
     cedPos = 0;
     debug_file = NULL;
@@ -208,6 +209,14 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             return NULL;
         }
         
+        // ct_event_basic_block_long is followed by a 4 byte basic block event
+        if (npe->event_type == ct_event_basic_block_long && 
+            version >= 10)
+        {
+            fread_check(&npe->event_type, sizeof(char), 1, fptr);
+            bbid_function_prefix = ~0x0;
+        }
+        
         if (npe->event_type < ct_event_basic_block_info) 
         {
             npe->bb.basic_block_id = npe->event_type;
@@ -247,9 +256,23 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             }
             else if (this->next_basic_block_id == -1)
             {
-                unsigned short bbid_high = 0;
-                fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
-                npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 7);
+                if (version < 10)
+                {
+                    unsigned short bbid_high = 0;
+                    fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
+                    npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 7);
+                }
+                else
+                {
+                    if (bbid_function_prefix == ~0x0)
+                    {
+                        uint32_t bbid_high = 0;
+                        fread_check(&bbid_high, sizeof(uint8_t), 3, fptr);
+                        bbid_function_prefix = (bbid_high << 7);
+                    }
+                    npe->bb.basic_block_id |= bbid_function_prefix;
+                }
+                
                 if (npe->bb.basic_block_id >= bb_count)
                 {
                     fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);

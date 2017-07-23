@@ -164,6 +164,7 @@ namespace contech
             unsigned int lastType;
             uint64_t lastBBIDPos;
             uint32_t next_basic_block_id;
+            uint32_t bbid_function_prefix;
             
             typedef struct _ct_event_debug
             {
