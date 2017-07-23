@@ -52,6 +52,7 @@ class BufferCheckAnalysis
         void prettyPrint();
 
         map<int, bool> getNeedCheckAtBlock() const { return needCheckAtBlock; }
+        map<int, bool> getNeedLongBBID() const { return needLongBBID; }
 
         bool hasStateChange(map<int, int>&, map<int, int>&);
         map<int, map<int, int>> getStateAfter() const { return stateAfter; }
@@ -64,6 +65,7 @@ class BufferCheckAnalysis
         hash<BasicBlock*> blockHash;
 
         map<int, bool> needCheckAtBlock;
+        map<int, bool> needLongBBID;
 
         map<int, llvm_inst_block> blockInfo;
         map<int, Loop*> loopExits;
@@ -75,6 +77,7 @@ class BufferCheckAnalysis
         int getMemUsed(BasicBlock*);
         int getLoopPath(Loop*);
         int accumulateBranch(vector<int>&);
+        void initLongBBID(int, bool);
     };
 
 }

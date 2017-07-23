@@ -166,6 +166,18 @@ namespace llvm
 		outs() << "\n";
 	}
 
+    void BufferCheckAnalysis::initLongBBID(int val, bool set_val)
+    {
+        auto entry = needLongBBID.find(val);
+        if (entry == needLongBBID.end())
+        {
+            needLongBBID[val] = set_val;
+        }
+        else if (set_val == false)
+        {
+            entry->second = set_val;
+        }
+    }
 
 	// this runs the dataflow analysis
 	// it distinguishes two locations:
@@ -182,6 +194,8 @@ namespace llvm
         
 		// recording the state of the current iteration
 		map<int, map<int, int>> currFlowAfter{}, currFlowBefore{};
+        
+        needLongBBID[entry_val] = false;
         
 		// initialize
 		for (auto B = fblock->begin(); B != fblock->end(); ++B) 
@@ -217,7 +231,7 @@ namespace llvm
 				int next_bb_val = blockHash(next_bb);
 				lastFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
 				currFlowAfter[bb_val][next_bb_val] = DEFAULT_SIZE;
-			}
+            }
             
             // TODO: Are there other instructions to return from a function?
             if (dyn_cast<ReturnInst>(B->getTerminator()) != NULL)
@@ -326,6 +340,7 @@ namespace llvm
 							needCheckAtBlock[bb_val] = true;
 						}
 						nextStates[next_bb_val] = next;
+                        //initLongBBID(next_bb_val, false);
 					}
 				}
 				else 
@@ -339,6 +354,7 @@ namespace llvm
                         {
 							next = DEFAULT_SIZE;
 							needCheckAtBlock[bb_val] = true;
+                            //initLongBBID(next_bb_val, false);
 						}
 						nextStates[next_bb_val] = next;
 					}
@@ -350,12 +366,15 @@ namespace llvm
 
 				// pass the updated state to all its successors
 				// to prepare for next basic block flow
+                
 				for (auto NB = succ_begin(bb); NB != succ_end(bb); ++NB) 
                 {
 					BasicBlock* next_bb = *NB;
 					int next_bb_val = blockHash(next_bb);
 					currFlowBefore[next_bb_val][bb_val] = 
 						copy(nextStates[next_bb_val]);
+                        
+                    
 				}
                 
 				// see if the state changes
@@ -366,6 +385,27 @@ namespace llvm
 				}
 			}
 		}
+        
+        for (auto B = fblock->begin(); B != fblock->end(); ++B) 
+        {
+            BasicBlock* bb = &*B;
+            int bb_val = blockHash(bb);
+            auto lib = blockInfo.find(bb_val);
+            for (auto NB = succ_begin(&*B); NB != succ_end(&*B); ++NB) 
+            {
+                BasicBlock* next_bb = *NB;
+                int nbb_val = blockHash(next_bb);
+                if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end())
+                {
+                    initLongBBID(nbb_val, false);
+                }
+                else
+                {
+                    initLongBBID(nbb_val, !(lib->second.containCall || lib->second.containQueueCall));
+                }
+            }
+        }
+        
 		// update the global state
 		stateAfter = currFlowAfter;
 	}
