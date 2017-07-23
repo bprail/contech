@@ -60,6 +60,7 @@ namespace llvm {
         bool hasCheck;
         bool preElide;
         bool hasElide;
+        bool containCall;
         int cost;
         Instruction* insertPoint;
         Value* posValue;
@@ -200,7 +201,7 @@ namespace llvm {
         bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid, std::map<int, llvm_inst_block>& costOfBlock);
         int assignIdToGlobalElide(Constant*, Module&);
         bool attemptTailDuplicate(BasicBlock* bbTail);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide, Module&);
+        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide, Module&, Value*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);

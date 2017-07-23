@@ -146,8 +146,8 @@ namespace llvm {
 bool Contech::doInitialization(Module &M)
 {
     // Function types are named fun(Return type)(arg1 ... argN)Ty
-    FunctionType* funVoidPtrI32I32VoidPtrI8Ty;
-    FunctionType* funVoidVoidPtrI32VoidPtrI8Ty;
+    FunctionType* funVoidPtrI32I32VoidPtrI8I8Ty;
+    FunctionType* funVoidVoidPtrI32VoidPtrI8I8Ty;
     FunctionType* funVoidVoidPtrI32I32I64I64Ty;
     FunctionType* funVoidPtrVoidPtrTy;
     FunctionType* funVoidPtrVoidTy;
@@ -164,7 +164,7 @@ bool Contech::doInitialization(Module &M)
     FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
     FunctionType* funI32I32Ty;
     FunctionType* funI32VoidPtrTy;
-    FunctionType* funI32I32I32VoidPtrI8Ty;
+    FunctionType* funI32I32I32VoidPtrI8I8Ty;
     FunctionType* funVoidVoidPtrI64Ty;
     FunctionType* funVoidVoidPtrI64I32I32Ty;
     FunctionType* funVoidI32I64I64Ty;
@@ -184,16 +184,16 @@ bool Contech::doInitialization(Module &M)
     funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
     cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
 
-    Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty};
-    funVoidPtrI32I32VoidPtrI8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 4), false);
-    cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8Ty);
+    Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty,  cct.int8Ty};
+    funVoidPtrI32I32VoidPtrI8I8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 5), false);
+    cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8I8Ty);
 
-    funI32I32I32VoidPtrI8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 4), false);
-    cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8Ty);
+    funI32I32I32VoidPtrI8I8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 5), false);
+    cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8I8Ty);
 
-    Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty};
-    funVoidVoidPtrI32VoidPtrI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 4), false);
-    cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8Ty);
+    Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty, cct.int8Ty};
+    funVoidVoidPtrI32VoidPtrI8I8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 5), false);
+    cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8I8Ty);
 
     funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
     cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
@@ -458,7 +458,7 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
 //
 //  Wrapper call that appropriately adds the operations to record the memory operation
 //
-pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide, Module &M)
+pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide, Module &M, Value* varBBID)
 {
     pllvm_mem_op tMemOp = new llvm_mem_op;
 
@@ -541,9 +541,9 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
         MarkInstAsContechInst(addrI);
 
-        Value* argsMO[] = {addrI, cPos, pos, cElide};
+        Value* argsMO[] = {addrI, cPos, pos, cElide, varBBID};
         debugLog("storeMemOpFunction @" << __LINE__);
-        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 5), "", li);
         MarkInstAsContechInst(smo);
 
         assert(smo != NULL);
@@ -1211,6 +1211,8 @@ bool Contech::runOnModule(Module &M)
         map<int, llvm_inst_block> costPerBlock;
         int num_checks = 0;
         int origin_checks = 0;
+        unsigned int bb_count_base = bb_count;
+        
         // Now instrument each basic block in the function
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) 
         {
@@ -1218,7 +1220,12 @@ bool Contech::runOnModule(Module &M)
             internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, 
                                     costPerBlock, num_checks, origin_checks);
             bb_count++;
+            assert(bb_count - bb_count_base < 256);
         }
+        
+        // Switch the "bb_count" to the next function
+        bb_count += 0xfe;
+        bb_count &= (0xffffff << 8);
 
         // run the check analysis
         BufferCheckAnalysis bufferCheckAnalysis{
@@ -1233,12 +1240,52 @@ bool Contech::runOnModule(Module &M)
         bufferCheckAnalysis.runAnalysis(pF);
         // see the analysis result
         map<int, bool> needCheckAtBlock{ bufferCheckAnalysis.getNeedCheckAtBlock() };
+        map<int, bool> needLongBBID { bufferCheckAnalysis.getNeedLongBBID() };
         
         hash<BasicBlock*> blockHash{};
         
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) 
         {
             int bb_val = blockHash(&*B);
+            
+            auto isLongBBID = needLongBBID.find(bb_val);
+            if (isLongBBID->second == true)
+            {
+                auto lib = costPerBlock.find(bb_val);
+                if (lib == costPerBlock.end())
+                {
+                    errs() << "Failed to look up known block in cost table.\n" << *B;
+                    assert("Missing Block" && 0);
+                }
+                
+                Value* true_val = ConstantInt::get(cct.int8Ty, 1);
+                
+                CallInst* sbbc = dyn_cast<CallInst>(lib->second.posValue);
+                assert(sbbc != NULL && "llvm_inst_block posValue is not sbbc CallInst");
+                
+                sbbc->setArgOperand(4, true_val);
+                CallInst* basePosValue = dyn_cast<CallInst>(sbbc->getArgOperand(1));
+                assert(basePosValue != NULL && "arg1 of sbbc is not basePosValue, a CallInst");
+                
+                CallInst* sbb = NULL;
+                for (auto it = basePosValue->user_begin(), et = basePosValue->user_end();
+                     it != et; ++it)
+                {
+                    sbb = dyn_cast<CallInst>(*it);
+                    assert(sbb != NULL);
+                    if (sbb != sbbc) break;
+                }
+                assert(sbb != NULL);
+                
+                sbb->setArgOperand(4, true_val);
+                for (auto it = sbb->user_begin(), et = sbb->user_end(); it != et; ++it)
+                {
+                    CallInst* memOp = dyn_cast<CallInst>(*it);
+                    assert(memOp != NULL);
+                    memOp->setArgOperand(4, true_val);
+                }
+            }
+            
             auto isReq = needCheckAtBlock.find(bb_val);
             if (isReq->second == false) {continue;}
             
@@ -1283,7 +1330,8 @@ bool Contech::runOnModule(Module &M)
 
 cleanup:
     ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
-    //contechStateFile->seekp(0, ios_base::beg);
+    
+    bb_count++;
     if (buffer == NULL)
     {
         // New state file starts with the basic block count
@@ -1508,6 +1556,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     map<Instruction*, int> dupMemOpOff;
     map<Value*, unsigned short> dupMemOpPos;
 
+    Value* varBBID = ConstantInt::get(cct.int8Ty, 0);
 
     //errs() << "BB: " << bbid << "\n";
     debugLog("Enter BBID: " << bbid);
@@ -1663,6 +1712,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bi->fileNameSize = fileNameSize;
     //bi->fileName = B.getDebugLoc().getScope().getFilename();//M.getModuleIdentifier().data();
     bi->critPathLen = getCriticalPathLen(B);
+    bi->containCall = false;
 
     //errs() << "Basic Block - " << bbid << " -- " << memOpCount << "\n";
     //debugLog("checkBufferFunction @" << __LINE__);
@@ -1694,10 +1744,10 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
         Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
         llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-        Value* argsBB[] = {llvm_bbid, bufPos, baseBufValue, cElide};
+        Value* argsBB[] = {llvm_bbid, basePosValue, baseBufValue, cElide, varBBID};
         debugLog("storeBasicBlockFunction for BBID: " << bbid << " @" << __LINE__);
         sbb = CallInst::Create(cct.storeBasicBlockFunction,
-                               ArrayRef<Value*>(argsBB, 4),
+                               ArrayRef<Value*>(argsBB, 5),
                                string("storeBlock") + to_string(bbid),
                                aPhi);
         MarkInstAsContechInst(sbb);
@@ -1768,7 +1818,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         {
             Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
             llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
-            Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide};
+            Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide, varBBID};
             #ifdef TSC_IN_BB
             if (memOpCount == 1)
             #else
@@ -1776,7 +1826,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             #endif
             {
                 debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", aPhi);
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 5), "", aPhi);
                 MarkInstAsContechInst(sbbc);
 
                 Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
@@ -1786,7 +1836,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             else
             {
                 debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", convertIterToInst(I));
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 5), "", convertIterToInst(I));
                 MarkInstAsContechInst(sbbc);
 
                 Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
@@ -1869,7 +1919,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(li) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M, varBBID);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[li];
@@ -1883,7 +1933,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             else
             {
                 assert(memOpPos < memOpCount);
-                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M, varBBID);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
                     memOpCount--;
@@ -1921,7 +1971,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(si) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M, varBBID);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[si];
@@ -1937,7 +1987,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 assert(memOpPos < memOpCount);
                 // Skip globals for testing
                 //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M, varBBID);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
                     memOpCount--;
@@ -2070,10 +2120,10 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
     // There could be multiple call instructions in the block, due to intrinsics and
     //   debug "calls".  If any are real calls, then the block contains a call.
-    //   If it has 
+    //   If it just has uinst calls, then these are calls that don't count such as llvm.dbg
+    //   or _ctStoreBasicBlock().
     bi->containCall = (bi->containCall)?true:(!hasUninstCall);
-
-    
+    errs() << bbid << "\t" << bi->containCall << "\t" << hasUninstCall << "\t" << containQueueBuf << "\n";
     {
         hash<BasicBlock*> blockHash{};
         int bb_val = blockHash(&B);
@@ -2086,6 +2136,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         lib.hasElide = elideBasicBlockId;
         lib.preElide = false;
         lib.containQueueCall = containQueueBuf;
+        lib.containCall = bi->containCall;
         // If there are more than 170 memops, then "prealloc" space
         if (memOpCount > ((1024 - 4) / 6))
         {

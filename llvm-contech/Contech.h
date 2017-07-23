@@ -186,6 +186,7 @@ namespace llvm {
     {
         Function *f = ci->getCalledFunction();
         hasUninstCall = false;
+        bi->containCall = true;
 
         // call is indirect
         // TODO: add dynamic check on function called
@@ -224,6 +225,8 @@ namespace llvm {
             {
                 free(fdn);
             }
+            hasUninstCall = true;
+            bi->containCall = false;
             return I;
         }
         
@@ -1241,6 +1244,7 @@ namespace llvm {
                     {
                         // IGNORE
                         hasUninstCall = true;
+                        bi->containCall = false;
                     }
                     else
                     {
@@ -1252,10 +1256,6 @@ namespace llvm {
                 {
                     // The function called is not something added by the instrumentation
                     //     and also not one that needs special treatment.
-                    hasUninstCall = true;
-                }
-                else
-                {
                     hasUninstCall = true;
                 }
             }
