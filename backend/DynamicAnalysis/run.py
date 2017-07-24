@@ -7,6 +7,7 @@ sys.path.append(os.path.join(os.environ["CONTECH_HOME"], "scripts"))
 import util
 import subprocess
 import shutil
+import tempfile
 
 def main(arg):
     # TODO: usage should be based on argparse
@@ -39,7 +40,7 @@ def main(arg):
     AccessGran = "-mem-access-granularity={8,8,64,64,64}"
     
     # Assume that the taskgraph is formatted according to regress / util script convention
-    benchName = args.t.split('/')[-1]
+    benchName = args.taskgraph.split('/')[-1]
     benchName = benchName.split('.')[0]
     
     try:
@@ -50,13 +51,21 @@ def main(arg):
     
     for ctid in range(int(args.n)):
         filename = args.o + "/" + benchName + "/ct_{0}".format(ctid)
+        ofile = tempfile.NamedTemporaryFile(suffix=".bc")
         with open(filename, "w") as of:
             #Use bash to expand arguments per https://stackoverflow.com/questions/8945826/expand-shell-path-expression-in-python
-            util.pcall(["bash -c \" opt", DynAnalysisLib, "-EnginePass", args.b, "-taskgraph-file=" + args.t,
-                        "-o " + filename + ".bc", "-context-number={0}".format(ctid), 
+            util.pcall(["bash -c \" opt", DynAnalysisLib, "-EnginePass", args.bitcode, "-taskgraph-file=" + args.taskgraph,
+                        "-o " + ofile.name, "-context-number={0}".format(ctid), 
                         ExecLatency, ROBSize, LBSize, SBSize, CacheLineSize, ILP, RSSize, L1Size,
                         L2Size, LLCSize, ExecIssue, ExecThru, FillBufSize, WordSize, AccessGran, "\""],
                         outputFile=of, suppressOutput=True, silent=True)
+        ofile.close()
+        try:
+            os.unlink(ofile.name)
+        except os.error:
+            # we expect that there will be an error returned by the unlink
+            #   The file should already be deleted, but we are calling just in case
+            arg = arg
 
 if __name__ == "__main__":
     main(sys.argv)
