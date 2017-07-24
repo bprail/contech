@@ -24,7 +24,8 @@ def main(arg):
     f = open( arg[1] + "/critPath.bin", "wb")
     
     taskCount = 0
-    array('h', [len(arg) - 1]).tofile(f)
+    confCount = len(arg) - 1
+    array('h', [confCount]).tofile(f)
     array('c', '-').tofile(f)
     taskCountPos = f.tell()
     array('i', [taskCount]).tofile(f)
@@ -36,7 +37,9 @@ def main(arg):
         if (len(ctFile.split(".")) > 1):
             continue
 
-        ctFileIn = open(arg[1] + "/" + ctFile, "r")
+        ctFileIn = []
+        for i in range(confCount):
+            ctFileIn.append(open(arg[i + 1] + "/" + ctFile, "r"))
         
         # for each line, first is the context:sequence ID pair
         #   then header
@@ -44,7 +47,11 @@ def main(arg):
         #   skip 3
         #   then performance
         state = 0
-        for l in ctFileIn:
+        for l in ctFileIn[0]:
+            
+            confLine = []
+            for i in range(1, confCount):
+                confLine.append(ctFileIn[i].readline())
             
             if (state == 0):
                 m = re.match("\d+:\d+", l)
@@ -70,7 +77,7 @@ def main(arg):
                 bvals = l.split() #no arg splits on whitespace
                 issue = float(bvals[1])
                 latency = float(bvals[2])
-                if (minvalue == -1):
+                if (minvalue == -1.0):
                     minvalue = issue
                     minline = line
                     mintype = 0
@@ -79,7 +86,7 @@ def main(arg):
                     minline = line
                     mintype = 0
                 if (latency < minvalue):
-                    minvalue = issue
+                    minvalue = latency
                     minline = line
                     mintype = 1
                 line += 1
@@ -94,10 +101,15 @@ def main(arg):
                     #   versus the first config (i.e. baseline)
                     perf = float(l.split()[1])
                     array('f', [1.0]).tofile(f)
+                    for i in range(1, confCount):
+                        perfConf = float(confLine[i - 1].split()[1])
+                        array('f', [perfConf / perf]).tofile(f)
                     array('h', [minline]).tofile(f)
                     array('c', '_').tofile(f)
                     array('h', [mintype]).tofile(f)
                     
+        for i in range(confCount):
+            ctFileIn[i].close()
     
     f.seek(taskCountPos, 0)
     array('i', [taskCount]).tofile(f)
