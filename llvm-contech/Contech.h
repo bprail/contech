@@ -196,6 +196,7 @@ namespace llvm {
             f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)
             {
+                bi->containCall = true;
                 hasUninstCall = true;
                 return I;
             }
@@ -220,6 +221,9 @@ namespace llvm {
         }
         else
         {
+            // A call to our instrumentation does not need instrumenting nor
+            //   does it count as a separate function call.
+            hasUninstCall = true;
             if (status == 0)
             {
                 free(fdn);
@@ -227,6 +231,7 @@ namespace llvm {
             return I;
         }
         
+        bi->containCall = true;
         CONTECH_FUNCTION_TYPE funTy = ctPass->classifyFunctionName(fn);
         //errs() << funTy << "\n";
         switch(funTy)
@@ -1205,14 +1210,13 @@ namespace llvm {
             default:
             {
                 // TODO: Function->isIntrinsic()
-                if (0 == __ctStrCmp(fn, "memcpy")    ||
+                if (0 == __ctStrCmp(fn, "memcpy")  ||
                     0 == __ctStrCmp(fn, "memmove"))
                 {
                     Value* cArgS[] = {ci->getArgOperand(2), ci->getArgOperand(0), ci->getArgOperand(1)};
                     debugLog("storeBulkMemoryOpFunction @" << __LINE__);
                     Instruction* callBMOF = CallInst::Create(cct->storeBulkMemoryOpFunction, ArrayRef<Value*>(cArgS, 3), "", convertIterToInst(I));
                     MarkInstAsContechInst(callBMOF);
-                    hasUninstCall = false;
                 }
                 else if (0 == __ctStrCmp(fn, "llvm."))
                 {
@@ -1241,6 +1245,7 @@ namespace llvm {
                     {
                         // IGNORE
                         hasUninstCall = true;
+                        bi->containCall = false;
                     }
                     else
                     {
@@ -1252,10 +1257,6 @@ namespace llvm {
                 {
                     // The function called is not something added by the instrumentation
                     //     and also not one that needs special treatment.
-                    hasUninstCall = true;
-                }
-                else
-                {
                     hasUninstCall = true;
                 }
             }

@@ -1656,6 +1656,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bi->first_op = NULL;
     bi->containGlobalAccess = false;
     bi->containAtomic = false;
+    bi->containCall = false;
     bi->lineNum = lineNum;
     bi->numIROps = numIROps;
     bi->fnName.assign(fnName);
@@ -2072,7 +2073,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     //   debug "calls".  If any are real calls, then the block contains a call.
     //   If it has 
     bi->containCall = (bi->containCall)?true:(!hasUninstCall);
-
     
     {
         hash<BasicBlock*> blockHash{};
