@@ -27,6 +27,7 @@ typedef struct _ct_memory_op {
 
 // Event IDs used primarily in serialize / deserialize
 enum _ct_event_id { ct_event_basic_block = 0, 
+    ct_event_basic_block_long = 64,
     ct_event_basic_block_info = 128, 
     ct_event_memory, 
     ct_event_sync, 
@@ -42,7 +43,6 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_mpi_wait,
     ct_event_roi,
     ct_event_gv_info,
-    ct_event_basic_block_long = 0xff,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
 

@@ -210,14 +210,16 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         }
         
         // ct_event_basic_block_long is followed by a 4 byte basic block event
-        if (npe->event_type == ct_event_basic_block_long && 
+        if (npe->event_type >= ct_event_basic_block_long && 
+            npe->event_type < ct_event_basic_block_info &&
             version >= 10)
         {
-            fread_check(&npe->event_type, sizeof(char), 1, fptr);
             bbid_function_prefix = ~0x0;
+            npe->bb.basic_block_id = npe->event_type ^ ct_event_basic_block_long;
+            npe->event_type = ct_event_basic_block;
         }
         
-        if (npe->event_type < ct_event_basic_block_info) 
+        if (npe->event_type < ct_event_basic_block_long) 
         {
             npe->bb.basic_block_id = npe->event_type;
             npe->event_type = ct_event_basic_block;
@@ -260,7 +262,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 {
                     unsigned short bbid_high = 0;
                     fread_check(&bbid_high, sizeof(unsigned short), 1, fptr);
-                    npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 7);
+                    npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 6);
                 }
                 else
                 {
@@ -268,7 +270,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                     {
                         uint32_t bbid_high = 0;
                         fread_check(&bbid_high, sizeof(uint8_t), 3, fptr);
-                        bbid_function_prefix = (bbid_high << 7);
+                        bbid_function_prefix = (bbid_high << 6);
                     }
                     npe->bb.basic_block_id |= bbid_function_prefix;
                 }
