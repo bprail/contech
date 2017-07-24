@@ -673,14 +673,12 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     {
         if (varLenBBIDs)
         {
-            *((unsigned char*)r) = (bbid & 0x7f);
+            *((unsigned char*)r) = (bbid & 0x3f);
         }
         else 
         {
-            *((unsigned char*)r) = ct_event_basic_block_long;
-            r++;
             // Shift 1 bit of 0s, which is the basic block event
-            *((unsigned int*)r) = ((bbid & 0x7fffff80) << 1 ) | (bbid & 0x7f);
+            *((unsigned int*)r) = ((bbid & 0x3fffffc0) << 2 ) | (bbid & 0x3f) | ct_event_basic_block_long;
         }
     }
            
@@ -701,7 +699,7 @@ __attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned
     }
     else
     {
-        (t->pos = p + numMemOps * 6 * sizeof(char) + 5 * sizeof(char));
+        (t->pos = p + numMemOps * 6 * sizeof(char) + 4 * sizeof(char));
     }
     #endif
     return t->pos;
