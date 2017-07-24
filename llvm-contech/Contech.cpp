@@ -1220,12 +1220,14 @@ bool Contech::runOnModule(Module &M)
             internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, 
                                     costPerBlock, num_checks, origin_checks);
             bb_count++;
-            assert(bb_count - bb_count_base < 256);
+            assert(bb_count - bb_count_base < 64);
         }
         
         // Switch the "bb_count" to the next function
-        bb_count += 0xfe;
-        bb_count &= (0xffffff << 8);
+        errs() << bb_count << "\t";
+        bb_count += (62);
+        bb_count &= (~0x3f);
+        errs() << bb_count << "\n";
 
         // run the check analysis
         BufferCheckAnalysis bufferCheckAnalysis{
