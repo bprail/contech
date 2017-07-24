@@ -9,7 +9,7 @@ namespace llvm {
     //     has issues with the "initialization of non-const reference"
     #define convertInstToIter(I) ((I)->getIterator())
 
-    Instruction* convertIterToInst(BasicBlock::iterator& I)
+    static Instruction* convertIterToInst(BasicBlock::iterator& I)
     {
         auto r = &*I;
         assert(r != NULL);
@@ -19,7 +19,7 @@ namespace llvm {
     //
     // Add Debug info to an instruction to indicate that it has been added by Contech
     //
-    void MarkInstAsContechInst(Instruction* ii)
+    static void MarkInstAsContechInst(Instruction* ii)
     {
         unsigned ctmd = ii->getParent()->getContext().getMDKindID("ContechInst");
         ii->setMetadata(ctmd, MDNode::get(ii->getParent()->getContext(), MDString::get(ii->getParent()->getContext(),"Contech")));
