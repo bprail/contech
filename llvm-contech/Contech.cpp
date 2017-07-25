@@ -343,6 +343,24 @@ _CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
     return NONE;
 }
 
+void Contech::getAnalysisUsage(AnalysisUsage& AU) const {		
+    AU.setPreservesAll();		
+    AU.addRequired<ScalarEvolutionWrapperPass>();		
+    AU.addRequired<LoopInfoWrapperPass>();		
+    AU.addPreserved<LoopInfoWrapperPass>();		
+    //AU.addRequired<LoopInfoWrapperPass>();  //in this order		
+}		
+
+LoopInfo* Contech::getAnalysisLoopInfo(Function& F)		
+{		
+    return &getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();		
+}		
+		
+ScalarEvolution* Contech::getAnalysisSCEV(Function& F)		
+{		
+    return &getAnalysis<ScalarEvolutionWrapperPass>(F).getSE();		
+}
+
 //
 // Go through the module to get the basic blocks
 //
@@ -1464,13 +1482,14 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             num_checks++;
           }
         }
-        else {
+        else 
+        {
           // we need to add check according to the analysis result
           needCheckAtBlock.erase(bb_val);
           Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
           MarkInstAsContechInst(callChk);
           num_checks++;
-         }
+        }
     }
     else {
         // straight line code
