@@ -309,40 +309,37 @@ namespace llvm{
                 Instruction* temp = cast<Instruction>(&*I);
                 unsigned cnt = 0;
                 bool is_derived = false;
-                for(unsigned i = 0; i < temp->getNumOperands(); i++) 
+                for (unsigned i = 0; i < temp->getNumOperands(); i++) 
                 {
                     Instruction* nl = dyn_cast<Instruction>(&*temp->getOperand(i));
-                    if(isa<Argument>(temp->getOperand(i))) 
+                    if (isa<Argument>(temp->getOperand(i))) 
                     {
                         break;
                     }
-                    if(isa<Constant>(temp->getOperand(i)))     //if operand if const
+                    if (isa<Constant>(temp->getOperand(i)))     //if operand if const
                     {
                         cnt++;
                     }
-                    else if(L->isLoopInvariant(temp->getOperand(i)))     //or it is loop invariant
+                    else if (L->isLoopInvariant(temp->getOperand(i)))     //or it is loop invariant
                     {
                         cnt++;
                     }
-                    else if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end())     //or it is an IV
+                    else if (std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end())     //or it is an IV
                     {
                         cnt++;
                         is_derived = true;
                     }
-                    else if(nl != NULL) 
+                    else if (nl != NULL) 
                     {
                         //if derived from non-linear
-                        if(std::find(IVs.begin(), IVs.end(), nl->getOperand(0)) != IVs.end())     //or it is an IV
+                        for (unsigned j = 0; j < nl->getNumOperands(); j++)
                         {
-                            cnt++;
-                            is_derived = true;
+                            if (std::find(IVs.begin(), IVs.end(), nl->getOperand(j)) != IVs.end())
+                            {
+                                cnt++;
+                                is_derived = true;
+                            }
                         }
-                        else if(std::find(IVs.begin(), IVs.end(), nl->getOperand(1)) != IVs.end())     //or it is an IV
-                        {
-                            cnt++;
-                            is_derived = true;
-                        }
-
                     }
                 }
                 if (is_derived && cnt == temp->getNumOperands()) {
@@ -362,29 +359,34 @@ namespace llvm{
             for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
             {
                 Value* gepI = itG.getOperand();
-                Instruction* temp = cast<Instruction>(gepI);
+                Instruction* temp = dyn_cast<Instruction>(gepI);
+                
                 if (dyn_cast<ConstantInt>(gepI)) 
+                {
+                    continue;
+                }
+                else if (temp == NULL)
                 {
                     continue;
                 }
                 else 
                 {
-                    if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                    if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                     {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
                         cnt_elided++;
                     }
                     //traverse the operands
-                    else if(!isa <Argument>(gepI)) //isa<CastInst>(gepI)
+                    else if (!isa <Argument>(gepI)) //isa<CastInst>(gepI)
                     {
                         Value* gepI = temp->getOperand(0);
-                        if(std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                        if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                         {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
                             cnt_elided++;
                         }
 
-                        else if(!isa <Argument>(gepI))  //any other operation involving IV and COnst or LI Inst
+                        else if (!isa <Argument>(gepI))  //any other operation involving IV and COnst or LI Inst
                         {
                             Instruction* temp = dyn_cast<Instruction>(gepI);
                             bool is_safe = true, is_found = false;
@@ -410,12 +412,12 @@ namespace llvm{
                                     }
                                 }
                                 
-                                if(is_safe && is_found)     //check for other operand 
+                                if (is_safe && is_found)     //check for other operand 
                                 {
                                     const SCEVAddRecExpr *S = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*temp->getOperand(1-op)));
                                     if (S != NULL) 
                                     {
-                                        if(!is_derived) 
+                                        if (!is_derived) 
                                         {
                                             cnt_elided++;
                                             //errs() << "FOUND IT 2 : " << *gepAddr << "\n";
@@ -440,6 +442,57 @@ namespace llvm{
         return cnt_elided;
     }
 
+    void LoopIV::iterateOnLoop(Loop *L)
+    {
+        collectPossibleIVs(L);
+        collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
+        collectDerivedIVs(L, NonLinearIvs, &DerivedNonlinearIvs);
+        for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
+        {
+            BasicBlock* b = (*bb);
+            for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+            {
+                GetElementPtrInst *gepAddr = NULL;
+
+                if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
+                {
+                    gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
+                    cnt_GetElementPtrInst++;
+                }
+                else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
+                {
+                    gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
+                    cnt_GetElementPtrInst++;
+                }
+                else 
+                {
+                    continue;
+                }
+                
+                if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
+                {
+                    cnt_elided++;
+                    LoopMemoryOps.push_back(&*I);
+                }
+                else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
+                {
+                    cnt_elided++;
+                    LoopMemoryOps.push_back(&*I);
+                }
+                else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
+                {
+                    cnt_elided++;
+                    LoopMemoryOps.push_back(&*I);
+                }
+                else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
+                {
+                    cnt_elided++;
+                    LoopMemoryOps.push_back(&*I);
+                }
+            }
+        }
+    }
+    
     //bool LoopIV::runOnLoop(Loop *L, LPPassManager &LPM) {
     bool LoopIV::runOnFunction (Function &F) 
     {
@@ -463,56 +516,10 @@ namespace llvm{
             }
 
             // Iterate on subloops of Loop L
-            // TODO: check if this will still execute on loop L if it contains no sub loops
+            iterateOnLoop(L);
             for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
             {
-                collectPossibleIVs((*subL));
-                collectDerivedIVs((*subL), PossibleIVs, &DerivedLinearIvs);
-                collectDerivedIVs((*subL), NonLinearIvs, &DerivedNonlinearIvs);
-                for(Loop::block_iterator bb = (*subL)->block_begin(); bb != (*subL)->block_end(); ++bb) 
-                {
-                    BasicBlock* b = (*bb);
-                    for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
-                    {
-                        GetElementPtrInst *gepAddr = NULL;
-
-                        if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
-                        {
-                            gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
-                            cnt_GetElementPtrInst++;
-                        }
-                        else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
-                        {
-                            gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
-                            cnt_GetElementPtrInst++;
-                        }
-                        else 
-                        {
-                            continue;
-                        }
-                        
-                        if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
-                        {
-                            cnt_elided++;
-                            LoopMemoryOps.push_back(&*I);
-                        }
-                        else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
-                        {
-                            cnt_elided++;
-                            LoopMemoryOps.push_back(&*I);
-                        }
-                        else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
-                        {
-                            cnt_elided++;
-                            LoopMemoryOps.push_back(&*I);
-                        }
-                        else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
-                        {
-                            cnt_elided++;
-                            LoopMemoryOps.push_back(&*I);
-                        }
-                    }
-                }
+                iterateOnLoop(*subL);
             }
     #if 0
             outs() << "----------- Print summary for the loop --------------\n";
