@@ -444,6 +444,7 @@ namespace llvm{
 
     void LoopIV::iterateOnLoop(Loop *L)
     {
+        errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
         collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
         collectDerivedIVs(L, NonLinearIvs, &DerivedNonlinearIvs);
@@ -501,8 +502,6 @@ namespace llvm{
           LoopMemoryOps.clear();
           cnt_GetElementPtrInst = 0;
           cnt_elided = 0;
-
-          //errs() << F;
           
           LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
           SE = ctThis->getAnalysisSCEV(F);
@@ -512,7 +511,9 @@ namespace llvm{
 
             if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
             {
-                return false;
+                errs() << "Going backedge -- " << (*(L->block_begin()))->getName() << "\n";
+                //return false;
+                continue;
             }
 
             // Iterate on subloops of Loop L
@@ -524,11 +525,9 @@ namespace llvm{
     #if 0
             outs() << "----------- Print summary for the loop --------------\n";
             
-            outs() << "LRR: F[" << Header->getParent()->getName() <<
-            "] Loop %" << Header->getName() << " (" <<
+            outs() << "LRR: F[" << F.getName() <<
+            "] Loop %" << (*(L->block_begin()))->getName() << " (" <<
             L->getNumBlocks() << " block(s))\n";
-
-              outs() << "LRR: iteration count = " << *IterCount << "\n";
 
             outs() << "LINEAR INDUCTION VARIABLES:\n";
             for(auto iv = PossibleIVs.begin(); iv != PossibleIVs.end(); ++iv) {
