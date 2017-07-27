@@ -16,6 +16,7 @@
 #include <unordered_map>
 #include <cxxabi.h>
 #include "../common/eventLib/ct_event_st.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 
 //#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
@@ -202,6 +203,8 @@ namespace llvm {
         int assignIdToGlobalElide(Constant*, Module&);
         bool attemptTailDuplicate(BasicBlock* bbTail);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide, Module&);
+        Value* convertValueToConstant(Value*, int*);
+        int updateOffset(gep_type_iterator gepit, int val);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);

@@ -563,6 +563,82 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
 }
 
 //
+// convertValueToConstant
+//
+//   Given a value v, determine if it is a function of a single base value and other
+//     constants.  If so, then return the base value.
+//
+Value* Contech::convertValueToConstant(Value* v, int* offset)
+{
+    bool zeroOrOneConstant = true;
+    
+    do {
+        Instruction* inst = dyn_cast<Instruction>(v);
+        if (inst == NULL) break;
+        
+        switch(inst->getOpcode())
+        {
+            case Instruction::Add:
+            {
+                Value* vOp[2];
+                zeroOrOneConstant = false;
+                for (int i = 0; i < 2; i++)
+                {
+                    vOp[i] = inst->getOperand(i);
+                    if (ConstantInt* ci = dyn_cast<ConstantInt>(vOp[i]))
+                    {
+                        *offset += ci->getZExtValue();
+                        zeroOrOneConstant = true;
+                    }
+                    else
+                    {
+                        v = vOp[i];
+                    }
+                }
+                
+                if (zeroOrOneConstant == false)
+                {
+                    v = inst;
+                }
+            }
+            break;
+            default:
+            {
+                zeroOrOneConstant = false;
+            }
+            break;
+        }
+        
+    } while (zeroOrOneConstant);
+    
+    return v;
+}
+
+//
+//  updateOffset
+//
+// GetElementPtr supports computing a constant offset; however, it requires
+//   all fields to be constant.  The code is reproduced here, in order to compute
+//   a partial constant offset along with the delta from the other GEP inst.
+//
+int Contech::updateOffset(gep_type_iterator gepit, int val)
+{
+    int offset = 0;
+    if (StructType *STy = dyn_cast<StructType>(*gepit))
+    {
+        unsigned ElementIdx = val;
+        const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+        offset = SL->getElementOffset(ElementIdx);
+    }
+    else
+    {
+        offset = val * currentDataLayout->getTypeAllocSize(gepit.getIndexedType());
+    }
+    
+    return offset;
+}
+
+//
 // findSimilarMemoryInst
 //
 //   A key performance feature, this function will determine whether a given memory operation
@@ -642,21 +718,14 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
         // If the index of GEP is a Constant, then it can vary between mem ops
         if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
         {
-            if (StructType *STy = dyn_cast<StructType>(*itG))
-            {
-                unsigned ElementIdx = aConst->getZExtValue();
-                const StructLayout *SL = currentDataLayout->getStructLayout(STy);
-                baseOffset += SL->getElementOffset(ElementIdx);
-            }
-            else
-            {
-                baseOffset += aConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
-            }
+            baseOffset += updateOffset(itG, aConst->getZExtValue());
         }
         else
         {
             // Reset to 0 if there is a variable offset
             baseOffset = 0;
+            gepI = convertValueToConstant(gepI, &baseOffset);
+            baseOffset += updateOffset(itG, baseOffset);
         }
 
         // TODO: if the value is a constant global, then it matters
@@ -717,21 +786,7 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
                         aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
                     isMatch = true;
                     
-                    //
-                    // GetElementPtr supports computing a constant offset; however, it requires
-                    //   all fields to be constant.  The code is reproduced here, in order to compute
-                    //   a partial constant offset along with the delta from the other GEP inst.
-                    //
-                    if (StructType *STy = dyn_cast<StructType>(*itG))
-                    {
-                        unsigned ElementIdx = gConst->getZExtValue();
-                        const StructLayout *SL = currentDataLayout->getStructLayout(STy);
-                        tOffset += SL->getElementOffset(ElementIdx);
-                        continue;
-                    }
-
-                    tOffset += gConst->getZExtValue() * currentDataLayout->getTypeAllocSize(itG.getIndexedType());
-
+                    tOffset += updateOffset(itG, gConst->getZExtValue());
                     continue;
                 }
                 else
@@ -749,12 +804,21 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
             }
 
             // temp offset remains 0 until a final sequence of constant int offsets
+            //   At this point, the current component is not constant, so it must match.
             tOffset = 0;
-            if (i >= addrComponents.size() || 
-                gepI != addrComponents[i])
+            if (i >= addrComponents.size())
             {
                 isMatch = false;
                 break;
+            }
+            else if (gepI != addrComponents[i])
+            {
+                gepI = convertValueToConstant(gepI, &tOffset);
+                if (gepI != addrComponents[i])
+                {
+                    isMatch = false;
+                    break;
+                }
             }
         }
 
