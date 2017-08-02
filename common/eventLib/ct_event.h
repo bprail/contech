@@ -226,6 +226,7 @@ namespace contech
             void displayContechEventDiagInfo();
             void displayContechEventStats();
             void resetEventLib();
+            uint64_t getSum() {return sum;}
     };
     
     
