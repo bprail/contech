@@ -34,6 +34,7 @@ namespace contech {
         pct_event getNextContechEvent();
         void readyEvents(unsigned int);
         int mpiRank;
+        uint64_t getSpace();
         FILE* file;
     };
 
@@ -43,6 +44,7 @@ namespace contech {
             
             deque <EventList*> traces;
             deque <EventList*>::iterator currentTrace;
+            uint64_t totalSpace;
             
             //pct_event getNextContechEvent(EventList*);
     
@@ -52,6 +54,7 @@ namespace contech {
             pct_event getNextContechEvent(int*);
             void readyEvents(int, unsigned int);
             void registerEventList(FILE*);
+            void printSpaceTime(ct_tsc_t);
     };
 
 }

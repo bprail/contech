@@ -16,6 +16,7 @@ void eventDebugPrint(TaskId first, string verb, TaskId second, ct_tsc_t start, c
 EventQ::EventQ()
 {
     currentTrace = traces.begin();
+    totalSpace = 0;
 }
 
 EventQ::~EventQ()
@@ -25,6 +26,11 @@ EventQ::~EventQ()
         fclose((*it)->file);
         delete *it;
     }
+}
+
+void EventQ::printSpaceTime(ct_tsc_t t)
+{
+    cerr << "Middle Space Time: " << ((double)totalSpace) / t << endl;
 }
 
 void EventQ::registerEventList(FILE* f)
@@ -55,6 +61,7 @@ pct_event EventQ::getNextContechEvent(int* rank)
         if (event == NULL)
         {
             fclose((*currentTrace)->file);
+            totalSpace += (*currentTrace)->getSpace();
             delete *currentTrace;
             currentTrace = traces.erase(currentTrace);
         }
@@ -88,7 +95,13 @@ EventList::~EventList()
     if (el != NULL)
     {
         delete el;
+        el = NULL;
     }
+}
+
+uint64_t EventList::getSpace()
+{
+    return el->getSum();
 }
 
 void EventList::rescanMinTicket()
