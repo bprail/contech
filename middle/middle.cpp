@@ -14,6 +14,7 @@ int main(int argc, char* argv[])
     pthread_t backgroundT;
     EventQ eventQ;
     bool roiEvent = false;
+    ct_tsc_t totalCycles = 0;
     
     // First attempt middle layer in parallel, if there is an error,
     //   then restart in serial mode.
@@ -281,7 +282,7 @@ reset_middle:
                 activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
                 activeContech.createBasicBlockContinuation();
                 activeContech.removeTask(activeT);
-                backgroundQueueTask(activeT);
+                totalCycles += backgroundQueueTask(activeT);
                 updateContextTaskList(activeContech);
                 
                 activeT = activeContech.activeTask();
@@ -297,7 +298,7 @@ reset_middle:
                 activeT->setEndTime(activeT->getStartTime() + MAX_BLOCK_THRESHOLD);
                 activeContech.createBasicBlockContinuation();
                 activeContech.removeTask(activeT);
-                backgroundQueueTask(activeT);
+                totalCycles += backgroundQueueTask(activeT);
                 updateContextTaskList(activeContech);
                 
                 activeT = activeContech.activeTask();
@@ -439,7 +440,7 @@ reset_middle:
                 //  N.B. owner cannot be the active context
                 bool wasRem = context[cid].removeTask(owner);
                 assert(wasRem == true);
-                backgroundQueueTask(owner);
+                totalCycles += backgroundQueueTask(owner);
                 
                 updateContextTaskList(context[cid]);
             }
@@ -494,11 +495,11 @@ reset_middle:
                         
                         assert(rem == true);
                         
-                        backgroundQueueTask(otherTask);
+                        totalCycles += backgroundQueueTask(otherTask);
                     }
                     
                     activeContech.removeTask(activeT);
-                    backgroundQueueTask(activeT);
+                    totalCycles += backgroundQueueTask(activeT);
                 }
             } 
             else // I joined with another task
@@ -531,7 +532,7 @@ reset_middle:
                     if (parallelMiddle)
                     {
                         otherContext.removeTask(otherTask);
-                        backgroundQueueTask(otherTask);
+                        totalCycles += backgroundQueueTask(otherTask);
                         updateContextTaskList(otherContext);
                     }
                     
@@ -639,7 +640,7 @@ reset_middle:
                     bool remove = context[cid].removeTask(barrierTask);
                     assert(remove);
                     
-                    backgroundQueueTask(barrierTask);
+                    totalCycles += backgroundQueueTask(barrierTask);
                     
                     updateContextTaskList(context[cid]);
                 }
@@ -727,16 +728,16 @@ reset_middle:
                     //TODO: Background Queue the tasks
                     bool rem = context[firstSend->getContextId()].removeTask(firstSend);
                     assert(rem == true);
-                    backgroundQueueTask(firstSend);
+                    totalCycles += backgroundQueueTask(firstSend);
                     rem = context[recvTask->getContextId()].removeTask(recvTask);
                     assert(rem == true);
-                    backgroundQueueTask(recvTask);
+                    totalCycles += backgroundQueueTask(recvTask);
                     activeContech.createBasicBlockContinuation();
                     if (secSend != NULL)
                     {
                         rem = context[secSend->getContextId()].removeTask(secSend);
                         assert(rem == true);
-                        backgroundQueueTask(secSend);
+                        totalCycles += backgroundQueueTask(secSend);
                     }
                 }
                 else // Queue send info
@@ -790,10 +791,10 @@ reset_middle:
                         activeContech.createBasicBlockContinuation();
                         bool rem = context[firstSend->getContextId()].removeTask(firstSend);
                         assert(rem == true);
-                        backgroundQueueTask(firstSend);
+                        totalCycles += backgroundQueueTask(firstSend);
                         rem = context[recvT->getContextId()].removeTask(recvT);
                         assert(rem == true);
-                        backgroundQueueTask(recvT);
+                        totalCycles += backgroundQueueTask(recvT);
                     }
                     else
                     {
@@ -851,10 +852,10 @@ reset_middle:
                 activeContech.createBasicBlockContinuation();
                 bool rem = context[firstSend->getContextId()].removeTask(firstSend);
                 assert(rem == true);
-                backgroundQueueTask(firstSend);
+                totalCycles += backgroundQueueTask(firstSend);
                 rem = context[recvT->getContextId()].removeTask(recvT);
                 assert(rem == true);
-                backgroundQueueTask(recvT);
+                totalCycles += backgroundQueueTask(recvT);
             }
             else
             {
@@ -894,7 +895,6 @@ reset_middle:
     // TODO: for every context if endtime == 0, then join?
     
     if (DEBUG) printf("Processed %lu events.\n", eventCount);
-    // Write out all tasks that are ready to be written
     
     char* d = NULL;
     
@@ -904,12 +904,12 @@ reset_middle:
         
         //printf("%d\t%llx\t%llx\t%llx\n", p.first, c.timeOffset, c.startTime, c.endTime);
         
-        //for (Task* t : c.tasks)
         for (auto t : c.tasks)
         {
-            backgroundQueueTask(t.second);
+            totalCycles += backgroundQueueTask(t.second);
         }
     }
+    eventQ.printSpaceTime(totalCycles);
     
     pthread_mutex_lock(&taskQueueLock);
     noMoreTasks = true;
