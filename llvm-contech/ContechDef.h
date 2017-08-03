@@ -17,6 +17,7 @@
 #include <cxxabi.h>
 #include "../common/eventLib/ct_event_st.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 
 //#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
