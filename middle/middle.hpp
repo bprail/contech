@@ -27,6 +27,8 @@ using namespace contech;
 void checkContextId(ContextId id);
 void eventDebugPrint(TaskId first, string verb, TaskId second, ct_tsc_t start, ct_tsc_t end);
 
+extern ct_tsc_t totalCycles;
+
 class first_compare
 {
 public:
