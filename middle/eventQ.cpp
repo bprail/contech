@@ -28,9 +28,9 @@ EventQ::~EventQ()
     }
 }
 
-void EventQ::printSpaceTime(ct_tsc_t t)
+void EventQ::printSpaceTime(ct_tsc_t tcyc)
 {
-    cerr << "Middle Space Time: " << ((double)totalSpace) / t << endl;
+    cerr << "Middle Space Time: " << ((double)totalSpace) / tcyc << endl;
 }
 
 void EventQ::registerEventList(FILE* f)

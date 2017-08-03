@@ -13,7 +13,7 @@ extern std::deque<contech::Task*>* taskQueue;
 
 void updateContextTaskList(contech::Context &c);
 void attemptBackgroundQueueTask(contech::Task* t, contech::Context &c);
-ct_tsc_t backgroundQueueTask(contech::Task* t);
+void backgroundQueueTask(contech::Task* t);
 
 void setROIStart(contech::TaskId);
 void setROIEnd(contech::TaskId);
