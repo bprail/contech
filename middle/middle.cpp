@@ -7,6 +7,7 @@ using namespace std;
 using namespace contech;
 
 void* backgroundTaskWriter(void*);
+ct_tsc_t totalCycles = 0;
 
 int main(int argc, char* argv[])
 {
@@ -894,7 +895,6 @@ reset_middle:
     // TODO: for every context if endtime == 0, then join?
     
     if (DEBUG) printf("Processed %lu events.\n", eventCount);
-    // Write out all tasks that are ready to be written
     
     char* d = NULL;
     
@@ -904,12 +904,12 @@ reset_middle:
         
         //printf("%d\t%llx\t%llx\t%llx\n", p.first, c.timeOffset, c.startTime, c.endTime);
         
-        //for (Task* t : c.tasks)
         for (auto t : c.tasks)
         {
             backgroundQueueTask(t.second);
         }
     }
+    eventQ.printSpaceTime(totalCycles);
     
     pthread_mutex_lock(&taskQueueLock);
     noMoreTasks = true;

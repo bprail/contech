@@ -1,0 +1,10 @@
+BasicBlockTime backend
+
+This backend requires an alternative compilation of the LLVM PASS to add
+time stamps to every basic block.  While seemingly desirable, this
+significantly increases the runtime overhead and most blocks show low
+times.  Most blocks have a long tail from context switches and other
+exceptional events.
+
+See TSC_IN_BB in llvm-contech/Contech.cpp
+

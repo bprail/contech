@@ -1,5 +1,5 @@
-#include "gvc.h"
-#include "cgraph.h"
+#include "graphviz/gvc.h"
+#include "graphviz/cgraph.h"
 #include "../../common/taskLib/TaskGraph.hpp"
 #include "../../common/taskLib/ct_file.h"
 #include <algorithm>
@@ -114,8 +114,6 @@ int main(int argc, char const *argv[])
 
         delete currentTask;
     }
-    
-    delete tg;
 
     // Create a directed graph
     GVC_t *gvc = gvContext();
@@ -181,9 +179,9 @@ int main(int argc, char const *argv[])
     }
 
     // Create communication edges
-    ct_rewind(taskGraphIn);
+    //ct_rewind(taskGraphIn);
     
-    CommTracker* tracker = CommTracker::fromFile(taskGraphIn);
+    CommTracker* tracker = CommTracker::fromGraph(tg);//CommTracker::fromFile(taskGraphIn);
     cout << "Recorded " << tracker->getRecords().size() << " instances of communication. " << endl;
 
     set< pair<uint32_t, uint32_t> > commEdgeSet;
@@ -205,6 +203,7 @@ int main(int argc, char const *argv[])
         agset (graph_edge, (char*)"style", (char*)"dashed");
     }
     delete tracker;
+    delete tg;
     fclose(taskGraphIn);
 
     // Write out the graph

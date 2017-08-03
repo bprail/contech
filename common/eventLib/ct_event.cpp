@@ -35,6 +35,26 @@ EventLib::EventLib()
     bb_count = 0;
     
     bb_info_table = NULL;
+    constGVAddr = NULL;
+    maxConstGVId = 0;
+}
+
+EventLib::~EventLib()
+{
+    if (bb_info_table != NULL) 
+    {
+        uint64_t thresh = sum / 100;
+        for (int i = 0; i < bb_count; i++)
+        {
+            uint64_t prod = bb_info_table[i].count * bb_info_table[i].totalBytes;
+           
+            if (prod > thresh)
+            {
+                printf("BBID:%u\t%d\t%u\t%lu\n", i, bb_info_table[i].count, bb_info_table[i].totalBytes, prod);
+            }
+        }
+    }
+    resetEventLib();
 }
 
 /* unpack: unpack packed items from buf, return length */
@@ -121,12 +141,15 @@ void EventLib::resetEventLib()
         }
         free(bb_info_table);
     }
+    
     bb_info_table = NULL;
     version = 0;
     sum = 0;
     bb_count = 0;
     currentID = 0;
     bufSum = 0;
+    constGVAddr = NULL;
+    maxConstGVId = 0;
 }
 
 //
@@ -280,7 +303,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                     fread_check(npe->bb.mem_op_array, sizeof(ct_memory_op), npe->bb.len, fptr);
                 }
                 else
-                {for (int i = 0; i < npe->bb.len; i++)
+                {
+                    for (int i = 0; i < npe->bb.len; i++)
                     {
                         npe->bb.mem_op_array[i].data = 0;
                         
@@ -311,6 +335,40 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                 fprintf(stderr, "[%d] + %d -> %p\n", dupOp, bb_info_table[id].mem_op_info[i].baseOffset, npe->bb.mem_op_array[dupOp].addr);
                                 assert(0);
                             }*/
+                        }
+                        else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
+                        {
+                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            uint32_t gvid = bb_info_table[id].mem_op_info[i].constGVAddrId;
+                            if (gvid >= maxConstGVId)
+                            {
+                                fprintf(stderr, "ERROR: Request for GV ID %d greater than max %d\n", gvid, maxConstGVId);
+                                dumpAndTerminate(fptr);
+                            }
+                            
+                            npe->bb.mem_op_array[i].addr = (constGVAddr[gvid]) + offset;
+                            
+                            /*
+                             * The following code verified the global value elide addresses are computed
+                             *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
+                             */
+                             /*ct_memory_op tmo;
+                             tmo.data = 0;
+                             fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                            fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                            
+                            
+                            
+                            if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                            {
+                                fprintf(stderr, "%d.%d\n", id, i);
+                                fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                fprintf(stderr, "[%d] + %d -> %p\n", gvid, bb_info_table[id].mem_op_info[i].baseOffset, constGVAddr[gvid]);
+                                assert(0);
+                            }*/
+                            
+                            npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
+                            npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
                         }
                         else
                         {
@@ -388,7 +446,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 tStr = (char*) malloc(sizeof(char) * (len + 1));
                 if (tStr == NULL)
                 {
-                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for function name\n", sizeof(char) * (len + 1));
+                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for file name\n", sizeof(char) * (len + 1));
                     free(npe->bbi.fun_name);
                     free(npe);
                     return NULL;
@@ -409,7 +467,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 tStr = (char*) malloc(sizeof(char) * (len + 1));
                 if (tStr == NULL)
                 {
-                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for function name\n", sizeof(char) * (len + 1));
+                    fprintf(stderr, "ERROR: Failed to allocate %lu bytes for called function name\n", sizeof(char) * (len + 1));
                     free(npe->bbi.file_name);
                     free(npe->bbi.fun_name);
                     free(npe);
@@ -437,8 +495,14 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 for (int i = 0; i < len; i++)
                 {
                     fread_check(&bb_info_table[id].mem_op_info[i], sizeof(char), 2, fptr);
-                    if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP)
+                    if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP ||
+                        (bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
                     {
+                        if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
+                        {
+                            // The global value flag also sets the dup flag in the info, clear now.
+                            bb_info_table[id].mem_op_info[i].memFlags &= ~(BBI_FLAG_MEM_DUP);
+                        }
                         //fprintf(stderr, "dup! - %d %d\n", id, i);
                         fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
                         fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
@@ -454,6 +518,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             {
                 bb_info_table[id].mem_op_info = NULL;
             }
+            
+            bb_info_table[id].count = 0;
+            bb_info_table[id].totalBytes = 0;
         }
         break;
         
@@ -619,6 +686,25 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         }
         break;
         
+        case (ct_event_gv_info):
+        {
+            fread_check(&npe->gvi.id, sizeof(npe->gvi.id), 1, fptr);
+            fread_check(&npe->gvi.constantGV, sizeof(npe->gvi.constantGV), 1, fptr);
+            //fprintf(stderr, "%d %lx %d %d\n", npe->gvi.id, npe->gvi.constantGV, sizeof(npe->gvi.id), sizeof(npe->gvi.constantGV));
+            if (constGVAddr == NULL)
+            {
+                constGVAddr = (ct_addr_t*) malloc(sizeof(uint64_t) * (npe->gvi.id + 1));
+                maxConstGVId = npe->gvi.id + 1;
+            }
+            else if (npe->gvi.id >= maxConstGVId)
+            {
+                fprintf(stderr, "ERROR: TODO\n");
+                dumpAndTerminate(fptr);
+            }
+            constGVAddr[npe->gvi.id] =  npe->gvi.constantGV;
+        }
+        break;
+        
         case (ct_event_version):
         {
             // There should be only one version event in the list
@@ -652,6 +738,30 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             dumpAndTerminate(fptr);
         }
         break;
+    }
+    
+    // If this is a basic block, then record all of the prior space
+    if (npe->event_type == ct_event_basic_block)
+    {
+        if (lastBBIDPos > 0)
+        {
+            if (bb_info_table[lastBBID].totalBytes == 0)
+            {
+                bb_info_table[lastBBID].totalBytes = startSum - lastBBIDPos;
+            }
+        }
+        if (lastBBID < bb_count)
+        {
+            bb_info_table[lastBBID].count++;
+        }
+        
+        lastBBIDPos = startSum;
+    }
+    else if (npe->event_type == ct_event_delay ||
+             npe->event_type == ct_event_buffer)
+    {
+        // Do not record space across artificial events
+        lastBBIDPos = 0;
     }
     
     lastID = npe->contech_id;

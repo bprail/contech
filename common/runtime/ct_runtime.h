@@ -105,6 +105,9 @@ void __ctCheckBufferSize(unsigned int);
 void __ctCheckBufferBySize(unsigned int);
 void __ctStoreDelay(ct_tsc_t start_t);
 
+// This function is written only by the Contech pass.
+void __ctWriteElideGVEvents(FILE*);
+
 int __ctIsMPIPresent();
 int __ctGetMPIRank();
 int __ctGetSizeofMPIDatatype(int datatype);

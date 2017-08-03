@@ -280,6 +280,8 @@ void* __ctBackgroundThreadWriter(void* d)
         }
     }
     
+    __ctWriteElideGVEvents(serialFile);
+    
     // Main loop
     //   Write queued buffer to disk until program terminates
     pthread_mutex_lock(&__ctQueueBufferLock);

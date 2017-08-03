@@ -115,6 +115,12 @@ namespace contech
         ct_tsc_t start_time;
     } ct_roi_event, *pct_roi_event;
 
+    typedef struct _ct_gv_info
+    {
+        uint32_t id;
+        ct_addr_t constantGV;
+    } ct_gv_info, *pct_gv_info;
+    
     //
     // There are two ways to combine objects with common fields.
     //   1) Common fields in a single type that is the first field
@@ -142,6 +148,7 @@ namespace contech
             ct_mpi_transfer     mpixf;
             ct_mpi_wait         mpiw;
             ct_roi_event        roi;
+            ct_gv_info          gvi;
         };
     } ct_event, *pct_event;
     
@@ -155,6 +162,7 @@ namespace contech
             unsigned int lastID;
             unsigned int lastBBID;
             unsigned int lastType;
+            uint64_t lastBBIDPos;
             uint32_t next_basic_block_id;
             
             typedef struct _ct_event_debug
@@ -185,18 +193,25 @@ namespace contech
             typedef struct _internal_memory_op_info
             {
                 char memFlags, size;
-                unsigned short baseOp;
                 int baseOffset;  // N.B. Offset can be negative
+                union {
+                    uint16_t baseOp;          // If BBI_FLAG_MEM_DUP
+                    uint16_t constGVAddrId;   // if BBI_FLAG_MEM_GV
+                };
             } internal_memory_op_info, *pinternal_memory_op_info;
 
             typedef struct _internal_basic_block_info
             {
                 unsigned int len;
                 int32_t next_basic_block_id;
+                int count;
+                uint32_t totalBytes;
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
 
             pinternal_basic_block_info bb_info_table;
+            ct_addr_t* constGVAddr;
+            int maxConstGVId;
             
             int unpack(uint8_t *buf, char const fmt[], ...);
             void dumpAndTerminate(FILE *fptr);
@@ -204,12 +219,14 @@ namespace contech
     
         public:
             EventLib();
+            ~EventLib();
             pct_event createContechEvent(FILE*);
             static void deleteContechEvent(pct_event);
             void displayContechEventDebugInfo();
             void displayContechEventDiagInfo();
             void displayContechEventStats();
             void resetEventLib();
+            uint64_t getSum() {return sum;}
     };
     
     

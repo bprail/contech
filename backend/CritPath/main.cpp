@@ -164,6 +164,11 @@ float ProgramSpeedup::getSpeedupInv(TaskId tid, int8_t* bottleR, int8_t* speedR)
     return maxSpeedUp;
 }
 
+// Read in speed up file
+//  Format: (all numbers are in binary, speedups are 4byte floats, 
+//           configs, bottlenecks are 2 byte ints, others are 4 byte ints)
+//    <number of configurations>-<number of tasks>
+//    <context ID>:<sequence ID><config speedup>..<config speedup><bottleneck resource>_<bottleneck type>
 ProgramSpeedup* processTaskSpeedup(const char* fileName)
 {
     FILE* tSpeedFile = fopen(fileName, "rb");
@@ -291,7 +296,7 @@ int main(int argc, char const *argv[])
 	bool inROI = false;
     TaskGraph* tg = TaskGraph::initFromFile(taskGraphIn);
     
-    if (tg == NULL) {close_ct_file(taskGraphIn); exit(1);}
+    if (tg == NULL) {exit(1);}
     
     ProgramSpeedup* pPS = processTaskSpeedup(argv[2]);
     

@@ -2,7 +2,7 @@
 #include "../../common/taskLib/Task.hpp"
 #include <iostream>
 #include <fstream>
-#include "gvc.h"
+#include "graphviz/gvc.h"
 #include <inttypes.h>
 
 using namespace std;

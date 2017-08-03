@@ -5,7 +5,7 @@ OBJECTS= main.o
 LPROJ = libmemUse.a
 LOBJ = memUse.o
 INCLUDES=
-LIBS= -L../../common/taskLib/ -lTask -lz -L.
+LIBS= -L../../common/taskLib/ -lTask -lz -L. -Wl,-rpath=../../common/taskLib/
 EXTERNALS=
 
 all: taskLib $(LPROJ) $(PROJECT)

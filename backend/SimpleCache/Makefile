@@ -3,7 +3,7 @@ CXX=g++
 CXXFLAGS= -g -std=c++11 -O3
 OBJECTS= main.o simpleCache.o
 INCLUDES= -I../../common/taskLib/
-LIBS= -L../../common/taskLib/ -lTask -lz -L.
+LIBS= -L../../common/taskLib/ -lTask -lz -L. -Wl,-rpath=../../common/taskLib/
 EXTERNALS=
 
 all: taskLib $(PROJECT)

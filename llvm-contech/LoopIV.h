@@ -21,33 +21,32 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 
+#include "ContechDef.h"
+
 using namespace llvm;
 using namespace std;
 
 namespace llvm {
 	typedef vector<Instruction *> SmallInstructionVector;
 
-
-	class loop : public FunctionPass {
+	class LoopIV {
 
 	public:
-		static char ID;
- 		loop() : FunctionPass(ID) {
+ 		LoopIV(Contech* _ctThis)  {
+            ctThis = _ctThis;
         }
 		void collectPossibleIVs(Loop *L);
 		void collectDerivedIVs(Loop *L, SmallInstructionVector IVs, SmallInstructionVector *DerivedIvs);
 		//virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 		virtual bool 	runOnFunction (Function &F);
-		virtual void getAnalysisUsage(AnalysisUsage& AU) const;
 		SmallInstructionVector getLoopMemoryOps();
 
 	private:
+        Contech* ctThis;
 		bool isLoopControlIV(Loop *L, Instruction *IV);
-		const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE,
-		const SCEV *SCEVExpr,Instruction &IV); 
+        void iterateOnLoop(Loop *L);
+		const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
 		int collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived);
-	
-	
 	};
 }
 #endif 
