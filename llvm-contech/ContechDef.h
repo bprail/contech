@@ -67,6 +67,16 @@ namespace llvm {
         Value* posValue;
     } llvm_inst_block, *pllvm_inst_block;
     
+    typedef struct  _llvm_loopiv_block 
+    {
+        Instruction* memOp;     //memory op
+        Instruction* memIV;     //corresponding IV
+        const SCEV* startIV;    //start val of IV
+        const SCEV* iterCnt;    //loop iterations
+        StringRef blockID;      //BB name
+        int stepIV;             //IV increment/decrement
+        bool canElide;          //can the memory op be elided?
+    } llvm_loopiv_block;
     typedef enum _CONTECH_FUNCTION_TYPE {
         NONE,
         MAIN,
@@ -232,7 +242,7 @@ namespace llvm {
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
 
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
-        std::vector <Instruction*> LoopMemoryOps;
+        std::vector <llvm_loopiv_block> LoopMemoryOps;
         bool is_loop_computable(Instruction* memI, int* offset);
 
     }; // end of class Contech
