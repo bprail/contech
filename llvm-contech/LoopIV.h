@@ -28,6 +28,7 @@ using namespace std;
 
 namespace llvm {
 	typedef vector<Instruction *> SmallInstructionVector;
+	typedef vector<llvm_loopiv_block> LlvmLoopIVBlockVector;
 
 	class LoopIV {
 
@@ -39,14 +40,14 @@ namespace llvm {
 		void collectDerivedIVs(Loop *L, SmallInstructionVector IVs, SmallInstructionVector *DerivedIvs);
 		//virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 		virtual bool 	runOnFunction (Function &F);
-		SmallInstructionVector getLoopMemoryOps();
+		LlvmLoopIVBlockVector getLoopMemoryOps();
 
 	private:
         Contech* ctThis;
 		bool isLoopControlIV(Loop *L, Instruction *IV);
         void iterateOnLoop(Loop *L);
 		const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
-		int collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived);
+		Value* collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived);
 	};
 }
 #endif 

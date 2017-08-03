@@ -491,7 +491,10 @@ bool Contech::runOnModule(Module &M)
         // TODO: Invoke LoopIV here
         LoopIV* liv = new LoopIV(this);
         liv->runOnFunction(*F);
-        vector <Instruction*> temp = liv->getLoopMemoryOps();
+        vector<llvm_loopiv_block> temp = liv->getLoopMemoryOps();
+        for(int cnt=0; cnt<temp.size(); cnt++) {
+          outs() << *(temp[cnt].memOp) << "\n";
+        }
         Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
                                       temp.begin(), temp.end());
         delete liv;
@@ -686,14 +689,15 @@ cleanup:
 bool Contech::is_loop_computable(Instruction* memI, int* offset)
 {
     *offset = 0;
-    if(std::find(Contech::LoopMemoryOps.begin(), Contech::LoopMemoryOps.end(), &*memI) != Contech::LoopMemoryOps.end()) 
+    for(int iter =0; iter < LoopMemoryOps.size(); iter++) 
     {
-        return true;
+      if(LoopMemoryOps[iter].memOp == memI && LoopMemoryOps[iter].canElide)
+      //if(std::find(Contech::LoopMemoryOps.begin(), Contech::LoopMemoryOps.end(), &*memI) != Contech::LoopMemoryOps.end()) 
+      {
+          return true;
+      }
     }
-    else 
-    {
-        return false;
-    }
+    return false; 
 }
 
 // returns size in bytes

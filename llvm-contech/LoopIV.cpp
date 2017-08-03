@@ -31,7 +31,7 @@ namespace llvm{
     SmallInstructionVector NonLinearIvs;
     SmallInstructionVector DerivedLinearIvs;
     SmallInstructionVector DerivedNonlinearIvs;
-    SmallInstructionVector LoopMemoryOps;
+    LlvmLoopIVBlockVector LoopMemoryOps;
 
     int cnt_GetElementPtrInst = 0;
     int cnt_elided = 0;
@@ -218,7 +218,6 @@ namespace llvm{
                     }
                 }
             }
-
             //errs() << "SCEV " << *SE->getSCEV(&*I) << "\n";
             if (const SCEVAddRecExpr *PHISCEV = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*I))) 
             {
@@ -247,7 +246,7 @@ namespace llvm{
                 else 
                 {
                     IncSCEV = dyn_cast<SCEVConstant>(PHISCEV->getStepRecurrence(*SE));
-                    //errs() << "SCEV consant " << *I << "\n";
+                    //errs() << "SCEV consant " << *IncSCEV << "\n";
                 }
 
                 if (IncSCEV) 
@@ -350,9 +349,9 @@ namespace llvm{
         }
     }
 
-    int LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived)
+    Value* LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived)
     {
-        int cnt_elided = 0;
+        Value* cnt_elided = NULL;
 
         if (gepAddr != NULL) 
         {
@@ -374,7 +373,7 @@ namespace llvm{
                     if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                     {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
-                        cnt_elided++;
+                        cnt_elided = gepI;
                     }
                     //traverse the operands
                     else if (!isa <Argument>(gepI)) //isa<CastInst>(gepI)
@@ -383,7 +382,7 @@ namespace llvm{
                         if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                         {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
-                            cnt_elided++;
+                            cnt_elided = gepI;
                         }
 
                         else if (!isa <Argument>(gepI))  //any other operation involving IV and COnst or LI Inst
@@ -419,7 +418,7 @@ namespace llvm{
                                     {
                                         if (!is_derived) 
                                         {
-                                            cnt_elided++;
+                                            cnt_elided = gepI;
                                             //errs() << "FOUND IT 2 : " << *gepAddr << "\n";
                                         }
                                     }
@@ -429,7 +428,7 @@ namespace llvm{
                             {
                                 if (std::find(IVs.begin(), IVs.end(), temp->getOperand(0)) != IVs.end()) 
                                 {
-                                    cnt_elided++;
+                                    cnt_elided = gepI;
                                     //errs() << "FOUND IT 3: " << *gepAddr << "\n";
                                 }
                             }
@@ -444,6 +443,15 @@ namespace llvm{
 
     void LoopIV::iterateOnLoop(Loop *L)
     {
+        const SCEV *LIBETC = SE->getBackedgeTakenCount(L);
+        const SCEV *IterCount = SE->getAddExpr(LIBETC, SE->getOne(LIBETC->getType()));
+        llvm_loopiv_block tempLoopMemoryOps;
+
+        tempLoopMemoryOps.iterCnt = IterCount;
+        tempLoopMemoryOps.canElide = false;
+
+        outs() << *IterCount << " iterCnt\n";
+
         errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
         collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
@@ -470,28 +478,42 @@ namespace llvm{
                     continue;
                 }
                 
-                if(collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) 
+                Value* memIV = NULL;
+                if((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) != NULL) 
                 {
                     cnt_elided++;
-                    LoopMemoryOps.push_back(&*I);
+                    tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
+                    tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.canElide = true;
+                    tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
+                    const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*memIV));
+                    tempLoopMemoryOps.startIV = SARE->getOperand(0);
+                    tempLoopMemoryOps.blockID = I->getParent()->getName();
                 }
-                else if(collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) 
+                else if((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
                 {
                     cnt_elided++;
-                    LoopMemoryOps.push_back(&*I);
+                    tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
+                    tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.canElide = false;  //TODO: future work
+                    tempLoopMemoryOps.blockID = I->getParent()->getName();
                 }
-                else if(collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) 
+                else if((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
                 {
                     cnt_elided++;
-                    LoopMemoryOps.push_back(&*I);
+                    tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
+                    tempLoopMemoryOps.memOp = &*I;
                 }
-                else if(collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) 
+                else if((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) != NULL) 
                 {
                     cnt_elided++;
-                    LoopMemoryOps.push_back(&*I);
+                    tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
+                    tempLoopMemoryOps.memOp = &*I;
                 }
+
+                LoopMemoryOps.push_back(tempLoopMemoryOps);
             }
-        }
+        }    
     }
     
     //bool LoopIV::runOnLoop(Loop *L, LPPassManager &LPM) {
@@ -515,7 +537,7 @@ namespace llvm{
                 //return false;
                 continue;
             }
-
+            
             // Iterate on subloops of Loop L
             iterateOnLoop(L);
             for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
@@ -559,7 +581,7 @@ namespace llvm{
         return false;
     }
 
-    SmallInstructionVector LoopIV:: getLoopMemoryOps() 
+    LlvmLoopIVBlockVector LoopIV:: getLoopMemoryOps() 
     {
         outs() << "cnt_GetElementPtrInst\t" << cnt_GetElementPtrInst << "\n";
         outs() << "cnt_elided\t" << cnt_elided << "\n";
