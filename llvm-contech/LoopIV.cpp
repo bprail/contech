@@ -207,7 +207,7 @@ namespace llvm{
                         NonLinearIvs.push_back(&*I);
                         //errs() << "\nNON_LINEAR " << *I << " = " << *SARE << "\n\n" ;
                         //errs() << "Num of operands:" << SARE->getNumOperands() << "\n";
-                        for(auto count= SARE->op_begin(); count != SARE->op_end(); count++) 
+                        for (auto count = SARE->op_begin(); count != SARE->op_end(); ++count)
                         {
                             if(dyn_cast<SCEVConstant>(*count)) 
                             {
@@ -226,7 +226,7 @@ namespace llvm{
                     //errs() << "GETLOOP NOT EQUAL L\n";
                     continue;
                 }
-                if(PHISCEV->isQuadratic()) 
+                if (PHISCEV->isQuadratic()) 
                 {
                     //errs() << *I << " = " << *PHISCEV << "IS QUADRATIC\n";
                 }
@@ -479,39 +479,48 @@ namespace llvm{
                 }
                 
                 Value* memIV = NULL;
-                if((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) != NULL) 
+                if ((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) != NULL) 
                 {
                     cnt_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
+                    
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = true;
                     tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
                     const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*memIV));
                     tempLoopMemoryOps.startIV = SARE->getOperand(0);
-                    tempLoopMemoryOps.blockID = I->getParent()->getName();
+                    tempLoopMemoryOps.blockID = I->getParent();
                 }
-                else if((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
                 {
                     cnt_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
-                    tempLoopMemoryOps.blockID = I->getParent()->getName();
+                    tempLoopMemoryOps.blockID = I->getParent();
                 }
-                else if((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
                 {
                     cnt_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
-                else if((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) != NULL) 
                 {
                     cnt_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
 
-                LoopMemoryOps.push_back(tempLoopMemoryOps);
+                // Only if one of the types was found, should this op be added to the list.
+                if (memIV != NULL)
+                {
+                    llvm_loopiv_block* t = new llvm_loopiv_block;
+                    *t = tempLoopMemoryOps;
+                    LoopMemoryOps.push_back(t);
+                }
             }
         }    
     }

@@ -74,7 +74,7 @@ namespace llvm {
         Instruction* memIV;     //corresponding IV
         const SCEV* startIV;    //start val of IV
         const SCEV* iterCnt;    //loop iterations
-        StringRef blockID;      //BB name
+        BasicBlock* blockID;      //BB name
         int stepIV;             //IV increment/decrement
         bool canElide;          //can the memory op be elided?
     } llvm_loopiv_block;
@@ -200,6 +200,8 @@ namespace llvm {
         std::set<Function*> ompMicroTaskFunctions;
         int lastAssignedElidedGVId;
         std::map<Constant*, uint16_t> elidedGlobalValues;
+        std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
+        std::vector <llvm_loopiv_block*> LoopMemoryOps;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
@@ -236,15 +238,9 @@ namespace llvm {
         void getAnalysisUsage(AnalysisUsage &AU) const;
         LoopInfo* getAnalysisLoopInfo(Function&);
         ScalarEvolution* getAnalysisSCEV(Function&);
-
         void collectLoopExits(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
-
         Loop* isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps);
-
-        std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
-        std::vector <llvm_loopiv_block> LoopMemoryOps;
         bool is_loop_computable(Instruction* memI, int* offset);
 
     }; // end of class Contech

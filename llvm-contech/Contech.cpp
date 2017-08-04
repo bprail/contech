@@ -491,9 +491,10 @@ bool Contech::runOnModule(Module &M)
         // TODO: Invoke LoopIV here
         LoopIV* liv = new LoopIV(this);
         liv->runOnFunction(*F);
-        vector<llvm_loopiv_block> temp = liv->getLoopMemoryOps();
-        for(int cnt=0; cnt<temp.size(); cnt++) {
-          outs() << *(temp[cnt].memOp) << "\n";
+        vector<llvm_loopiv_block*> temp = liv->getLoopMemoryOps();
+        for(int cnt = 0; cnt < temp.size(); cnt++) 
+        {
+            errs() << *(temp[cnt]->memOp) << "\n";
         }
         Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
                                       temp.begin(), temp.end());
@@ -689,13 +690,12 @@ cleanup:
 bool Contech::is_loop_computable(Instruction* memI, int* offset)
 {
     *offset = 0;
-    for(int iter =0; iter < LoopMemoryOps.size(); iter++) 
+    for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
     {
-      if(LoopMemoryOps[iter].memOp == memI && LoopMemoryOps[iter].canElide)
-      //if(std::find(Contech::LoopMemoryOps.begin(), Contech::LoopMemoryOps.end(), &*memI) != Contech::LoopMemoryOps.end()) 
-      {
-          return true;
-      }
+        if (LoopMemoryOps[iter]->memOp == memI && LoopMemoryOps[iter]->canElide)
+        {
+            return true;
+        }
     }
     return false; 
 }
@@ -890,7 +890,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[li] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if(is_loop_computable(li, &addrOffset)) 
+            else if (is_loop_computable(li, &addrOffset)) 
             {
                 dupMemOps[li] = addrSimilar;
                 dupMemOpOff[li] = addrOffset;
@@ -913,7 +913,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[si] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if(is_loop_computable(si, &addrOffset)) 
+            else if (is_loop_computable(si, &addrOffset)) 
             {
                 dupMemOps[si] = addrSimilar;
                 dupMemOpOff[si] = addrOffset;

@@ -28,7 +28,7 @@ using namespace std;
 
 namespace llvm {
 	typedef vector<Instruction *> SmallInstructionVector;
-	typedef vector<llvm_loopiv_block> LlvmLoopIVBlockVector;
+	typedef vector<llvm_loopiv_block*> LlvmLoopIVBlockVector;
 
 	class LoopIV {
 
@@ -38,8 +38,7 @@ namespace llvm {
         }
 		void collectPossibleIVs(Loop *L);
 		void collectDerivedIVs(Loop *L, SmallInstructionVector IVs, SmallInstructionVector *DerivedIvs);
-		//virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
-		virtual bool 	runOnFunction (Function &F);
+		virtual bool runOnFunction (Function &F);
 		LlvmLoopIVBlockVector getLoopMemoryOps();
 
 	private:
