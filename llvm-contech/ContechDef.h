@@ -73,7 +73,7 @@ namespace llvm {
         Instruction* memOp;     //memory op
         Instruction* memIV;     //corresponding IV
         const SCEV* startIV;    //start val of IV
-        const SCEV* iterCnt;    //loop iterations
+        //const SCEV* iterCnt;    //loop iterations
         BasicBlock* blockID;      //BB name
         int stepIV;             //IV increment/decrement
         bool canElide;          //can the memory op be elided?

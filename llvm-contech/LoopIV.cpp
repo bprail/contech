@@ -443,14 +443,11 @@ namespace llvm{
 
     void LoopIV::iterateOnLoop(Loop *L)
     {
-        const SCEV *LIBETC = SE->getBackedgeTakenCount(L);
-        const SCEV *IterCount = SE->getAddExpr(LIBETC, SE->getOne(LIBETC->getType()));
         llvm_loopiv_block tempLoopMemoryOps;
-
-        tempLoopMemoryOps.iterCnt = IterCount;
+        
         tempLoopMemoryOps.canElide = false;
 
-        outs() << *IterCount << " iterCnt\n";
+        //outs() << *IterCount << " iterCnt\n";
 
         errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
