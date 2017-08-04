@@ -166,7 +166,6 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
 {
     pllvm_mem_op tMemOp = new llvm_mem_op;
 
-    tMemOp->addr = NULL;
     tMemOp->next = NULL;
     tMemOp->isWrite = isWrite;
     tMemOp->isDep = false;
@@ -184,12 +183,11 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         NULL == dyn_cast<GetElementPtrInst>(addr))
     {
         tMemOp->isGlobal = true;
-        tMemOp->addr = addr;
         //errs() << "Is global - " << *addr << "\n";
         
         if (li != NULL)
         {
-            int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+            int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(addr), M);
             if (elideGVId != -1)
             {
                 tMemOp->isDep = true;
@@ -211,14 +209,14 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             tMemOp->isGlobal = true;
             if (li != NULL)
             {
-                tMemOp->addr = gepAddr->getPointerOperand();
+                Value* taddr = gepAddr->getPointerOperand();
                 
                 APInt* constOffset = new APInt(64, 0, true);
                 gepAddr->accumulateConstantOffset(*currentDataLayout, *constOffset);
                 if (!constOffset->isSignedIntN(32)) return tMemOp;
                 int64_t offset = constOffset->getSExtValue();
-                errs() << offset << "\n";
-                int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(tMemOp->addr), M);
+                //errs() << offset << "\n";
+                int elideGVId = assignIdToGlobalElide(dyn_cast<Constant>(taddr), M);
                 delete constOffset;
                 
                 if (elideGVId != -1)

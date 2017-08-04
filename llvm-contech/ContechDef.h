@@ -40,7 +40,7 @@ namespace llvm {
         char size;
         unsigned short depMemOp;
         int depMemOpDelta;
-        Value* addr;
+        //Value* addr;
         struct _llvm_mem_op* next;
     } llvm_mem_op, *pllvm_mem_op;
 
@@ -78,6 +78,7 @@ namespace llvm {
         int stepIV;             //IV increment/decrement
         bool canElide;          //can the memory op be elided?
     } llvm_loopiv_block;
+    
     typedef enum _CONTECH_FUNCTION_TYPE {
         NONE,
         MAIN,
