@@ -446,8 +446,7 @@ namespace llvm{
         llvm_loopiv_block tempLoopMemoryOps;
         
         tempLoopMemoryOps.canElide = false;
-
-        //outs() << *IterCount << " iterCnt\n";
+        tempLoopMemoryOps.parentLoop = L;
 
         errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
@@ -539,8 +538,6 @@ namespace llvm{
 
             if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
             {
-                errs() << "Going backedge -- " << (*(L->block_begin()))->getName() << "\n";
-                //return false;
                 continue;
             }
             

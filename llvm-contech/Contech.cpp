@@ -492,12 +492,17 @@ bool Contech::runOnModule(Module &M)
         LoopIV* liv = new LoopIV(this);
         liv->runOnFunction(*F);
         vector<llvm_loopiv_block*> temp = liv->getLoopMemoryOps();
+        loopMemOps.clear();
         for(int cnt = 0; cnt < temp.size(); cnt++) 
         {
             errs() << *(temp[cnt]->memOp) << "\n";
+            if (temp[cnt]->canElide)
+            {
+                loopMemOps[temp[cnt]->memOp] = true;
+            }
         }
-        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
-                                      temp.begin(), temp.end());
+        //Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
+        //                              temp.begin(), temp.end());
         delete liv;
         
         // static analysis
@@ -690,14 +695,18 @@ cleanup:
 bool Contech::is_loop_computable(Instruction* memI, int* offset)
 {
     *offset = 0;
-    for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
+    auto elem = loopMemOps.find(memI);
+    if (elem == loopMemOps.end()) return false;
+    
+    return true;
+    /*for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
     {
         if (LoopMemoryOps[iter]->memOp == memI && LoopMemoryOps[iter]->canElide)
         {
             return true;
         }
     }
-    return false; 
+    return false; */
 }
 
 // returns size in bytes

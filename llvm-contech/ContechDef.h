@@ -73,6 +73,7 @@ namespace llvm {
         Instruction* memOp;     //memory op
         Instruction* memIV;     //corresponding IV
         const SCEV* startIV;    //start val of IV
+        Loop* parentLoop;
         //const SCEV* iterCnt;    //loop iterations
         BasicBlock* blockID;      //BB name
         int stepIV;             //IV increment/decrement
@@ -201,7 +202,8 @@ namespace llvm {
         int lastAssignedElidedGVId;
         std::map<Constant*, uint16_t> elidedGlobalValues;
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-        std::vector <llvm_loopiv_block*> LoopMemoryOps;
+        //std::vector <llvm_loopiv_block*> LoopMemoryOps;
+        std::map<Value*, bool> loopMemOps;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
