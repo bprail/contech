@@ -720,6 +720,38 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     #endif
 }
 
+void __ctStoreLoopEntry(uint32_t id, int32_t step, uint32_t stepBlock, int64_t startValue, uint16_t memOpId, void* addr)
+{
+    unsigned int p = __ctThreadLocalBuffer->pos;
+   
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_loop;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t)]) = 1;
+    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t) + sizeof(char)]) = id;
+    *((int32_t*)&__ctThreadLocalBuffer->data[p + sizeof(char) + 2*sizeof(uint32_t)]) = step;
+    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(char) + 3*sizeof(uint32_t)]) = stepBlock;
+    *((int64_t*)&__ctThreadLocalBuffer->data[p + sizeof(char) + 4*sizeof(uint32_t)]) = startValue;
+    *((uint16_t*)&__ctThreadLocalBuffer->data[p + sizeof(char) + 4*sizeof(uint32_t) + sizeof(int64_t)]) = memOpId;
+    *((uint64_t*)&__ctThreadLocalBuffer->data[p + sizeof(char) + 4*sizeof(uint32_t) + sizeof(int64_t) + sizeof(uint16_t)]) = (uint64_t)addr;
+    
+   
+    #ifdef POS_USED
+    __ctThreadLocalBuffer->pos = p + sizeof(char) + 4*sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(uint16_t);
+    #endif
+}
+
+void __ctStoreLoopExit(uint32_t id)
+{
+    unsigned int p = __ctThreadLocalBuffer->pos;
+   
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_loop;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t)]) = 0;
+    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t) + sizeof(char)]) = id;
+   
+    #ifdef POS_USED
+    __ctThreadLocalBuffer->pos = p + sizeof(char) + 2*sizeof(uint32_t);
+    #endif
+}
+
 void __ctStoreGVEvent(FILE* serialFile, void* addr, int id)
 {
     ct_event_id ty = ct_event_gv_info;
