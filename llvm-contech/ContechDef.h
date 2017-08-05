@@ -37,9 +37,16 @@ namespace llvm {
         bool isWrite;
         bool isGlobal;
         bool isDep;
+        bool isLoopElide;
         char size;
-        unsigned short depMemOp;
+        union {
+            unsigned short depMemOp;
+            unsigned short loopMemOp;  // which base address for that header
+        };
+        
         int depMemOpDelta;
+        BasicBlock* loopHeaderId;  // which loop header
+        
         //Value* addr;
         struct _llvm_mem_op* next;
     } llvm_mem_op, *pllvm_mem_op;
@@ -73,12 +80,24 @@ namespace llvm {
         Instruction* memOp;     //memory op
         Instruction* memIV;     //corresponding IV
         const SCEV* startIV;    //start val of IV
-        Loop* parentLoop;
-        //const SCEV* iterCnt;    //loop iterations
-        BasicBlock* blockID;      //BB name
-        int stepIV;             //IV increment/decrement
-        bool canElide;          //can the memory op be elided?
-    } llvm_loopiv_block;
+        BasicBlock* headerBlock;
+        // 4 is chosen from the loopUnroll code.
+        SmallVector<BasicBlock*, 4> exitBlocks;  //
+        int stepIV;             // IV increment/decrement
+        bool canElide;          // can the memory op be elided?
+        bool wasElide;          // If the op can only be elided by loop code.
+    } llvm_loopiv_block, *pllvm_loopiv_block;
+    
+    typedef struct _llvm_loop_track
+    {
+        bool loopUsed;
+        //const SCEV* startIV;
+        Instruction* memIV;
+        int stepIV;
+        // 4 is chosen from the loopUnroll code.
+        SmallVector<BasicBlock*, 4> exitBlocks;
+        std::vector<Value*> baseAddr;
+    } llvm_loop_track, *pllvm_loop_track;
     
     typedef enum _CONTECH_FUNCTION_TYPE {
         NONE,
@@ -147,6 +166,8 @@ namespace llvm {
         Constant* getBufFunction;
         Constant* writeElideGVEventsFunction;
         Constant* storeGVEventFunction;
+        Constant* storeLoopEntryFunction;
+        Constant* storeLoopExitFunction;
 
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;
@@ -178,6 +199,7 @@ namespace llvm {
         Constant* pthreadExitFunction;
 
         Type* int8Ty;
+        Type* int16Ty;
         Type* int32Ty;
         Type* voidTy;
         PointerType* voidPtrTy;
@@ -201,9 +223,9 @@ namespace llvm {
         std::set<Function*> ompMicroTaskFunctions;
         int lastAssignedElidedGVId;
         std::map<Constant*, uint16_t> elidedGlobalValues;
-        std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-        //std::vector <llvm_loopiv_block*> LoopMemoryOps;
-        std::map<Value*, bool> loopMemOps;
+        std::vector <llvm_loopiv_block*> LoopMemoryOps;
+        std::map<Value*, int> loopMemOps;
+        std::map<BasicBlock*, llvm_loop_track*> loopInfoTrack;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
@@ -211,14 +233,15 @@ namespace llvm {
 
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
-        virtual bool internalRunOnBasicBlock(BasicBlock &B,    Module &M, int bbid, bool markOnly, const char* fnName, 
-                                                           std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
+        virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, bool markOnly, const char* fnName, 
+                                             std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
         bool checkAndApplyElideId(BasicBlock* B, uint32_t bbid, std::map<int, llvm_inst_block>& costOfBlock);
         int assignIdToGlobalElide(Constant*, Module&);
         bool attemptTailDuplicate(BasicBlock* bbTail);
-        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value*, bool elide, Module&);
+        pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, 
+                                 Value*, bool elide, Module&, std::map<llvm::Instruction*, int>&);
         Value* convertValueToConstant(Value*, int*);
         int updateOffset(gep_type_iterator gepit, int val);
         unsigned int getSizeofType(Type*);
@@ -243,7 +266,9 @@ namespace llvm {
         void collectLoopExits(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         Loop* isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps);
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
-        bool is_loop_computable(Instruction* memI, int* offset);
+        int is_loop_computable(Instruction* memI, int* offset);
+        std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
+        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta);
 
     }; // end of class Contech
 

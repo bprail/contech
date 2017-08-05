@@ -42,6 +42,7 @@
 
 #include "llvm/Analysis/Interval.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolutionExpander.h"
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
@@ -170,11 +171,13 @@ bool Contech::doInitialization(Module &M)
     FunctionType* funVoidVoidPtrI64Ty;
     FunctionType* funVoidVoidPtrI64I32I32Ty;
     FunctionType* funVoidI32I64I64Ty;
+    FunctionType* funVoidI32I32I32I64I16VoidPtrTy;
 
     // Get the different integer types required by Contech
     LLVMContext &ctx = M.getContext();
     currentDataLayout = &M.getDataLayout();
     cct.int8Ty = Type::getInt8Ty(ctx);
+    cct.int16Ty = Type::getInt16Ty(ctx);
     cct.int32Ty = Type::getInt32Ty(ctx);
     cct.int64Ty = Type::getInt64Ty(ctx);
     cct.voidTy = Type::getVoidTy(ctx);
@@ -235,10 +238,18 @@ bool Contech::doInitialization(Module &M)
     cct.ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
     cct.checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
     cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
+    cct.storeLoopExitFunction = M.getOrInsertFunction("__ctStoreLoopExit", funVoidI32Ty);
 
+    
+    
     funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
     cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
 
+    
+    Type* argsLE[] = {cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int64Ty, cct.int16Ty, cct.voidPtrTy};
+    funVoidI32I32I32I64I16VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsLE, 6), false);
+    cct.storeLoopEntryFunction = M.getOrInsertFunction("__ctStoreLoopEntry", funVoidI32I32I32I64I16VoidPtrTy);
+    
     Type* argsQB[] = {cct.int8Ty};
     funVoidI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsQB, 1), false);
     cct.queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
@@ -493,16 +504,17 @@ bool Contech::runOnModule(Module &M)
         liv->runOnFunction(*F);
         vector<llvm_loopiv_block*> temp = liv->getLoopMemoryOps();
         loopMemOps.clear();
-        for(int cnt = 0; cnt < temp.size(); cnt++) 
+        for (int cnt = 0; cnt < temp.size(); cnt++) 
         {
             errs() << *(temp[cnt]->memOp) << "\n";
             if (temp[cnt]->canElide)
             {
-                loopMemOps[temp[cnt]->memOp] = true;
+                loopMemOps[temp[cnt]->memOp] = cnt;
             }
         }
-        //Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
-        //                              temp.begin(), temp.end());
+        
+        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
+                                      temp.begin(), temp.end());
         delete liv;
         
         // static analysis
@@ -580,7 +592,68 @@ bool Contech::runOnModule(Module &M)
         errs() << F->getName().str() << "," << num_checks 
                << "," << origin_checks << "\n" ;
 
-
+        
+        // Apply Loop entry / exits
+        //SCEVExpander Expander(*getAnalysisSCEV(*F), M.getDataLayout(), "Contech");
+        for (auto it = loopInfoTrack.begin(), et = loopInfoTrack.end(); it != et; ++it)
+        {
+            pllvm_loop_track llt = it->second;
+            uint32_t bbid = cfgInfoMap[it->first]->id;
+            int bb_val = blockHash(it->first);
+            Instruction* iPt = costPerBlock.find(bb_val)->second.insertPoint;
+            Constant* cbbid = ConstantInt::get(cct.int32Ty, bbid);
+            Constant* cstep = ConstantInt::get(cct.int32Ty, llt->stepIV);
+            Value* startValue = NULL;
+            Constant* stepID = NULL;
+            
+            errs() << "Attempt: " << bbid << " \n";
+            
+            /*
+            * The follow approach requires LLVM post 3.9
+            auto startValues = getAnalysisSCEV(*F)->getSCEVValues(llt->startIV);
+            for (auto it = startValues.begin(), et = startValues.end(); it != et; ++it)
+            {
+                ConstantInt* ci = it->second;
+                if (ci->isZero())
+                {
+                    startValue = it->first;
+                    break;
+                }
+            }*/
+            
+            PHINode* pn = dyn_cast<PHINode>(llt->memIV);
+            if (pn != NULL)
+            {
+                errs() << *pn << "\n";
+                startValue = castSupport(cct.int64Ty, pn->getIncomingValue(0), iPt);
+                stepID = ConstantInt::get(cct.int32Ty, cfgInfoMap[pn->getIncomingBlock(1)]->id);
+            }
+            
+            // Insert a call per elided loop memop
+            uint16_t i = 0;
+            for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
+            {
+                Constant* opPos = ConstantInt::get(cct.int16Ty, i);
+                Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
+                Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
+                MarkInstAsContechInst(loopEntry);
+                i++;
+            }
+            
+            // Insert one exit call per exit block
+            for (auto eit = llt->exitBlocks.begin(), eet = llt->exitBlocks.end(); eit != eet; ++eit)
+            {
+                Value* argsExit[] = {cbbid};
+                Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, ArrayRef<Value*>(argsExit, 1), "", (*eit)->getFirstNonPHIOrDbgOrLifetime());
+                MarkInstAsContechInst(loopExit);
+                i++;
+            }
+            
+            delete llt;
+        }
+        loopInfoTrack.clear();
+        
         // If fmn is fn, then it was allocated by the demangle routine and we are required to free
         if (fmn == fn)
         {
@@ -658,6 +731,7 @@ cleanup:
                 if (t->isDep)
                 {
                     memFlags |= (t->isGlobal)?BBI_FLAG_MEM_GV:0x0;
+                    memFlags |= (t->isLoopElide)?BBI_FLAG_MEM_LOOP:0x0;
                 }
 
                 contechStateFile->write((char*)&memFlags, sizeof(char));
@@ -666,15 +740,26 @@ cleanup:
                 if (t->isDep)
                 {
                     assert((memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP);
-                    contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
-                    contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                    if (t->isLoopElide)
+                    {
+                        errs() << *t->loopHeaderId << "\n";
+                        uint32_t loopHeaderId = cfgInfoMap[t->loopHeaderId]->id;
+                        contechStateFile->write((char*)&loopHeaderId, sizeof(uint32_t));
+                        contechStateFile->write((char*)&t->loopMemOp, sizeof(uint16_t));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                    }
+                    else
+                    {
+                        contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                    }
                 }
                 
                 delete (t);
                 t = tn;
             }
             wcount++;
-            free(bi->second);
+            //free(bi->second);
         }
     }
     //errs() << "Wrote: " << wcount << " basic blocks\n";
@@ -692,13 +777,13 @@ cleanup:
 // Checks if address can be calculated as const base + f(i,j,..) 
 // imports data from loop pass 
 //
-bool Contech::is_loop_computable(Instruction* memI, int* offset)
+int Contech::is_loop_computable(Instruction* memI, int* offset)
 {
     *offset = 0;
     auto elem = loopMemOps.find(memI);
-    if (elem == loopMemOps.end()) return false;
+    if (elem == loopMemOps.end()) return -1;
     
-    return true;
+    return elem->second;
     /*for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
     {
         if (LoopMemoryOps[iter]->memOp == memI && LoopMemoryOps[iter]->canElide)
@@ -846,6 +931,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     map<Instruction*, Value*> dupMemOps;
     map<Instruction*, int> dupMemOpOff;
     map<Value*, unsigned short> dupMemOpPos;
+    map<Instruction*, int> loopIVOp;
 
 
     //errs() << "BB: " << bbid << "\n";
@@ -899,11 +985,9 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[li] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if (is_loop_computable(li, &addrOffset)) 
+            else if ((addrOffset = is_loop_computable(li, &addrOffset)) != -1)
             {
-                dupMemOps[li] = addrSimilar;
-                dupMemOpOff[li] = addrOffset;
-                //dupMemOpPos[addrSimilar] = 0;                  
+                loopIVOp[li] = addrOffset;
             }
             else
             {
@@ -922,11 +1006,9 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[si] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if (is_loop_computable(si, &addrOffset)) 
+            else if ((addrOffset = is_loop_computable(si, &addrOffset)) != -1)
             {
-                dupMemOps[si] = addrSimilar;
-                dupMemOpOff[si] = addrOffset;
-                //dupMemOpPos[addrSimilar] = 0;                  
+                loopIVOp[si] = addrOffset;                
             }
             else
             {
@@ -1146,7 +1228,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 iPt = convertIterToInst(I);
             }
             sbbc->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-            bi->len = memOpCount + dupMemOps.size() + memOpGVElide;
+            
             hasInstAllMemOps = true;
 
             // Handle the delayed atomics now
@@ -1221,7 +1303,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(li) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[li];
@@ -1235,10 +1317,23 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             else
             {
                 assert(memOpPos < memOpCount);
-                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(li, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                    memOpCount--;
+                    if (loopIVOp.find(li) == loopIVOp.end())
+                    {
+                        memOpCount--;
+                    }
+                    memOpGVElide++;
+                }
+                else if (tMemOp->isLoopElide && tMemOp->isDep)
+                {
+                    auto lis = LoopMemoryOps[loopIVOp[li]];
+                    lis->wasElide = true;
+                    tMemOp->loopHeaderId = lis->headerBlock;
+                    
+                    addToLoopTrack(lis, tMemOp->loopHeaderId, li->getPointerOperand(), &tMemOp->loopMemOp, &tMemOp->depMemOpDelta);
+                    
                     memOpGVElide++;
                 }
                 else
@@ -1273,7 +1368,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (dupMemOps.find(si) != dupMemOps.end())
             {
-                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[si];
@@ -1289,10 +1384,23 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 assert(memOpPos < memOpCount);
                 // Skip globals for testing
                 //if (NULL != dyn_cast<GlobalValue>(si->getPointerOperand())) {memOpCount--;continue;}
-                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M);
+                tMemOp = insertMemOp(si, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
                 if (tMemOp->isGlobal && tMemOp->isDep)
                 {
-                    memOpCount--;
+                    if (loopIVOp.find(si) == loopIVOp.end())
+                    {
+                        memOpCount--;
+                    }
+                    memOpGVElide++;
+                }
+                else if (tMemOp->isLoopElide)
+                {
+                    auto lis = LoopMemoryOps[loopIVOp[si]];
+                    lis->wasElide = true;
+                    tMemOp->loopHeaderId = lis->headerBlock;
+                    
+                    addToLoopTrack(lis, tMemOp->loopHeaderId, si->getPointerOperand(), &tMemOp->loopMemOp, &tMemOp->depMemOpDelta);
+                    
                     memOpGVElide++;
                 }
                 else
@@ -1424,6 +1532,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     //   debug "calls".  If any are real calls, then the block contains a call.
     //   If it has 
     bi->containCall = (bi->containCall)?true:(!hasUninstCall);
+    bi->len = memOpCount + dupMemOps.size() + memOpGVElide;
+    errs() << "bbid: " << bbid << "\t" << bi->len << "\n";
     
     {
         hash<BasicBlock*> blockHash{};

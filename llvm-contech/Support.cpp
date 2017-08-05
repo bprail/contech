@@ -162,7 +162,8 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
 //
 //  Wrapper call that appropriately adds the operations to record the memory operation
 //
-pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, Value* pos, bool elide, Module &M)
+pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, 
+                                  Value* pos, bool elide, Module &M, map<Instruction*, int>& loopIVOp)
 {
     pllvm_mem_op tMemOp = new llvm_mem_op;
 
@@ -170,6 +171,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     tMemOp->isWrite = isWrite;
     tMemOp->isDep = false;
     tMemOp->isGlobal = false;
+    tMemOp->isLoopElide = false;
     tMemOp->depMemOp = 0;
     tMemOp->depMemOpDelta = 0;
     tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
@@ -238,18 +240,26 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
 
     if (li != NULL)
     {
-        Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
-        Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
-        Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
-        MarkInstAsContechInst(addrI);
+        if (loopIVOp.find(li) != loopIVOp.end())
+        {
+            tMemOp->isLoopElide = true;
+            tMemOp->isDep = true;
+        }
+        else
+        {
+            Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
+            Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
+            Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
+            MarkInstAsContechInst(addrI);
 
-        Value* argsMO[] = {addrI, cPos, pos, cElide};
-        debugLog("storeMemOpFunction @" << __LINE__);
-        CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
-        MarkInstAsContechInst(smo);
+            Value* argsMO[] = {addrI, cPos, pos, cElide};
+            debugLog("storeMemOpFunction @" << __LINE__);
+            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+            MarkInstAsContechInst(smo);
 
-        assert(smo != NULL);
-        smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+            assert(smo != NULL);
+            smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+        }
     }
 
     return tMemOp;
@@ -1241,4 +1251,91 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     }
 
     return move(loopEntry);
+}
+
+void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta)
+{
+    auto ilte = loopInfoTrack.find(bbid);
+    llvm_loop_track* llt = NULL;
+    if (ilte == loopInfoTrack.end())
+    {
+        llt = new llvm_loop_track;
+        llt->loopUsed = true;
+        llt->stepIV = llb->stepIV;
+        //llt->startIV = llb->startIV;
+        llt->memIV = llb->memIV;
+        llt->exitBlocks = llb->exitBlocks;
+        loopInfoTrack[bbid] = llt;
+    }
+    else
+    {
+        llt = ilte->second;
+        //assert(llt->startIV == llb->startIV);
+        assert(llt->memIV == llb->memIV);
+    }
+    
+    Value* baseAddr = NULL;
+    GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    if (gepAddr != NULL)
+    {
+        baseAddr = gepAddr->getPointerOperand();
+        
+        int offset = 0;
+        bool isIVLast = false;
+        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
+        {
+            Value* gepI = itG.getOperand();
+            Instruction* nCI = NULL;
+            
+            isIVLast = false;
+
+            // If the index of GEP is a Constant, then it can vary between mem ops
+            if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
+            {
+                offset += updateOffset(itG, aConst->getZExtValue());
+            }
+            else if ((nCI = dyn_cast<Instruction>(gepI)) == llb->memIV)
+            {
+                isIVLast = true;
+            }
+            else
+            {
+                // Reset to 0 if there is a variable offset
+                //baseOffset = 0;
+                /*int tOffset = offset;
+                gepI = convertValueToConstant(gepI, &tOffset);
+                
+                offset += updateOffset(itG, offset);*/
+                
+                // TODO: support IV + x, where x is not the IV step.
+            }
+        }
+        
+        if (isIVLast == false)
+        {
+            errs() << "MemAddr did not end with IV: " << *addr << "\n";
+            errs() << "IV: " << *llb->memIV << "\n";
+            assert(0);
+        }
+        *memOpDelta = offset;
+    }
+    
+    if (baseAddr == NULL)
+    {
+        errs() << "No base addr found: " << *addr << "\n";
+        assert(0);
+    }
+    
+    *memOpPos = 0;
+    for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+    {
+        if (*it == baseAddr) break;
+        *memOpPos = *memOpPos + 1;
+        errs() << *memOpPos << "\n";
+    }
+    
+    if (*memOpPos == llt->baseAddr.size())
+    {
+        llt->baseAddr.push_back(baseAddr);
+    }
 }

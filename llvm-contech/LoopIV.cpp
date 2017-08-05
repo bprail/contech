@@ -446,7 +446,9 @@ namespace llvm{
         llvm_loopiv_block tempLoopMemoryOps;
         
         tempLoopMemoryOps.canElide = false;
-        tempLoopMemoryOps.parentLoop = L;
+        tempLoopMemoryOps.headerBlock = L->getLoopPredecessor();
+        L->getExitBlocks(tempLoopMemoryOps.exitBlocks);
+        tempLoopMemoryOps.wasElide = false;
 
         errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
@@ -483,9 +485,9 @@ namespace llvm{
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = true;
                     tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
+                    
                     const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*memIV));
                     tempLoopMemoryOps.startIV = SARE->getOperand(0);
-                    tempLoopMemoryOps.blockID = I->getParent();
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
                 {
@@ -493,7 +495,6 @@ namespace llvm{
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
-                    tempLoopMemoryOps.blockID = I->getParent();
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
                 {
@@ -532,7 +533,7 @@ namespace llvm{
           
           LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
           SE = ctThis->getAnalysisSCEV(F);
-          for(LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
+          for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
           {
             Loop *L = *i;
 
