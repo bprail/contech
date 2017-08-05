@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <stdarg.h>
 
+#include <map>
+#include <vector>
+
 namespace contech
 {
     //
@@ -121,6 +124,27 @@ namespace contech
         ct_addr_t constantGV;
     } ct_gv_info, *pct_gv_info;
     
+    typedef struct _ct_loop_base {
+        int32_t step;
+        uint32_t stepBlock;
+        int64_t startValue;
+    } ct_loop_base, *pct_loop_base;
+    
+    typedef struct _ct_loop_memop {
+        uint16_t memOpId;
+        ct_addr_t baseAddr;
+    } ct_loop_memop, *pct_loop_memop;
+    
+    typedef struct _ct_loop
+    {
+        bool start;
+        uint32_t preLoopId;
+        
+        ct_loop_base clb;
+        
+        ct_loop_memop clm;
+    } ct_loop, *pct_loop;
+    
     //
     // There are two ways to combine objects with common fields.
     //   1) Common fields in a single type that is the first field
@@ -149,6 +173,7 @@ namespace contech
             ct_mpi_wait         mpiw;
             ct_roi_event        roi;
             ct_gv_info          gvi;
+            ct_loop             loop;
         };
     } ct_event, *pct_event;
     
@@ -197,7 +222,9 @@ namespace contech
                 union {
                     uint16_t baseOp;          // If BBI_FLAG_MEM_DUP
                     uint16_t constGVAddrId;   // if BBI_FLAG_MEM_GV
+                    uint16_t loopMemOpId;     // if BBI_FLAG_MEM_LOOP
                 };
+                uint32_t headerLoopId;    // if BBI_FLAG_MEM_LOOP
             } internal_memory_op_info, *pinternal_memory_op_info;
 
             typedef struct _internal_basic_block_info
@@ -208,7 +235,18 @@ namespace contech
                 uint32_t totalBytes;
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
-
+            
+            typedef struct _internal_loop_track
+            {
+                bool loopStarted;
+                uint32_t preLoopId;
+                ct_loop_base clb;
+                std::vector<ct_addr_t> baseAddr;
+            } internal_loop_track, *pinternal_loop_track;
+            
+            std::map<uint32_t, std::vector<pinternal_loop_track> > loopTrack;
+            std::map<uint32_t, std::map<uint32_t, std::vector<pinternal_loop_track> > > loopBlock;
+            
             pinternal_basic_block_info bb_info_table;
             ct_addr_t* constGVAddr;
             int maxConstGVId;

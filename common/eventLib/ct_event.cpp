@@ -370,6 +370,30 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
                         }
+                        else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
+                        {
+                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            uint16_t loopMemOpId = bb_info_table[id].mem_op_info[i].loopMemOpId;
+                            uint32_t loopId = bb_info_table[id].mem_op_info[i].headerLoopId;
+                            uint8_t size = bb_info_table[id].mem_op_info[i].size;
+                            
+                            auto lv = loopTrack[npe->contech_id];
+                            internal_loop_track* clt = NULL;
+                            for (auto it = lv.rbegin(), et = lv.rend(); it != et; ++it)
+                            {
+                                if ((*it)->preLoopId == loopId)
+                                {
+                                    clt = *it;
+                                    break;
+                                }
+                            }
+                            assert(clt != NULL);
+                            
+                            npe->bb.mem_op_array[i].addr = ((int64_t) offset) + (0x1L << size) * (clt->clb.startValue) + clt->baseAddr[loopMemOpId];
+                            
+                            npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
+                            npe->bb.mem_op_array[i].pow_size = size;
+                        }
                         else
                         {
                             fread_check(&npe->bb.mem_op_array[i].data32[0], sizeof(unsigned int), 1, fptr);
@@ -384,6 +408,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             else 
             {
                 npe->bb.mem_op_array = NULL;
+            }
+            
+            auto lb = loopBlock[npe->contech_id].find(npe->bb.basic_block_id);
+            if (lb != loopBlock[npe->contech_id].end())
+            {
+                auto clt = lb->second.back();
+                clt->clb.startValue += clt->clb.step;
             }
         }
         break;
@@ -496,16 +527,32 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 {
                     fread_check(&bb_info_table[id].mem_op_info[i], sizeof(char), 2, fptr);
                     if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP ||
-                        (bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
+                        (bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV ||
+                        (bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
                     {
-                        if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
+                        if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV ||
+                            (bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
                         {
                             // The global value flag also sets the dup flag in the info, clear now.
                             bb_info_table[id].mem_op_info[i].memFlags &= ~(BBI_FLAG_MEM_DUP);
                         }
-                        //fprintf(stderr, "dup! - %d %d\n", id, i);
-                        fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
-                        fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                        
+                        if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
+                        {
+                            fread_check(&bb_info_table[id].mem_op_info[i].headerLoopId, sizeof(uint32_t), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].loopMemOpId, sizeof(unsigned short), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                            if (bb_info_table[id].mem_op_info[i].headerLoopId >= bb_count)
+                            {
+                                fprintf(stderr, "ERROR: Loop INFO for memop %d in block %d wants block %d exceeds number of unique basic blocks (%d)\n", i, id, bb_info_table[id].mem_op_info[i].headerLoopId, bb_count);
+                                dumpAndTerminate(fptr);
+                            }
+                        }
+                        else
+                        {
+                            fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                        }
                     }
                     else
                     {
@@ -539,6 +586,16 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                &npe->tc.other_id, 
                                                &npe->tc.approx_skew);
             assert(bytesConsume == create_size);
+            
+            if (npe->tc.approx_skew != 0)
+            {
+                std::vector<pinternal_loop_track> vl;
+                vl.push_back(NULL);
+                loopTrack[npe->contech_id] = vl;
+                
+                std::map< uint32_t, std::vector<pinternal_loop_track> > ml;
+                loopBlock[npe->contech_id] = ml;
+            }
         }
         break;
         
@@ -576,6 +633,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                 &npe->sy.sync_type, 
                                                 &npe->sy.sync_addr, 
                                                 &npe->sy.ticketNum);
+            assert(bytesConsume == sync_size);
         }
         break;
         
@@ -728,6 +786,71 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         {
             // This event has no additional fields
             fread_check(&npe->roi.start_time, sizeof(ct_tsc_t), 1, fptr);
+        }
+        break;
+        
+        case (ct_event_loop):
+        {
+            const int loop_size = sizeof(npe->loop.start) + 
+                                  sizeof(npe->loop.preLoopId);
+            uint8_t buf[loop_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), loop_size, fptr);
+            bytesConsume = unpack(buf, "bl", &npe->loop.start, 
+                                             &npe->loop.preLoopId);
+            assert(bytesConsume == loop_size);
+            
+            auto lv = loopTrack.find(npe->contech_id);
+            assert(lv != loopTrack.end());
+            if (lv == loopTrack.end())
+            {
+                dumpAndTerminate(fptr);
+            }
+            
+            // Loop start and end events are slightly different.
+            if (npe->loop.start == 0)
+            {
+                internal_loop_track* clt = lv->second.back();
+                assert(clt->preLoopId == npe->loop.preLoopId);
+                lv->second.pop_back();
+                loopBlock[npe->contech_id][clt->clb.stepBlock].pop_back();
+                delete clt;
+            }
+            else
+            {
+                const int loop_start_size = sizeof(npe->loop.clb.step) +
+                                            sizeof(npe->loop.clb.stepBlock) +
+                                            sizeof(npe->loop.clb.startValue) +
+                                            sizeof(npe->loop.clm.memOpId) +
+                                            sizeof(npe->loop.clm.baseAddr);
+                uint8_t bufS[loop_start_size];
+                fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
+                bytesConsume = unpack(bufS, "lltst", &npe->loop.clb.step,
+                                                     &npe->loop.clb.stepBlock,
+                                                     &npe->loop.clb.startValue,
+                                                     &npe->loop.clm.memOpId,
+                                                     &npe->loop.clm.baseAddr);
+                
+                internal_loop_track* clt = lv->second.back();
+                if (clt == NULL || 
+                    clt->preLoopId != npe->loop.preLoopId ||
+                    clt->loopStarted != false)
+                {
+                    clt = new internal_loop_track;
+                    clt->clb = npe->loop.clb;
+                    clt->preLoopId = npe->loop.preLoopId;
+                    clt->loopStarted = false;
+                    lv->second.push_back(clt);
+                    loopBlock[npe->contech_id][clt->clb.stepBlock].push_back(clt);
+                }
+                
+                // resize will not shrink
+                if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
+                {
+                    clt->baseAddr.resize(npe->loop.clm.memOpId + 1);
+                }
+                clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;
+            }
         }
         break;
         
