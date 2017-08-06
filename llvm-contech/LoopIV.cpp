@@ -379,6 +379,12 @@ namespace llvm{
                     else if (!isa <Argument>(gepI)) //isa<CastInst>(gepI)
                     {
                         Value* gepI = temp->getOperand(0);
+                        
+                        if (StructType *STy = dyn_cast<StructType>(*itG))
+                        {
+                            continue;
+                        }
+                        
                         if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                         {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
