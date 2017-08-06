@@ -389,7 +389,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             }
                             assert(clt != NULL);
                             
-                            npe->bb.mem_op_array[i].addr = ((int64_t) offset) + (0x1L << size) * (clt->clb.startValue) + clt->baseAddr[loopMemOpId];
+                            npe->bb.mem_op_array[i].addr = ((int64_t) offset) + 
+                                                           ((int64_t) bb_info_table[id].mem_op_info[i].loopIVSize) * (clt->clb.startValue) + 
+                                                           clt->baseAddr[loopMemOpId];
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = size;
@@ -539,6 +541,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         
                         if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
                         {
+                            fread_check(&bb_info_table[id].mem_op_info[i].loopIVSize, sizeof(char), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].headerLoopId, sizeof(uint32_t), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].loopMemOpId, sizeof(unsigned short), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
