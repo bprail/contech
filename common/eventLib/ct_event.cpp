@@ -587,7 +587,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                &npe->tc.approx_skew);
             assert(bytesConsume == create_size);
             
-            if (npe->tc.approx_skew != 0)
+            if (npe->tc.approx_skew != 0 ||
+                npe->tc.other_id == 0)
             {
                 std::vector<pinternal_loop_track> vl;
                 vl.push_back(NULL);
