@@ -1030,6 +1030,7 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
 
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
+    if (castType == sourceValue->getType()) return sourceValue;
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
     debugLog("CastInst @" << __LINE__);
     Instruction* ret = CastInst::Create(castOp, sourceValue, castType, "Cast to Support Type", insertBefore);
@@ -1262,7 +1263,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
         llt = new llvm_loop_track;
         llt->loopUsed = true;
         llt->stepIV = llb->stepIV;
-        //llt->startIV = llb->startIV;
+        llt->startIV = llb->startIV;
+        llt->stepBlock = llb->stepBlock;
         llt->memIV = llb->memIV;
         llt->exitBlocks = llb->exitBlocks;
         loopInfoTrack[bbid] = llt;
@@ -1300,6 +1302,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
             }
             else
             {
+                errs() << "No Match: " << gepI << "\t" << llb->memIV << "\n";
+                errs() << "No Match: " << *gepI << "\t" << *llb->memIV << "\n";
                 // Reset to 0 if there is a variable offset
                 //baseOffset = 0;
                 /*int tOffset = offset;
@@ -1326,12 +1330,12 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
         assert(0);
     }
     
+    // Find the base address, does another loop op share it ?
     *memOpPos = 0;
     for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
     {
         if (*it == baseAddr) break;
         *memOpPos = *memOpPos + 1;
-        errs() << *memOpPos << "\n";
     }
     
     if (*memOpPos == llt->baseAddr.size())

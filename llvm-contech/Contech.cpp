@@ -513,8 +513,9 @@ bool Contech::runOnModule(Module &M)
             }
         }
         
-        Contech::LoopMemoryOps.insert(Contech::LoopMemoryOps.end(), 
-                                      temp.begin(), temp.end());
+        LoopMemoryOps.clear();
+        LoopMemoryOps.insert(LoopMemoryOps.end(), 
+                             temp.begin(), temp.end());
         delete liv;
         
         // static analysis
@@ -606,36 +607,26 @@ bool Contech::runOnModule(Module &M)
             Value* startValue = NULL;
             Constant* stepID = NULL;
             
-            errs() << "Attempt: " << bbid << " \n";
-            
-            /*
-            * The follow approach requires LLVM post 3.9
-            auto startValues = getAnalysisSCEV(*F)->getSCEVValues(llt->startIV);
-            for (auto it = startValues.begin(), et = startValues.end(); it != et; ++it)
-            {
-                ConstantInt* ci = it->second;
-                if (ci->isZero())
-                {
-                    startValue = it->first;
-                    break;
-                }
-            }*/
-            
-            PHINode* pn = dyn_cast<PHINode>(llt->memIV);
-            if (pn != NULL)
-            {
-                errs() << *pn << "\n";
-                startValue = castSupport(cct.int64Ty, pn->getIncomingValue(0), iPt);
-                stepID = ConstantInt::get(cct.int32Ty, cfgInfoMap[pn->getIncomingBlock(1)]->id);
-            }
+            startValue = castSupport(cct.int64Ty, llt->startIV, iPt);
+            stepID = ConstantInt::get(cct.int32Ty, cfgInfoMap[llt->stepBlock]->id);
             
             // Insert a call per elided loop memop
             uint16_t i = 0;
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
+                Instruction* mAddr = dyn_cast<Instruction>(*mit);
+                if (mAddr != NULL &&
+                    mAddr->getParent() == it->first)
+                {
+                    auto it = convertInstToIter(mAddr);
+                    ++it;
+                    iPt = convertIterToInst(it);
+                }
+                
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
                 Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
                 Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
+                debugLog("storeLoopEntryFunction @" << __LINE__);
                 Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
                 MarkInstAsContechInst(loopEntry);
                 i++;
@@ -1533,7 +1524,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     //   If it has 
     bi->containCall = (bi->containCall)?true:(!hasUninstCall);
     bi->len = memOpCount + dupMemOps.size() + memOpGVElide;
-    errs() << "bbid: " << bbid << "\t" << bi->len << "\n";
     
     {
         hash<BasicBlock*> blockHash{};

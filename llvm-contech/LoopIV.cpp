@@ -450,7 +450,6 @@ namespace llvm{
         L->getExitBlocks(tempLoopMemoryOps.exitBlocks);
         tempLoopMemoryOps.wasElide = false;
 
-        errs() << (*(L->block_begin()))->getName() << "\n";
         collectPossibleIVs(L);
         collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
         collectDerivedIVs(L, NonLinearIvs, &DerivedNonlinearIvs);
@@ -476,6 +475,15 @@ namespace llvm{
                     continue;
                 }
                 
+                // Is the base address of the memory operation
+                //   invariant in this loop.
+                if (gepAddr != NULL &&
+                    SE->isLoopInvariant(SE->getSCEV(gepAddr->getPointerOperand()), L) == false) 
+                {
+                    errs() << *I << "\n" << *gepAddr << "\n";
+                    continue;
+                }
+                
                 Value* memIV = NULL;
                 if ((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) != NULL) 
                 {
@@ -486,8 +494,35 @@ namespace llvm{
                     tempLoopMemoryOps.canElide = true;
                     tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
                     
-                    const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*memIV));
-                    tempLoopMemoryOps.startIV = SARE->getOperand(0);
+                    PHINode* pn = dyn_cast<PHINode>(memIV);
+                    if (pn == NULL)
+                    {
+                        memIV = NULL;
+                        continue;
+                    }
+                    for (int i = 0; i < pn->getNumIncomingValues(); i++)
+                    {
+                        BasicBlock* pnBB = pn->getIncomingBlock(i);
+                        Value* v = pn->getIncomingValue(i);
+                        
+                        if (L->contains(pnBB) == true)
+                        {
+                            Instruction* inst = dyn_cast<Instruction>(v);
+                            if (inst != NULL)
+                            {
+                                tempLoopMemoryOps.stepBlock = inst->getParent();
+                            }
+                            else
+                            {
+                                tempLoopMemoryOps.stepBlock = pnBB;
+                            }
+                        }
+                        else
+                        {
+                            tempLoopMemoryOps.startIV = v;
+                        }
+                    }
+                    
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
                 {

@@ -79,7 +79,8 @@ namespace llvm {
     {
         Instruction* memOp;     //memory op
         Instruction* memIV;     //corresponding IV
-        const SCEV* startIV;    //start val of IV
+        Value* startIV;    //start val of IV
+        BasicBlock* stepBlock;
         BasicBlock* headerBlock;
         // 4 is chosen from the loopUnroll code.
         SmallVector<BasicBlock*, 4> exitBlocks;  //
@@ -91,7 +92,8 @@ namespace llvm {
     typedef struct _llvm_loop_track
     {
         bool loopUsed;
-        //const SCEV* startIV;
+        Value* startIV;
+        BasicBlock* stepBlock;
         Instruction* memIV;
         int stepIV;
         // 4 is chosen from the loopUnroll code.
