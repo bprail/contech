@@ -601,7 +601,8 @@ bool Contech::runOnModule(Module &M)
             pllvm_loop_track llt = it->second;
             uint32_t bbid = cfgInfoMap[it->first]->id;
             int bb_val = blockHash(it->first);
-            Instruction* iPt = costPerBlock.find(bb_val)->second.insertPoint;
+            //Instruction* iPt = costPerBlock.find(bb_val)->second.insertPoint;
+            Instruction* iPt = it->first->getTerminator();
             Constant* cbbid = ConstantInt::get(cct.int32Ty, bbid);
             Constant* cstep = ConstantInt::get(cct.int32Ty, llt->stepIV);
             Value* startValue = NULL;
@@ -614,14 +615,19 @@ bool Contech::runOnModule(Module &M)
             uint16_t i = 0;
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
-                Instruction* mAddr = dyn_cast<Instruction>(*mit);
+                /*Instruction* mAddr = dyn_cast<Instruction>(*mit);
                 if (mAddr != NULL &&
-                    mAddr->getParent() == it->first)
+                    mAddr->getParent() == it->first &&
+                    dyn_cast<PHINode>(mAddr) == NULL)
                 {
                     auto it = convertInstToIter(mAddr);
-                    ++it;
-                    iPt = convertIterToInst(it);
-                }
+                    auto cit = convertInstToIter(iPt);
+                    if (cit < it)
+                    {
+                        ++it;
+                        iPt = convertIterToInst(it);
+                    }
+                }*/
                 
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
                 Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);

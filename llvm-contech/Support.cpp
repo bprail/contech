@@ -1302,19 +1302,16 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
             }
             else
             {
-                errs() << "No Match: " << gepI << "\t" << llb->memIV << "\n";
-                errs() << "No Match: " << *gepI << "\t" << *llb->memIV << "\n";
-                // Reset to 0 if there is a variable offset
-                //baseOffset = 0;
-                /*int tOffset = offset;
-                gepI = convertValueToConstant(gepI, &tOffset);
-                
-                offset += updateOffset(itG, offset);*/
-                
-                // TODO: support IV + x, where x is not the IV step.
+                // As memIV is always PHI, it is safe to walk a chain up
+                //   to that PHI.
+                gepI = convertValueToConstant(gepI, &offset);
+                offset += updateOffset(itG, offset);
+                isIVLast = true;
             }
         }
         
+        // TODO: If IV is not last, then the scale multipler for IV
+        //   needs to be computed here and not just use the access size.
         if (isIVLast == false)
         {
             errs() << "MemAddr did not end with IV: " << *addr << "\n";
