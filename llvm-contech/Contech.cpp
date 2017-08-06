@@ -741,6 +741,7 @@ cleanup:
                     {
                         errs() << *t->loopHeaderId << "\n";
                         uint32_t loopHeaderId = cfgInfoMap[t->loopHeaderId]->id;
+                        contechStateFile->write((char*)&t->loopIVSize, sizeof(char));
                         contechStateFile->write((char*)&loopHeaderId, sizeof(uint32_t));
                         contechStateFile->write((char*)&t->loopMemOp, sizeof(uint16_t));
                         contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
@@ -1329,7 +1330,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                     lis->wasElide = true;
                     tMemOp->loopHeaderId = lis->headerBlock;
                     
-                    addToLoopTrack(lis, tMemOp->loopHeaderId, li->getPointerOperand(), &tMemOp->loopMemOp, &tMemOp->depMemOpDelta);
+                    addToLoopTrack(lis, tMemOp->loopHeaderId, li->getPointerOperand(), 
+                                   &tMemOp->loopMemOp, &tMemOp->depMemOpDelta, &tMemOp->loopIVSize);
                     
                     memOpGVElide++;
                 }
@@ -1396,7 +1398,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                     lis->wasElide = true;
                     tMemOp->loopHeaderId = lis->headerBlock;
                     
-                    addToLoopTrack(lis, tMemOp->loopHeaderId, si->getPointerOperand(), &tMemOp->loopMemOp, &tMemOp->depMemOpDelta);
+                    addToLoopTrack(lis, tMemOp->loopHeaderId, si->getPointerOperand(), 
+                                   &tMemOp->loopMemOp, &tMemOp->depMemOpDelta, &tMemOp->loopIVSize);
                     
                     memOpGVElide++;
                 }

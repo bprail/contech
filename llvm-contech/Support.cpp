@@ -1254,7 +1254,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
-void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta)
+void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta, char* loopIVSize)
 {
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
@@ -1299,13 +1299,16 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
             else if ((nCI = dyn_cast<Instruction>(gepI)) == llb->memIV)
             {
                 isIVLast = true;
+                *loopIVSize = updateOffset(itG, 1);
             }
             else
             {
                 // As memIV is always PHI, it is safe to walk a chain up
                 //   to that PHI.
-                gepI = convertValueToConstant(gepI, &offset);
-                offset += updateOffset(itG, offset);
+                int tOffset = 0;
+                gepI = convertValueToConstant(gepI, &tOffset);
+                offset += updateOffset(itG, tOffset);
+                *loopIVSize = updateOffset(itG, 1);
                 isIVLast = true;
             }
         }

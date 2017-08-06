@@ -39,6 +39,7 @@ namespace llvm {
         bool isDep;
         bool isLoopElide;
         char size;
+        char loopIVSize;
         union {
             unsigned short depMemOp;
             unsigned short loopMemOp;  // which base address for that header
@@ -270,7 +271,7 @@ namespace llvm {
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         int is_loop_computable(Instruction* memI, int* offset);
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta);
+        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta, char* loopIVSize);
 
     }; // end of class Contech
 
