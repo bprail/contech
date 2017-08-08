@@ -39,13 +39,14 @@ namespace llvm {
         bool isDep;
         bool isLoopElide;
         char size;
-        char loopIVSize;
         union {
             unsigned short depMemOp;
             unsigned short loopMemOp;  // which base address for that header
         };
         
         int depMemOpDelta;
+        
+        int loopIVSize;
         BasicBlock* loopHeaderId;  // which loop header
         
         //Value* addr;
@@ -221,6 +222,7 @@ namespace llvm {
         static char ID; // Pass identification, replacement for typeid
         ConstantsCT cct;
         const DataLayout* currentDataLayout;
+        DominatorTree * DT;
 
         std::set<Function*> contechAddedFunctions;
         std::set<Function*> ompMicroTaskFunctions;
@@ -245,7 +247,7 @@ namespace llvm {
         bool attemptTailDuplicate(BasicBlock* bbTail);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, 
                                  Value*, bool elide, Module&, std::map<llvm::Instruction*, int>&);
-        Value* convertValueToConstant(Value*, int*);
+        Value* convertValueToConstant(Value*, int*, Value*);
         int updateOffset(gep_type_iterator gepit, int val);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
@@ -271,7 +273,7 @@ namespace llvm {
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         int is_loop_computable(Instruction* memI, int* offset);
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta, char* loopIVSize);
+        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction*, Value* addr, unsigned short* memOpPos, int* memOpDelta, int* loopIVSize);
 
     }; // end of class Contech
 

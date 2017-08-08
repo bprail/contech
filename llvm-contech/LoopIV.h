@@ -47,6 +47,7 @@ namespace llvm {
         void iterateOnLoop(Loop *L);
 		const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
 		Value* collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived);
+        Instruction* isAddOrPHIConstant(Value*);
 	};
 }
 #endif 

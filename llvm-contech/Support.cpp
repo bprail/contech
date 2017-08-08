@@ -245,7 +245,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             tMemOp->isLoopElide = true;
             tMemOp->isDep = true;
         }
-        else
+        //else
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
@@ -576,13 +576,14 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
 //   Given a value v, determine if it is a function of a single base value and other
 //     constants.  If so, then return the base value.
 //
-Value* Contech::convertValueToConstant(Value* v, int* offset)
+Value* Contech::convertValueToConstant(Value* v, int* offset, Value* stopInst)
 {
     bool zeroOrOneConstant = true;
     
     do {
         Instruction* inst = dyn_cast<Instruction>(v);
         if (inst == NULL) break;
+        if (v == stopInst) break;
         
         switch(inst->getOpcode())
         {
@@ -732,7 +733,7 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
         {
             // Reset to 0 if there is a variable offset
             baseOffset = 0;
-            gepI = convertValueToConstant(gepI, &baseOffset);
+            gepI = convertValueToConstant(gepI, &baseOffset, NULL);
             baseOffset += updateOffset(itG, baseOffset);
         }
 
@@ -821,7 +822,7 @@ Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offse
             }
             else if (gepI != addrComponents[i])
             {
-                gepI = convertValueToConstant(gepI, &tOffset);
+                gepI = convertValueToConstant(gepI, &tOffset, NULL);
                 if (gepI != addrComponents[i])
                 {
                     isMatch = false;
@@ -1254,7 +1255,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
-void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* addr, unsigned short* memOpPos, int* memOpDelta, char* loopIVSize)
+void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int* memOpDelta, int* loopIVSize)
 {
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
@@ -1287,30 +1288,72 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Value* ad
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
-            Instruction* nCI = NULL;
+            Instruction* nCI = dyn_cast<Instruction>(gepI);
+            Value* nextIV = llb->memIV;
             
-            isIVLast = false;
-
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
                 offset += updateOffset(itG, aConst->getZExtValue());
+                continue;
             }
-            else if ((nCI = dyn_cast<Instruction>(gepI)) == llb->memIV)
+            
+            // The main question in this code is applying offset(s) that
+            //   will either trace to the PHI, or will cross the block
+            //   where event lib will apply step first.  The add walking code
+            //   will try to cross the step instruction, but it should stop
+            //   there if the step would already have been applied, which is
+            //   if that step instruction dominates the mem op and occurs in
+            //   a different block.  Same block delays the event lib step.
+            PHINode* pn = dyn_cast<PHINode>(nextIV);
+            if (pn != NULL)
             {
-                isIVLast = true;
-                *loopIVSize = updateOffset(itG, 1);
+                for (int i = 0; i < pn->getNumIncomingValues(); i++)
+                {
+                    Value* inCV = pn->getIncomingValue(i);
+                    Instruction* inCVInst = dyn_cast<Instruction>(inCV);
+                    
+                    // If this is not the start value, then it is the step value.
+                    //   If this value dominates the load or store
+                    if (inCV != llb->startIV &&
+                        (inCVInst == NULL ||
+                         (DT->dominates(inCVInst, memOp) == true &&
+                          inCVInst->getParent() != memOp->getParent())))
+                    {
+                        nextIV = inCV;
+                    }
+                }
             }
-            else
+            
+            int tOffset = 0;
+            if (nCI != llb->memIV)
             {
-                // As memIV is always PHI, it is safe to walk a chain up
-                //   to that PHI.
-                int tOffset = 0;
-                gepI = convertValueToConstant(gepI, &tOffset);
-                offset += updateOffset(itG, tOffset);
-                *loopIVSize = updateOffset(itG, 1);
-                isIVLast = true;
+                // memIV is always a PHI, but the item used may be an offset
+                //   of the IV, or even the next step of the IV so we tell 
+                //   the conversion not to capture this step.
+                
+                
+                gepI = convertValueToConstant(gepI, &tOffset, nextIV);
+                
             }
+            
+            // If the convert did not end on the step instruction and
+            // If the step block dominates us here then it will
+            //   be applied before reaching here, while the IR is not
+            //   applying it.
+            Instruction* nextIVInst = dyn_cast<Instruction>(nextIV);
+            if (gepI != nextIV &&
+                llb->stepBlock != memOp->getParent() &&
+                nextIVInst != NULL &&
+                nextIVInst->getParent() == llb->stepBlock &&
+                DT->dominates(nextIVInst, memOp))
+            {
+                tOffset += -1 * llb->stepIV;
+            }
+            
+            offset += updateOffset(itG, tOffset);
+            *loopIVSize = updateOffset(itG, 1);
+            isIVLast = true;
         }
         
         // TODO: If IV is not last, then the scale multipler for IV

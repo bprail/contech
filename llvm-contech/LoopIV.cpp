@@ -348,10 +348,57 @@ namespace llvm{
             }
         }
     }
+    
+    Instruction* LoopIV::isAddOrPHIConstant(Value* v)
+    {
+        bool zeroOrOneConstant = true;
+    
+        do {
+            Instruction* inst = dyn_cast<Instruction>(v);
+            if (inst == NULL) break;
+            
+            switch(inst->getOpcode())
+            {
+                case Instruction::Add:
+                {
+                    Value* vOp;
+                    zeroOrOneConstant = false;
+                    for (int i = 0; i < 2; i++)
+                    {
+                        vOp = inst->getOperand(i);
+                        if (ConstantInt* ci = dyn_cast<ConstantInt>(vOp))
+                        {
+                            zeroOrOneConstant = true;
+                        }
+                        else
+                        {
+                            v = vOp;
+                        }
+                    }
+                }
+                break;
+                case Instruction::PHI:
+                {
+                    return inst;
+                }
+                break;
+                default:
+                {
+                    zeroOrOneConstant = false;
+                }
+                break;
+            }
+            
+        } while (zeroOrOneConstant);
+        
+        return NULL;
+    }
 
+    // TODO: the value is always an instruction, adjust the calls to return precisely
     Value* LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived)
     {
         Value* cnt_elided = NULL;
+        bool non_const = false;
 
         if (gepAddr != NULL) 
         {
@@ -370,6 +417,10 @@ namespace llvm{
                 }
                 else 
                 {
+                    if (isAddOrPHIConstant(gepI) == NULL) return NULL;
+                    if (non_const != false) return NULL;
+                    non_const = true;
+                    
                     if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                     {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
@@ -378,39 +429,40 @@ namespace llvm{
                     //traverse the operands
                     else if (!isa <Argument>(gepI)) //isa<CastInst>(gepI)
                     {
-                        Value* gepI = temp->getOperand(0);
+                        Value* gepID = temp->getOperand(0);
                         
                         if (StructType *STy = dyn_cast<StructType>(*itG))
                         {
                             continue;
                         }
                         
-                        if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                        if (std::find(IVs.begin(), IVs.end(), gepID) != IVs.end()) 
                         {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
-                            cnt_elided = gepI;
+                            
+                            cnt_elided = gepID;
                         }
 
-                        else if (!isa <Argument>(gepI))  //any other operation involving IV and COnst or LI Inst
+                        else if (!isa <Argument>(gepID))  //any other operation involving IV and COnst or LI Inst
                         {
-                            Instruction* temp = dyn_cast<Instruction>(gepI);
+                            Instruction* tempID = dyn_cast<Instruction>(gepID);
                             bool is_safe = true, is_found = false;
-                            if (temp == NULL) 
+                            if (tempID == NULL) 
                             {
                                 continue;
                             }
                             
                             int op = 0;
-                            if (temp->getNumOperands() == 2) 
+                            if (tempID->getNumOperands() == 2) 
                             {
-                                for (unsigned i = 0; i < temp->getNumOperands(); i++)
+                                for (unsigned i = 0; i < tempID->getNumOperands(); i++)
                                 {    //assuming 2 operands in 3 add inst
-                                    if(temp->getOperand(i) == temp->getOperand(1-i)) 
+                                    if (tempID->getOperand(i) == tempID->getOperand(1-i)) 
                                     {
                                         is_safe = false;
                                     }
                                     
-                                    if(std::find(IVs.begin(), IVs.end(), temp->getOperand(i)) != IVs.end()) 
+                                    if (std::find(IVs.begin(), IVs.end(), tempID->getOperand(i)) != IVs.end()) 
                                     {
                                         is_found = true;
                                         op = i;
@@ -419,22 +471,22 @@ namespace llvm{
                                 
                                 if (is_safe && is_found)     //check for other operand 
                                 {
-                                    const SCEVAddRecExpr *S = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*temp->getOperand(1-op)));
+                                    const SCEVAddRecExpr *S = dyn_cast<SCEVAddRecExpr>(SE->getSCEV(&*tempID->getOperand(1-op)));
                                     if (S != NULL) 
                                     {
                                         if (!is_derived) 
                                         {
-                                            cnt_elided = gepI;
+                                            cnt_elided = gepID;
                                             //errs() << "FOUND IT 2 : " << *gepAddr << "\n";
                                         }
                                     }
                                 }
                             }
-                            else if (temp->getNumOperands() == 1) 
+                            else if (tempID->getNumOperands() == 1) 
                             {
-                                if (std::find(IVs.begin(), IVs.end(), temp->getOperand(0)) != IVs.end()) 
+                                if (std::find(IVs.begin(), IVs.end(), tempID->getOperand(0)) != IVs.end()) 
                                 {
-                                    cnt_elided = gepI;
+                                    cnt_elided = gepID;
                                     //errs() << "FOUND IT 3: " << *gepAddr << "\n";
                                 }
                             }
@@ -486,7 +538,6 @@ namespace llvm{
                 if (gepAddr != NULL &&
                     SE->isLoopInvariant(SE->getSCEV(gepAddr->getPointerOperand()), L) == false) 
                 {
-                    errs() << *I << "\n" << *gepAddr << "\n";
                     continue;
                 }
                 
@@ -501,7 +552,8 @@ namespace llvm{
                     tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
                     
                     PHINode* pn = dyn_cast<PHINode>(memIV);
-                    if (pn == NULL)
+                    if (pn == NULL ||
+                        L->contains(tempLoopMemoryOps.memIV) == false)
                     {
                         memIV = NULL;
                         continue;
