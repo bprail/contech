@@ -217,7 +217,8 @@ namespace contech
             
             typedef struct _internal_memory_op_info
             {
-                char memFlags, size, loopIVSize;
+                char memFlags, size;
+                int loopIVSize;
                 int baseOffset;  // N.B. Offset can be negative
                 union {
                     uint16_t baseOp;          // If BBI_FLAG_MEM_DUP

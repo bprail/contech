@@ -393,6 +393,27 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                            ((int64_t) bb_info_table[id].mem_op_info[i].loopIVSize) * (clt->clb.startValue) + 
                                                            clt->baseAddr[loopMemOpId];
                             
+                            /*
+                             * The following code verified the loop elide addresses are computed
+                             *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
+                             */
+                             /*ct_memory_op tmo;
+                             tmo.data = 0;
+                             fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                            fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                            
+                            if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                            {
+                                fprintf(stderr, "%d.%d of loop %d.%d with %d in %d\n", id, i, loopId, loopMemOpId, clt->clb.step, clt->clb.stepBlock);
+                                fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                fprintf(stderr, "%p[%d * %d] + %d -> %p\n", clt->baseAddr[loopMemOpId], 
+                                                                            bb_info_table[id].mem_op_info[i].loopIVSize, 
+                                                                            clt->clb.startValue, 
+                                                                            offset, 
+                                                                            npe->bb.mem_op_array[i].addr);
+                                assert(0);
+                            }
+                            */
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = size;
                         }
@@ -416,7 +437,15 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             if (lb != loopBlock[npe->contech_id].end())
             {
                 auto clt = lb->second.back();
+                if (npe->bb.basic_block_id == 124)
+                {
+                    printf("%d + %d", clt->clb.startValue, clt->clb.step);
+                }
                 clt->clb.startValue += clt->clb.step;
+                if (npe->bb.basic_block_id == 124)
+                {
+                    printf(" = %d + %d\n", clt->clb.startValue, clt->clb.step);
+                }
             }
         }
         break;
@@ -541,7 +570,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         
                         if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
                         {
-                            fread_check(&bb_info_table[id].mem_op_info[i].loopIVSize, sizeof(char), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].loopIVSize, sizeof(int), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].headerLoopId, sizeof(uint32_t), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].loopMemOpId, sizeof(unsigned short), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
@@ -815,6 +844,10 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             if (npe->loop.start == 0)
             {
                 internal_loop_track* clt = lv->second.back();
+                if (clt->preLoopId != npe->loop.preLoopId)
+                {
+                    printf("In %d, loop %d was instead %d\n", lastBBID, npe->loop.preLoopId, clt->preLoopId);
+                }
                 assert(clt->preLoopId == npe->loop.preLoopId);
                 lv->second.pop_back();
                 loopBlock[npe->contech_id][clt->clb.stepBlock].pop_back();
