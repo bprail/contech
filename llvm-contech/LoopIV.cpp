@@ -413,11 +413,13 @@ namespace llvm{
                 }
                 else if (temp == NULL)
                 {
+                    if (dyn_cast<Argument>(gepI)) return NULL;
                     continue;
                 }
                 else 
                 {
-                    if (isAddOrPHIConstant(gepI) == NULL) return NULL;
+                    Instruction* basePhi = isAddOrPHIConstant(gepI);
+                    if (basePhi == NULL) return NULL;
                     if (non_const != false) return NULL;
                     non_const = true;
                     
@@ -493,6 +495,12 @@ namespace llvm{
                             // case with >= 2
                         }
                     }
+                    
+                    // Is the memIV (i.e., cnt_elided) the same instruction as
+                    //   the PHI that the GEP chains back to.
+                    // In some loops, the GEP may use a PHI of the memIV and something else.
+                    if (cnt_elided != NULL &&
+                        basePhi != dyn_cast<Instruction>(cnt_elided)) return NULL;
                 }
             }
         }
