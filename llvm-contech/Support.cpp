@@ -245,9 +245,9 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         {
             auto lis = LoopMemoryOps[livo->second];
             auto ilte = loopInfoTrack.find(lis->headerBlock);
-            if (ilte != loopInfoTrack.end() &&
-                ilte->second->memIV == lis->memIV &&
-                ilte->second->stepIV == lis->stepIV)
+            if (ilte == loopInfoTrack.end() ||
+                (ilte->second->memIV == lis->memIV &&
+                 ilte->second->stepIV == lis->stepIV))
             {
                 tMemOp->isLoopElide = true;
                 tMemOp->isDep = true;

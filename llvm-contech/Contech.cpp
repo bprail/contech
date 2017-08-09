@@ -1343,6 +1343,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                     
                     memOpGVElide++;
                     memOpCount--;
+                    // memOpPos ++;
                 }
                 else
                 {
@@ -1407,6 +1408,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                     
                     memOpGVElide++;
                     memOpCount--;
+                    // memOpPos ++;
                 }
                 else
                 {
