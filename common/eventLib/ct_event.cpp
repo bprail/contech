@@ -397,13 +397,14 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                              * The following code verified the loop elide addresses are computed
                              *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
                              */
-                             /*ct_memory_op tmo;
+                            /* ct_memory_op tmo;
                              tmo.data = 0;
                              fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
                             fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
                             
                             if (tmo.addr != npe->bb.mem_op_array[i].addr)
                             {
+                                fprintf(stderr, "In loopTrack[%d] size %d:\n", npe->contech_id, lv.size());
                                 fprintf(stderr, "%d.%d of loop %d.%d with %d in %d\n", id, i, loopId, loopMemOpId, clt->clb.step, clt->clb.stepBlock);
                                 fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
                                 fprintf(stderr, "%p[%d * %d] + %d -> %p\n", clt->baseAddr[loopMemOpId], 
@@ -412,8 +413,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                                             offset, 
                                                                             npe->bb.mem_op_array[i].addr);
                                 assert(0);
-                            }
-                            */
+                            }*/
+                            
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = size;
                         }
@@ -437,15 +438,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             if (lb != loopBlock[npe->contech_id].end())
             {
                 auto clt = lb->second.back();
-                if (npe->bb.basic_block_id == 124)
-                {
-                    printf("%d + %d", clt->clb.startValue, clt->clb.step);
-                }
                 clt->clb.startValue += clt->clb.step;
-                if (npe->bb.basic_block_id == 124)
-                {
-                    printf(" = %d + %d\n", clt->clb.startValue, clt->clb.step);
-                }
             }
         }
         break;
@@ -871,12 +864,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 internal_loop_track* clt = lv->second.back();
                 if (clt == NULL || 
                     clt->preLoopId != npe->loop.preLoopId ||
-                    clt->loopStarted != false)
+                    npe->loop.clm.memOpId == 0)
                 {
                     clt = new internal_loop_track;
                     clt->clb = npe->loop.clb;
                     clt->preLoopId = npe->loop.preLoopId;
-                    clt->loopStarted = false;
                     lv->second.push_back(clt);
                     loopBlock[npe->contech_id][clt->clb.stepBlock].push_back(clt);
                 }
