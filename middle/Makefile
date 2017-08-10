@@ -2,7 +2,7 @@ CXX = g++
 PROJECT = middle
 OBJECTS = middle.o Context.o BarrierWrapper.o taskWrite.o eventQ.o
 CPPFLAGS  = -O3 -g --std=c++11 -pthread
-LIBS = -lTask -lct_event -lz -Wl,-rpath=../common/taskLib/
+LIBS = -lTask -lct_event -lz -Wl,-rpath=$(CONTECH_HOME)/common/taskLib/
 
 all: $(PROJECT)
 
