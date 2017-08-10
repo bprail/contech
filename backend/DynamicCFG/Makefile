@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS= -g -O3 -std=c++11
 OBJECTS= dynamicCFG.o BasicBlock.o
 INCLUDES= -I. 
-LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -L../../common/taskLib/ -lgvc -lcgraph -lTask -L../CommTracker/ -lCommTracker -lz -Wl,-rpath=../../common/taskLib/
+LIBS= -L/net/tinker/local/lib64 -L/net/tinker/local/lib -L../../common/taskLib/ -lgvc -lcgraph -lTask -L../CommTracker/ -lCommTracker -lz -Wl,-rpath=$(CONTECH_HOME)/common/taskLib/
 EXTERNALS=
 
 all: taskLib dynamicCFG

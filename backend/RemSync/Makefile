@@ -2,7 +2,7 @@ CXX=g++
 CXXFLAGS= -g -std=c++11 -O3
 OBJECTS= remSync.o
 INCLUDES=
-LIBS= -L../../common/taskLib -lTask -lz -Wl,-rpath=../../common/taskLib/
+LIBS= -L../../common/taskLib -lTask -lz -Wl,-rpath=$(CONTECH_HOME)/common/taskLib/
 
 all: taskLib remSync
 

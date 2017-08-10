@@ -5,7 +5,7 @@ OBJECTS= main.o
 LPROJ = libmemUse.a
 LOBJ = memUse.o
 INCLUDES=
-LIBS= -L../../common/taskLib/ -lTask -lz -L. -Wl,-rpath=../../common/taskLib/
+LIBS= -L../../common/taskLib/ -lTask -lz -L. -Wl,-rpath=$(CONTECH_HOME)/common/taskLib/
 EXTERNALS=
 
 all: taskLib $(LPROJ) $(PROJECT)
