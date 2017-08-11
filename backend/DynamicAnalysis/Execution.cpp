@@ -503,8 +503,11 @@ bool EnginePass::runOnModule(Module &M)
                     if (bbm == basicBlockMap.end())
                     {
                         errs() << "Failed to find - " << (uint)bb.basic_block_id << " - ";
-                        auto bbi = tg->getTaskGraphInfo()->getBasicBlockInfo((uint)bb.basic_block_id);
-                        errs() << bbi.fileName << ":" << bbi.lineNumber << " " << bbi.functionName << "\n";
+                        auto bbi = &tg->getTaskGraphInfo()->getBasicBlockInfo((uint)bb.basic_block_id);
+                        if (bbi != NULL)
+                        {
+                            errs() << bbi->fileName << ":" << bbi->lineNumber << " " << bbi->functionName << "\n";
+                        }
                         return false;
                     }
                     else
