@@ -663,7 +663,7 @@ DynamicAnalysis::resetAnalysis()
     LastStoreIssueCycle = 0;
 
     // Don't leak memory by naively .clear()ing even though program semantics may not be affected at this point
-    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs; i++) 
+    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs + nBuffers; i++) 
     {
         Tree<uint64_t>* tree = AvailableCyclesTree[i];
         delete_all(tree);

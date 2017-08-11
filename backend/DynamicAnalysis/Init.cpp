@@ -520,7 +520,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     for (unsigned i = 0; i < nBuffers; i++)
         BuffersOccupancy.push_back(0);
     
-    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs; i++)
+    for (unsigned i = 0; i < nExecutionUnits + nPorts + nAGUs + nBuffers; i++)
         AvailableCyclesTree.push_back(NULL);    
     
     CGSFCache.resize(MAX_RESOURCE_VALUE);

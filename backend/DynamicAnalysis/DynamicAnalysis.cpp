@@ -819,7 +819,8 @@ DynamicAnalysis::InsertNextAvailableIssueCycle(uint64_t NextAvailableCycle, unsi
         
         if (!FullOccupancyCyclesTree[TreeChunk].get_node((NextAvailableCycle+NextCycle), ExecutionResource))
         {
-            AvailableCyclesTree[ExecutionResource] = insert_node(NextAvailableCycle+NextCycle,    AvailableCyclesTree[ExecutionResource]);
+            AvailableCyclesTree[ExecutionResource] = insert_node(NextAvailableCycle+NextCycle,
+                                                                 AvailableCyclesTree[ExecutionResource]);
             
             // In this case, although we are inserting a node into AvailableCycles, we don't insert the source
             // code line associated to the cycle because it does not mean that an instruction has actually been

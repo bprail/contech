@@ -423,6 +423,8 @@ bool EnginePass::runOnModule(Module &M)
                             break;
                         }
                     }
+                    
+                    if (fn == fdn) free(fdn);
                 }
             }
         }
@@ -560,12 +562,14 @@ bool EnginePass::runOnModule(Module &M)
                                     if (__ctStrCmp(fn, "__ct") == 0 ||
                                         __ctStrCmp(fn, "llvm.dbg") == 0)
                                     {
+                                        if (fn == fdn) free(fdn);
                                         continue;
                                     }
                                     else
                                     {
                                         //errs() << fn << "\n";
                                     }
+                                    if (fn == fdn) free(fdn);
                                 }
                             }
                             //errs() << *it << "\n";
@@ -702,12 +706,14 @@ bool EnginePass::runOnModule(Module &M)
                                     if (__ctStrCmp(fn, "__ct") == 0 ||
                                         __ctStrCmp(fn, "llvm.dbg") == 0)
                                     {
+                                        if (fn == fdn) free(fdn);
                                         continue;
                                     }
                                     else
                                     {
                                         //errs() << fn << "\n";
                                     }
+                                    if (fn == fdn) free(fdn);
                                 }
                             }
                             //errs() << *it << "\n";
@@ -735,6 +741,8 @@ bool EnginePass::runOnModule(Module &M)
     errs() << "Done analyzing tasks for context " << ContextNumber << "\n";
     //Analyzer->dumpHistogram();
     //Analyzer->finishAnalysis();
+    
+    delete tg;
     
     return false;
 }
