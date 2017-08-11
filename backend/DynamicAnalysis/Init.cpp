@@ -64,6 +64,7 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
         ExecutionUnit[FP_MUL_NODE] = FP_MULTIPLIER;
         ExecutionUnit[FP_DIV_NODE] = FP_DIVIDER;
         ExecutionUnit[VECTOR_SHUFFLE_NODE] = FP_SHUFFLE;
+        
         ExecutionUnit[L1_STORE_NODE] = L1_STORE_CHANNEL;
         ExecutionUnit[L1_LOAD_NODE] = L1_LOAD_CHANNEL;
         ExecutionUnit[L2_STORE_NODE] = L2_STORE_CHANNEL;
@@ -413,9 +414,12 @@ DynamicAnalysis::DynamicAnalysis(bool PerTaskCommFactor,
     ResourcesNames.push_back("FP_SHUF");
     ResourcesNames.push_back("L1_LD");
     ResourcesNames.push_back("L1_ST");
-    ResourcesNames.push_back("L2");
-    ResourcesNames.push_back("L3");
-    ResourcesNames.push_back("MEM");
+    ResourcesNames.push_back("L2_LD");
+    ResourcesNames.push_back("L2_ST");
+    ResourcesNames.push_back("L3_LD");
+    ResourcesNames.push_back("L3_ST");
+    ResourcesNames.push_back("MEM_LD");
+    ResourcesNames.push_back("MEM_ST");
     
     ResourcesNames.push_back("AGU");
     

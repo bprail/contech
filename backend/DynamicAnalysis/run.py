@@ -23,7 +23,7 @@ def main(arg):
     args = parser.parse_args()
     
     DynAnalysisLib = "-load=lib/LLVMDynAnalysis.so"
-    ExecLatency = "-execution-units-latency={1,2,3,1,3,5,6,1,4,4,12,30,100}"
+    ExecLatency = "-execution-units-latency={1,2,3,1,3,5,6,1,4,4,12,12,30,30,100,100}"
     ROBSize = "-reorder-buffer-size=168"
     LBSize = "-load-buffer-size=64"
     SBSize = "-store-buffer-size=36"
@@ -33,11 +33,11 @@ def main(arg):
     L1Size = "-l1-cache-size=32768"
     L2Size = "-l2-cache-size=262144"
     LLCSize = "-llc-cache-size=20971520"
-    ExecIssue = "-execution-units-parallel-issue={1,1,1,1,1,1,1,1,2,1,1,1,1}"
-    ExecThru = "-execution-units-throughput={3,1,1,1,1,1,1,1,8,8,32,32,8}"
+    ExecIssue = "-execution-units-parallel-issue={1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1}"
+    ExecThru = "-execution-units-throughput={3,1,1,1,1,1,1,1,8,8,32,32,32,32,8,8}"
     FillBufSize = "-line-fill-buffer-size=10"
     WordSize = "-memory-word-size=8"
-    AccessGran = "-mem-access-granularity={8,8,64,64,64}"
+    AccessGran = "-mem-access-granularity={8,8,64,64,64,64,64,64}"
     
     # Assume that the taskgraph is formatted according to regress / util script convention
     benchName = args.taskgraph.split('/')[-1]
@@ -58,7 +58,7 @@ def main(arg):
                         "-o " + ofile.name, "-context-number={0}".format(ctid), 
                         ExecLatency, ROBSize, LBSize, SBSize, CacheLineSize, ILP, RSSize, L1Size,
                         L2Size, LLCSize, ExecIssue, ExecThru, FillBufSize, WordSize, AccessGran, "\""],
-                        outputFile=of, suppressOutput=True, silent=True)
+                        outputFile=of, suppressOutput=False, silent=False)
         ofile.close()
         try:
             os.unlink(ofile.name)
