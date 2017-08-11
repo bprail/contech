@@ -65,6 +65,7 @@ TaskGraph::TaskGraph(FILE* f)
 
 TaskGraph::~TaskGraph()
 {
+    taskOrder.clear();
     delete tgi;
 }
 
