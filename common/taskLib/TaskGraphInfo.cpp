@@ -25,7 +25,7 @@ void TaskGraphInfo::initTaskGraphInfo(FILE* in)
         ct_read(&strLen, sizeof(uint), in);
         if (strLen > 0)
         {
-            f = (char*) malloc(sizeof(char) * (strLen + 1));
+            f = (char*) malloc(sizeof(char) * (strLen + 8));
             f[strLen] = '\0';
             ct_read(f, sizeof(char) * strLen, in);
             function.assign(f);
@@ -35,7 +35,7 @@ void TaskGraphInfo::initTaskGraphInfo(FILE* in)
         ct_read(&strLen, sizeof(uint), in);
         if (strLen > 0)
         {
-            f = (char*) malloc(sizeof(char) * (strLen + 1));
+            f = (char*) malloc(sizeof(char) * (strLen + 8));
             f[strLen] = '\0';
             ct_read(f, sizeof(char) * strLen, in);
             file.assign(f);
@@ -45,7 +45,7 @@ void TaskGraphInfo::initTaskGraphInfo(FILE* in)
         ct_read(&strLen, sizeof(uint), in);
         if (strLen > 0)
         {
-            f = (char*) malloc(sizeof(char) * (strLen + 1));
+            f = (char*) malloc(sizeof(char) * (strLen + 8));
             f[strLen] = '\0';
             ct_read(f, sizeof(char) * strLen, in);
             callsFunction.assign(f);
