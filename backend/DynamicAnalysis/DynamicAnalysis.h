@@ -105,7 +105,7 @@
 
 // These are execution units, o resources -> there is an available and
 // and full occupancy tree from them
-#define SANDY_BRIDGE_EXECUTION_UNITS 13 //9
+#define SANDY_BRIDGE_EXECUTION_UNITS 16 //9
 #define SANDY_BRIDGE_NODES 28 //23
 #define SANDY_BRIDGE_COMP_EXECUTION_UNITS 8 //4
 
@@ -116,7 +116,7 @@
 #define SANDY_BRIDGE_STORE_AGUS 0
 #define SANDY_BRIDGE_PREFETCH_NODES 3
 
-#define SANDY_BRIDGE_MEM_EXECUTION_UNITS 5
+#define SANDY_BRIDGE_MEM_EXECUTION_UNITS 8
 #define SANDY_BRIDGE_AGU 1
 
 
@@ -520,7 +520,6 @@ public:
     void CalculateResourceStallOverlapCycles(SplayTree::Tree<uint64_t> * n, int resource, uint64_t & OverlapCycles);
 
     unsigned GetExtendedInstructionType(int OpCode, int ReuseDistance=0);
-    unsigned GetPositionSourceCodeLineInfoVector(uint64_t Resource);
             
     uint64_t GetMinIssueCycleReservationStation();
     uint64_t GetMinCompletionCycleLoadBuffer();

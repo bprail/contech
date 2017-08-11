@@ -986,64 +986,6 @@ DynamicAnalysis::roundNextMultiple(uint64_t num, int factor)
     return (num + factor - 1) & ~(factor - 1);
 }
 
-unsigned
-DynamicAnalysis::GetPositionSourceCodeLineInfoVector(uint64_t Resource)
-{
-    switch (Resource) 
-    {
-        case FP_ADDER:
-            return 0;
-            break;
-        case FP_MULTIPLIER:
-            return 2;
-            break;
-        case FP_DIVIDER:
-            return 4;
-            break;
-        case FP_SHUFFLE:
-            return 6;
-            break;
-            
-        case L1_LOAD_CHANNEL:
-            return 8;
-            break;
-        case L1_STORE_CHANNEL:
-            return 10;
-            break;
-        case L2_LOAD_CHANNEL:
-            return 12;
-            break;
-            
-        case L3_LOAD_CHANNEL:
-            return 14;
-            break;
-            
-        case MEM_LOAD_CHANNEL:
-            return 16;
-            break;
-            
-        case RS_STALL:
-            return 17;
-            break;
-        case ROB_STALL:
-            return 18;
-            break;
-        case LB_STALL:
-            return 19;
-            break;
-        case SB_STALL:
-            return 20;
-            break;
-        case LFB_STALL:
-            return 21;
-            break;
-        default:
-            dbgs() << "Resource: " << ResourcesNames[Resource] << "\n";
-            report_fatal_error("Unknown resource while retrieving source code line information.");
-            break;
-    }
-}
-
 void
 printOpName(unsigned opcode)
 { 
