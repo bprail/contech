@@ -58,11 +58,13 @@ struct TaskSpeedup {
 
 class ProgramSpeedup {
     public:
+        ProgramSpeedup(uint16_t n) : numConfigs(n) {}
         map<TaskId, TaskSpeedup> taskSpeedupMap;
         float getSpeedup(TaskId, int8_t*, int8_t*, int maxPos = -1);
         float getBottleSpeedup(TaskId);
         float getSpeedup(TaskId, int pos);
         float getSpeedupInv(TaskId, int8_t*, int8_t*);
+        const uint16_t numConfigs;
 };
 
 SimpleIdealRes getSimpleClass(int16_t r)
@@ -176,10 +178,8 @@ ProgramSpeedup* processTaskSpeedup(const char* fileName)
     if (tSpeedFile == NULL)
     {
         cerr << "ERROR: Could not open task speedup file" << endl;
-        return new ProgramSpeedup();
+        return new ProgramSpeedup(0);
     }
-    
-    ProgramSpeedup* pPS = new ProgramSpeedup();
     
     uint16_t numConfigs;
     uint32_t numTasks = 0;
@@ -191,6 +191,7 @@ ProgramSpeedup* processTaskSpeedup(const char* fileName)
     fread(&numTasks, sizeof(numTasks), 1, tSpeedFile);
     
     assert(numConfigs < 32);
+    ProgramSpeedup* pPS = new ProgramSpeedup(numConfigs);
     uint32_t confHist[32] = {0};
     
     for (unsigned int i = 0; i < numTasks; i++)
@@ -507,8 +508,10 @@ int main(int argc, char const *argv[])
                     
                     if (tt != task_type_basic_blocks)
                         tpn.idealRes = 10; // NONE
-                    else
+                    else if (pPS->numConfigs > 1)
                         tpn.idealRes = sRes;
+                    else
+                        tpn.idealRes = bRes;
                     
                     // Due to converting between float and integer, 1.0f is not equality.
                     if (spd != 1.0f)
