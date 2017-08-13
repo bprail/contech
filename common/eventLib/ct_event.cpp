@@ -678,7 +678,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                 &npe->bar.end_time, 
                                                 &npe->bar.sync_addr, 
                                                 &npe->bar.barrierNum);
-            assert(bytesConume == bar_size);
+            assert(bytesConsume == bar_size);
         }
         break;
         
@@ -693,7 +693,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             bytesConsume = unpack(buf, "btt", &npe->mem.isAllocate,
                                               &npe->mem.size,
                                               &npe->mem.alloc_addr);
-            assert(bytesConume == mem_size);
+            assert(bytesConsume == mem_size);
         }
         break;
         
