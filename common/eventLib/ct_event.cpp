@@ -665,7 +665,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         case (ct_event_barrier):
         {
-            const int bar_size = sizeof(npe->bar.onEnter) + 
+            const size_t bar_size = sizeof(npe->bar.onEnter) + 
                                  sizeof(npe->bar.start_time) +
                                  sizeof(npe->bar.end_time) +
                                  sizeof(npe->bar.sync_addr) +
@@ -678,14 +678,22 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                 &npe->bar.end_time, 
                                                 &npe->bar.sync_addr, 
                                                 &npe->bar.barrierNum);
+            assert(bytesConume == bar_size);
         }
         break;
         
         case (ct_event_memory):
         {
-            fread_check(&npe->mem.isAllocate, sizeof(bool), 1, fptr);
-            fread_check(&npe->mem.size, sizeof(unsigned long long), 1, fptr);
-            fread_check(&npe->mem.alloc_addr, sizeof(ct_addr_t), 1, fptr);
+            const size_t mem_size = sizeof(npe->mem.isAllocate) +
+                                    sizeof(npe->mem.size) +
+                                    sizeof(npe->mem.alloc_addr);
+            uint8_t buf[mem_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), mem_size, fptr);
+            bytesConsume = unpack(buf, "btt", &npe->mem.isAllocate,
+                                              &npe->mem.size,
+                                              &npe->mem.alloc_addr);
+            assert(bytesConume == mem_size);
         }
         break;
         
@@ -728,9 +736,17 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         case (ct_event_bulk_memory_op):
         {
-            fread_check(&npe->bm.size, sizeof(unsigned long long), 1, fptr);
-            fread_check(&npe->bm.dst_addr, sizeof(ct_addr_t), 1, fptr);
-            fread_check(&npe->bm.src_addr, sizeof(ct_addr_t), 1, fptr);
+            const size_t bulk_size = sizeof(npe->bm.size) +
+                                     sizeof(npe->bm.dst_addr) +
+                                     sizeof(npe->bm.src_addr);
+            uint8_t buf[bulk_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), bulk_size, fptr);
+            bytesConsume = unpack(buf, "ttt", &npe->bm.size,
+                                              &npe->bm.dst_addr,
+                                              &npe->bm.src_addr);
+                                              
+            assert(bytesConsume == bulk_size);
         }
         break;
         
