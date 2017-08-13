@@ -547,7 +547,7 @@ microbuf_exit:
     //
     // If we need to allocate a new buffer do so now
     //
-    else if (alloc)
+    else if (alloc == true && __ctSegFaultObs == false)
     {
         __ctAllocateLocalBuffer();
     }

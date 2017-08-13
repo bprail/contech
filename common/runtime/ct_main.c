@@ -71,6 +71,7 @@ void __ctCleanupThreadMain(void* v)
 void sigsegv_handler(int num, siginfo_t * sigI, void * ucontext)
 {
     __ctSegFaultObs = true;
+    pthread_exit(NULL);
 }
 
 #ifdef CT_MAIN
