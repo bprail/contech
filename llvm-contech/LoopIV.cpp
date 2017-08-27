@@ -9,9 +9,8 @@ using namespace std;
 
 
 #include "llvm/ADT/SmallSet.h"
-static cl::opt<unsigned>
-MaxInc("max-reroll-increment1", cl::init(2048), cl::Hidden,
-cl::desc("The maximum increment for loop rerolling"));
+static cl::opt<unsigned> MaxInc("max-reroll-increment1", cl::init(2048), 
+                                cl::Hidden, cl::desc("The maximum increment for loop rerolling"));
 
 namespace llvm{
     bool isCompareUsedByBranch(Instruction *I) {
@@ -198,7 +197,7 @@ namespace llvm{
 
             const SCEV *S = SE->getSCEV(&*I);
             const SCEVAddRecExpr *SARE = dyn_cast<SCEVAddRecExpr>(S);
-            if (SARE) 
+            if (SARE != NULL) 
             {
                 const Loop *CurLoop = SARE->getLoop();
                 if (CurLoop == L) 
@@ -280,11 +279,11 @@ namespace llvm{
     {
         DerivedIvs->clear();
         
-        for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
+        for (Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
         {
             BasicBlock* b = (*bb);
 
-            for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I)
+            for (BasicBlock::iterator I = b->begin(); I != b->end(); ++I)
             {
                 if (!I->getType()->isIntegerTy() && !I->getType()->isPointerTy()) 
                 {
@@ -292,11 +291,11 @@ namespace llvm{
                     continue;
                 }
                 
-                if(std::find(PossibleIVs.begin(), PossibleIVs.end(), (&*I)) != PossibleIVs.end()) 
+                if (std::find(PossibleIVs.begin(), PossibleIVs.end(), (&*I)) != PossibleIVs.end()) 
                 {
                     continue;
                 }
-                if(std::find(NonLinearIvs.begin(), NonLinearIvs.end(), (&*I)) != NonLinearIvs.end()) 
+                if (std::find(NonLinearIvs.begin(), NonLinearIvs.end(), (&*I)) != NonLinearIvs.end()) 
                 {
                     continue;
                 }
@@ -342,7 +341,8 @@ namespace llvm{
                         }
                     }
                 }
-                if (is_derived && cnt == temp->getNumOperands()) {
+                if (is_derived && cnt == temp->getNumOperands()) 
+                {
                     DerivedIvs->push_back(&*I);
                     //get SCEV
                 }
@@ -354,7 +354,8 @@ namespace llvm{
     {
         bool zeroOrOneConstant = true;
     
-        do {
+        do 
+        {
             Instruction* inst = dyn_cast<Instruction>(v);
             if (inst == NULL) break;
             
