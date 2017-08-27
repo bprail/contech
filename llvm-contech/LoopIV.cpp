@@ -35,6 +35,7 @@ namespace llvm{
 
     int cnt_GetElementPtrInst = 0;
     int cnt_elided = 0;
+    int cnt_future_elided = 0;
 
     // Check if it is a compare-like instruction whose user is a branch
     bool LoopIV::isLoopControlIV(Loop *L, Instruction *IV) 
@@ -592,21 +593,21 @@ namespace llvm{
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
                 {
-                    cnt_elided++;
+                    cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
                 {
-                    cnt_elided++;
+                    cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
                 else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) != NULL) 
                 {
-                    cnt_elided++;
+                    cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
@@ -690,6 +691,7 @@ namespace llvm{
     {
         outs() << "cnt_GetElementPtrInst\t" << cnt_GetElementPtrInst << "\n";
         outs() << "cnt_elided\t" << cnt_elided << "\n";
+        outs() << "future_elided\t" << cnt_future_elided << "\n";
         return LoopMemoryOps;
     }
 }
