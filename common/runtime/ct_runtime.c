@@ -22,6 +22,8 @@
 // Disable to test instrumentation overhead
 #define POS_USED
 
+#define POS_CHK
+
 // Include debugging checks / prints
 //#define DEBUG
 
@@ -596,7 +598,7 @@ void __ctDebugLocalBuffer()
 
 void __ctCheckBufferBySize(unsigned int numOps)
 {
-    #ifdef POS_USED
+    #ifdef POS_CHK
     if ((SERIAL_BUFFER_SIZE - (numOps + 1)*6) < __ctThreadLocalBuffer->pos)
         __ctQueueBuffer(true);
     #endif
@@ -604,7 +606,7 @@ void __ctCheckBufferBySize(unsigned int numOps)
 
 __attribute__((always_inline)) void __ctCheckBufferSize(unsigned int p)
 {
-    #ifdef POS_USED
+    #ifdef POS_CHK
     // Contech LLVM pass knows this limit
     //   It will call check by size if the basic block needs more than 1K to store its data
     if ((SERIAL_BUFFER_SIZE - 1024) < p)
