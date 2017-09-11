@@ -19,7 +19,7 @@ def main(arg):
     parser.add_argument("-b", "--bitcode", help="Bitcode file to analyze")
     parser.add_argument("-t", "--taskgraph", help="Taskgraph file to analyze")
     parser.add_argument("-o", default="output", help="Output directory")
-    parser.add_argument("-n", default="9", help="Number of contexts to analyze")
+    parser.add_argument("-n", default="65", help="Number of contexts to analyze")
     args = parser.parse_args()
     
     DynAnalysisLib = "-load=lib/LLVMDynAnalysis.so"
@@ -41,7 +41,12 @@ def main(arg):
     
     # Assume that the taskgraph is formatted according to regress / util script convention
     benchName = args.taskgraph.split('/')[-1]
-    benchName = benchName.split('.')[0]
+    b = benchName.split('.')
+
+    if (b[0] == "splash2x"):
+        benchName = b[1]
+    else:
+        benchName = b[0]
     
     try:
         os.makedirs(args.o + "/" + benchName)
