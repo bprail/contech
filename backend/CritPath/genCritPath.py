@@ -47,6 +47,8 @@ def main(arg):
         #   skip 3
         #   then performance
         state = 0
+        context = 0
+        sequence = 0
         for l in ctFileIn[0]:
             
             confLine = []
@@ -57,11 +59,9 @@ def main(arg):
                 m = re.match("\d+:\d+", l)
                 if (m):
                     context, sequence = l.split(":")
-                    array('i', [int(context)]).tofile(f)
-                    array('c', ':').tofile(f)
-                    array('i', [int(sequence)]).tofile(f)
+                    
                     state = 1
-                    taskCount += 1
+                    
                     continue
             if (state == 1):
                 m = re.match("INT_ADDER", l)
@@ -91,12 +91,22 @@ def main(arg):
                     mintype = 1
                 line += 1
                 if (line == 13):
-                    state = 3
+                    #Rarely, a basic block task is empty and should be skipped.
+                    if (minvalue == -1.0):
+                        state = 0
+                    else:
+                        state = 3
                 continue
             if (state == 3):
                 m = re.match("PERFORMANCE\s+[0-9.]+", l)
                 if (m):
                     state = 0
+                    
+                    array('i', [int(context)]).tofile(f)
+                    array('c', ':').tofile(f)
+                    array('i', [int(sequence)]).tofile(f)
+                    taskCount += 1
+                    
                     # perf will be used to compare between configs to compute speedup
                     #   versus the first config (i.e. baseline)
                     perf = float(l.split()[1])

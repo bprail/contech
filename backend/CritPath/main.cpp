@@ -226,7 +226,12 @@ ProgramSpeedup* processTaskSpeedup(const char* fileName)
         short bnckId;
         fread(&resId, sizeof(resId), 1, tSpeedFile);
         fread(&chkVal, sizeof(chkVal), 1, tSpeedFile);
-        assert(chkVal == '_');
+        if (chkVal != '_')
+        {
+            fprintf(stderr, "Failure on task %u of %u\n", i, numTasks);
+            fprintf(stderr, "Was reading CT %s\n", tid.toString().c_str());
+            assert(chkVal == '_');
+        }
         // bnckId 0 - issue, 1 - latency
         fread(&bnckId, sizeof(bnckId), 1, tSpeedFile);
         
