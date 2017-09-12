@@ -50,7 +50,7 @@ def main(arg):
         exit()
 
     for iVal in range(3, 5):#range(0, 4):
-        fig = plt.figure(figsize=(10, 6)) #(7,7)
+        fig = plt.figure(figsize=(7,7)) #(7,7)
         p = 1
         for critpath_in in arg[1:]:
             
@@ -199,7 +199,8 @@ def main(arg):
                 if (len(arg) == 2):
                     ax = fig.add_subplot(1,1, p)
                 else:
-                    ax = fig.add_subplot(4,5, p)#((5,4,p)
+                    print p
+                    ax = fig.add_subplot(5,4, p)#((5,4,p)
                 xval = range(0, nRes)
                 leftv = []
                 for x in xval:
@@ -217,7 +218,7 @@ def main(arg):
                 elif (iVal == 3 or iVal == 4):
                     mergeCycle = 10
                     lenPrev = 0
-                    while (len(barValLeft) > 10000 and (len(barValLeft) != lenPrev or len(barValLeft) > 15000)):
+                    while (len(barValLeft) > 5000 and (len(barValLeft) != lenPrev or len(barValLeft) > 15000)):
                         lenPrev = len(barValLeft)
                         (barValLeft, barValHeight, barValBottom, barValColor) = mergeBar(mergeCycle, barValLeft, barValHeight, barValBottom, barValColor)
                         print len(barValLeft), mergeCycle
@@ -227,8 +228,16 @@ def main(arg):
                         if l > maxC:
                             maxC = l
                     nCon = maxC + 1
+                    ind = range(int(nCon + 1))
+                    if (nCon > 16.0):
+                        ind = range(0, int(nCon + 1), 1 + int(nCon / 16))
+                    labels = []
+                    for i in ind:
+                        s = "{0}".format(i)
+                        labels.append(s)
                     plt.bar(barValLeft, barValHeight, width = 1.0, bottom = barValBottom, color = barValColor, edgecolor = [])
-                    plt.xlim(-0.5, nCon - 0.5)
+                    plt.xlim(-0.5, nCon)
+                    plt.xticks(ind, labels)
                     #plt.ylim(0, 2500000000) # REMOVE
                 
                 if (len(arg) == 2):
@@ -238,6 +247,7 @@ def main(arg):
                     plt.xticks(fontsize=5)
                     plt.yticks(fontsize=5)
                     plt.rc('font', size=5)
+                        
                 critpath_l = critpath_in.split('/')
                 critpath_in = critpath_l[-1]
                 critpath_l = critpath_in.split('.')
@@ -274,7 +284,7 @@ def main(arg):
         elif (iVal == 2):
             plt.savefig("taskCount.pdf")
         elif (iVal == 3):
-            #plt.savefig("resVTime.pdf")
+            plt.savefig("resVTime.pdf")
             plt.savefig("resVTime.png")
         elif (iVal == 4):
             plt.savefig("critPathTime.pdf")
