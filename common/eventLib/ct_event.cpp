@@ -311,7 +311,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP)
                         {
                             unsigned short dupOp = bb_info_table[id].mem_op_info[i].baseOp;
-                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
                             npe->bb.mem_op_array[i].addr = (npe->bb.mem_op_array[dupOp].addr) + offset;
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
@@ -338,7 +338,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         }
                         else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
                         {
-                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
                             uint32_t gvid = bb_info_table[id].mem_op_info[i].constGVAddrId;
                             if (gvid >= maxConstGVId)
                             {
@@ -372,7 +372,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         }
                         else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_LOOP) == BBI_FLAG_MEM_LOOP)
                         {
-                            int offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                            int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
                             uint16_t loopMemOpId = bb_info_table[id].mem_op_info[i].loopMemOpId;
                             uint32_t loopId = bb_info_table[id].mem_op_info[i].headerLoopId;
                             uint8_t size = bb_info_table[id].mem_op_info[i].size;
@@ -397,7 +397,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                              * The following code verified the loop elide addresses are computed
                              *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
                              */
-                            /* ct_memory_op tmo;
+                             /*ct_memory_op tmo;
                              tmo.data = 0;
                              fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
                             fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
@@ -566,7 +566,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             fread_check(&bb_info_table[id].mem_op_info[i].loopIVSize, sizeof(int), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].headerLoopId, sizeof(uint32_t), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].loopMemOpId, sizeof(unsigned short), 1, fptr);
-                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int64_t), 1, fptr);
                             if (bb_info_table[id].mem_op_info[i].headerLoopId >= bb_count)
                             {
                                 fprintf(stderr, "ERROR: Loop INFO for memop %d in block %d wants block %d exceeds number of unique basic blocks (%d)\n", i, id, bb_info_table[id].mem_op_info[i].headerLoopId, bb_count);
@@ -576,7 +576,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         else
                         {
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
-                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int), 1, fptr);
+                            fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int64_t), 1, fptr);
                         }
                     }
                     else
