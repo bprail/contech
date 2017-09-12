@@ -81,11 +81,11 @@ def main(arg):
                     minvalue = issue
                     minline = line
                     mintype = 0
-                if (issue < minvalue):
+                if (issue < minvalue and issue > 0.0):
                     minvalue = issue
                     minline = line
                     mintype = 0
-                if (latency < minvalue):
+                if (latency < minvalue and latency > 0.0):
                     minvalue = latency
                     minline = line
                     mintype = 1
