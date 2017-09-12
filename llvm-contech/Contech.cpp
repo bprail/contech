@@ -604,7 +604,6 @@ bool Contech::runOnModule(Module &M)
             pllvm_loop_track llt = it->second;
             uint32_t bbid = cfgInfoMap[it->first]->id;
             int bb_val = blockHash(it->first);
-            //Instruction* iPt = costPerBlock.find(bb_val)->second.insertPoint;
             Instruction* iPt = it->first->getTerminator();
             Constant* cbbid = ConstantInt::get(cct.int32Ty, bbid);
             Constant* cstep = ConstantInt::get(cct.int32Ty, llt->stepIV);
@@ -618,22 +617,32 @@ bool Contech::runOnModule(Module &M)
             uint16_t i = 0;
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
-                /*Instruction* mAddr = dyn_cast<Instruction>(*mit);
-                if (mAddr != NULL &&
-                    mAddr->getParent() == it->first &&
-                    dyn_cast<PHINode>(mAddr) == NULL)
-                {
-                    auto it = convertInstToIter(mAddr);
-                    auto cit = convertInstToIter(iPt);
-                    if (cit < it)
-                    {
-                        ++it;
-                        iPt = convertIterToInst(it);
-                    }
-                }*/
-                
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
-                Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                Value* voidAddr;
+                auto ac = llt->compMap.find(i);
+                if (ac == llt->compMap.end())
+                {
+                    voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                }
+                else
+                {
+                    Value* bVal = castSupport(cct.int64Ty, *mit, iPt);
+                    
+                    for (auto acit = ac->second.begin(), acet = ac->second.end(); acit != acet; ++acit)
+                    {
+                        Value* val = acit->first;
+                        int scale = acit->second;
+                        Value* ival = castSupport(cct.int64Ty, val, iPt);
+                        Constant* cscale = ConstantInt::get(cct.int64Ty, scale);
+                        
+                        Instruction* imul = BinaryOperator::Create(Instruction::Mul, ival, cscale, "", iPt);
+                        
+                        bVal = BinaryOperator::Create(Instruction::Add, bVal, imul, "", iPt);
+                    }
+                    
+                    voidAddr = castSupport(cct.voidPtrTy, bVal, iPt);
+                }
+                
                 Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
                 debugLog("storeLoopEntryFunction @" << __LINE__);
                 Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
@@ -753,12 +762,12 @@ cleanup:
                         contechStateFile->write((char*)&t->loopIVSize, sizeof(int));
                         contechStateFile->write((char*)&loopHeaderId, sizeof(uint32_t));
                         contechStateFile->write((char*)&t->loopMemOp, sizeof(uint16_t));
-                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
                     else
                     {
                         contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
-                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
                 }
                 
@@ -784,21 +793,13 @@ cleanup:
 // Checks if address can be calculated as const base + f(i,j,..) 
 // imports data from loop pass 
 //
-int Contech::is_loop_computable(Instruction* memI, int* offset)
+int Contech::is_loop_computable(Instruction* memI, int64_t* offset)
 {
     *offset = 0;
     auto elem = loopMemOps.find(memI);
     if (elem == loopMemOps.end()) return -1;
     
     return elem->second;
-    /*for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
-    {
-        if (LoopMemoryOps[iter]->memOp == memI && LoopMemoryOps[iter]->canElide)
-        {
-            return true;
-        }
-    }
-    return false; */
 }
 
 // returns size in bytes
@@ -936,7 +937,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
     vector<Instruction*> delayedAtomicInsts;
     map<Instruction*, Value*> dupMemOps;
-    map<Instruction*, int> dupMemOpOff;
+    map<Instruction*, int64_t> dupMemOpOff;
     map<Value*, unsigned short> dupMemOpPos;
     map<Instruction*, int> loopIVOp;
 
@@ -982,7 +983,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
         {
-            int addrOffset = 0;
+            int64_t addrOffset = 0;
             Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
 
             if (addrSimilar != NULL)
@@ -1004,7 +1005,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
         {
-            int addrOffset = 0;
+            int64_t addrOffset = 0;
             Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
 
             if (addrSimilar != NULL)

@@ -585,7 +585,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
 //   Given a value v, determine if it is a function of a single base value and other
 //     constants.  If so, then return the base value.
 //
-Value* Contech::convertValueToConstant(Value* v, int* offset, Value* stopInst)
+Value* Contech::convertValueToConstant(Value* v, int64_t* offset, Value* stopInst)
 {
     bool zeroOrOneConstant = true;
     
@@ -639,9 +639,9 @@ Value* Contech::convertValueToConstant(Value* v, int* offset, Value* stopInst)
 //   all fields to be constant.  The code is reproduced here, in order to compute
 //   a partial constant offset along with the delta from the other GEP inst.
 //
-int Contech::updateOffset(gep_type_iterator gepit, int val)
+int64_t Contech::updateOffset(gep_type_iterator gepit, int64_t val)
 {
-    int offset = 0;
+    int64_t offset = 0;
     if (StructType *STy = dyn_cast<StructType>(*gepit))
     {
         unsigned ElementIdx = val;
@@ -665,11 +665,11 @@ int Contech::updateOffset(gep_type_iterator gepit, int val)
 //   If such a pair is found, then this function will compute the static offset between the two
 //     memory accesses.
 //
-Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
+Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int64_t* offset)
 {
     vector<Value*> addrComponents;
     Instruction* addrI = dyn_cast<Instruction>(addr);
-    int tOffset = 0, baseOffset = 0;
+    int64_t tOffset = 0, baseOffset = 0;
 
     *offset = 0;
 
@@ -1264,8 +1264,9 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
-void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int* memOpDelta, int* loopIVSize)
+void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
+    vector<pair<Value*, int> > ac;
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
     if (ilte == loopInfoTrack.end())
@@ -1292,7 +1293,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     {
         baseAddr = gepAddr->getPointerOperand();
         
-        int offset = 0;
+        int64_t offset = 0;
         bool isIVLast = false;
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
@@ -1334,16 +1335,26 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 }
             }
             
-            int tOffset = 0;
+            int64_t tOffset = 0;
             if (nCI != llb->memIV)
             {
                 // memIV is always a PHI, but the item used may be an offset
                 //   of the IV, or even the next step of the IV so we tell 
                 //   the conversion not to capture this step.
                 
-                
                 gepI = convertValueToConstant(gepI, &tOffset, nextIV);
                 
+                // If this element is really an additional component, it is not the IV
+                if (std::find(llb->addtComponents.begin(), 
+                              llb->addtComponents.end(), gepI) != llb->addtComponents.end())
+                {
+                    int64_t scale = updateOffset(itG, 1);
+                    offset += scale * tOffset;
+                    
+                    //llt->compMap[gepI] = scale;
+                    ac.push_back(make_pair(gepI, scale));
+                    continue;
+                }
             }
             
             // If the convert did not end on the step instruction and
@@ -1365,14 +1376,6 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             isIVLast = true;
         }
         
-        // TODO: If IV is not last, then the scale multipler for IV
-        //   needs to be computed here and not just use the access size.
-        if (isIVLast == false)
-        {
-            errs() << "MemAddr did not end with IV: " << *addr << "\n";
-            errs() << "IV: " << *llb->memIV << "\n";
-            assert(0);
-        }
         *memOpDelta = offset;
     }
     
@@ -1384,14 +1387,23 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     // Find the base address, does another loop op share it ?
     *memOpPos = 0;
-    for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+    if (ac.size() == 0)
     {
-        if (*it == baseAddr) break;
-        *memOpPos = *memOpPos + 1;
+        for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+        {
+            // Disable temporarily while using extra offsets
+            if (*it == baseAddr) break;
+            *memOpPos = *memOpPos + 1;
+        }
+    }
+    else
+    {
+        *memOpPos = llt->baseAddr.size();
     }
     
     if (*memOpPos == llt->baseAddr.size())
     {
         llt->baseAddr.push_back(baseAddr);
+        if (ac.size() > 0) {llt->compMap[*memOpPos] = ac;}
     }
 }
