@@ -39,6 +39,7 @@ void backgroundQueueTask(Task* t)
     unsigned int qSize = 0;
     assert(t->getEndTime() >= t->getStartTime());
     ct_tsc_t tcyc = t->getEndTime() - t->getStartTime();
+    task_type ty = t->getType();
     
     pthread_mutex_lock(&taskQueueLock);
     qSize = taskQueue->size();
@@ -47,7 +48,10 @@ void backgroundQueueTask(Task* t)
     if (qSize == QUEUE_SIGNAL_THRESHOLD || t->getBBCount() > (MAX_BLOCK_THRESHOLD - 1)) {pthread_cond_signal(&taskQueueCond);}
     pthread_mutex_unlock(&taskQueueLock);
 
-    totalCycles += tcyc;
+    if (ty == task_type_basic_blocks)
+    {
+        totalCycles += tcyc;
+    }
 }
 
 //
