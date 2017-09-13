@@ -425,6 +425,7 @@ namespace llvm{
                     if (non_const != false) return NULL;
                     non_const = true;
                     
+                    //errs() << *gepI << "\n";
                     if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                     {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
@@ -506,11 +507,26 @@ namespace llvm{
                 }
             }
         }
+        
+        if (cnt_elided != NULL && gepAddr != NULL)
+            errs() << "LE\t" << *cnt_elided << "\t" << *gepAddr << "\n";
+        else if (gepAddr != NULL)
+            errs() << "LEN\t" << *gepAddr << "\n";
+        
         return cnt_elided;
     }
 
     void LoopIV::iterateOnLoop(Loop *L)
     {
+        for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
+        {
+            iterateOnLoop(*subL);
+        }
+        errs() << *L << "\n";
+        if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
+        {
+            return;
+        }
         llvm_loopiv_block tempLoopMemoryOps;
         
         tempLoopMemoryOps.canElide = false;
@@ -532,11 +548,35 @@ namespace llvm{
                 {
                     gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
                     cnt_GetElementPtrInst++;
+                    
+                    if (gepAddr == NULL)
+                    {
+                        CastInst* ci = dyn_cast<CastInst>(li->getPointerOperand());
+                        if (ci == NULL) continue;
+                        if (ci->isLosslessCast() == false) continue;
+                        if (ci->getSrcTy()->isPointerTy() == false) continue;
+                        
+                        errs() << *ci << "\n";
+                        errs() << *ci->getOperand(0) << "\n";
+                        gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
+                    }
                 }
                 else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
                 {
                     gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
                     cnt_GetElementPtrInst++;
+                    
+                    if (gepAddr == NULL)
+                    {
+                        CastInst* ci = dyn_cast<CastInst>(si->getPointerOperand());
+                        if (ci == NULL) continue;
+                        if (ci->isLosslessCast() == false) continue;
+                        if (ci->getSrcTy()->isPointerTy() == false) continue;
+                        
+                        errs() << *ci << "\n";
+                        errs() << *ci->getOperand(0) << "\n";
+                        gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
+                    }
                 }
                 else 
                 {
@@ -639,18 +679,10 @@ namespace llvm{
           for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
           {
             Loop *L = *i;
-
-            if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
-            {
-                continue;
-            }
             
             // Iterate on subloops of Loop L
             iterateOnLoop(L);
-            for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
-            {
-                iterateOnLoop(*subL);
-            }
+            
     #if 0
             outs() << "----------- Print summary for the loop --------------\n";
             

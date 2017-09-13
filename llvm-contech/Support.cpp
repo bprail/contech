@@ -1288,6 +1288,19 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     Value* baseAddr = NULL;
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    
+    if (gepAddr == NULL)
+    {
+        CastInst* ci = dyn_cast<CastInst>(addr);
+        if (ci == NULL) return;
+        if (ci->isLosslessCast() == false) return;
+        if (ci->getSrcTy()->isPointerTy() == false) return;
+        
+        errs() << "CAST: " << *ci << "\n";
+        errs() << *ci->getOperand(0) << "\n";
+        gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
+    }
+    
     if (gepAddr != NULL)
     {
         baseAddr = gepAddr->getPointerOperand();
