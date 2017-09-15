@@ -653,7 +653,21 @@ bool Contech::runOnModule(Module &M)
                 if (isDupBlock == true) continue;
                 
                 Value* argsExit[] = {cbbid};
-                Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, ArrayRef<Value*>(argsExit, 1), "", (*eit)->getFirstNonPHIOrDbgOrLifetime());
+                //
+                // When inserting at the start of a basic block, instrumentation has to come
+                //   after several types of instructions, and unfortunately, there is no
+                //   routine to also skip the landing pad instruction(s) from exception handling.
+                //
+                auto insertPoint = convertInstToIter((*eit)->getFirstNonPHIOrDbgOrLifetime());
+                while (dyn_cast<LandingPadInst>(convertIterToInst(insertPoint)) != NULL)
+                {
+                    ++insertPoint;
+                }
+                
+                Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
+                                                         ArrayRef<Value*>(argsExit, 1), 
+                                                         "", 
+                                                         convertIterToInst(insertPoint));
                 MarkInstAsContechInst(loopExit);
             }
             
