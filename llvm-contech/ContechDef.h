@@ -44,7 +44,7 @@ namespace llvm {
             unsigned short loopMemOp;  // which base address for that header
         };
         
-        int depMemOpDelta;
+        int64_t depMemOpDelta;
         
         int loopIVSize;
         BasicBlock* loopHeaderId;  // which loop header
@@ -248,7 +248,9 @@ namespace llvm {
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, 
                                  Value*, bool elide, Module&, std::map<llvm::Instruction*, int>&);
         Value* convertValueToConstant(Value*, int*, Value*);
+        Value* convertValueToConstantEx(Value*, int64_t*, int64_t*, Value*);
         int updateOffset(gep_type_iterator gepit, int val);
+        int64_t updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);
@@ -263,6 +265,7 @@ namespace llvm {
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
 
         Value* findSimilarMemoryInst(Instruction*, Value*, int*);
+        Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
         void getAnalysisUsage(AnalysisUsage &AU) const;
@@ -273,7 +276,7 @@ namespace llvm {
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         int is_loop_computable(Instruction* memI, int* offset);
         std::unordered_map<Loop*, int> collectLoopEntry(Function* fblock, LoopInfo*);
-        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction*, Value* addr, unsigned short* memOpPos, int* memOpDelta, int* loopIVSize);
+        void addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction*, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize);
 
     }; // end of class Contech
 

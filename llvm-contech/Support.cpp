@@ -42,6 +42,8 @@
 using namespace llvm;
 using namespace std;
 
+#include <unordered_set>
+
 extern map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 extern uint64_t tailCount;
 
@@ -181,6 +183,18 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         errs() << "MemOp of size: " << tMemOp->size << "\n";
     }
 
+    while (CastInst* ci = dyn_cast<CastInst>(addr))
+    {
+        if (ci->isLosslessCast() == true)
+        {
+            addr = ci->getOperand(0);
+        }
+        else
+        {
+            break;
+        }
+    }
+    
     if (/*GlobalValue* gv = */NULL != dyn_cast<GlobalValue>(addr) &&
         NULL == dyn_cast<GetElementPtrInst>(addr))
     {
@@ -573,7 +587,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
             assert(0);
         }
     }
-    errs() << *pred;
+    errs() << "TD " << *pred << "\n";
     tailCount++;
     
     return true;
@@ -632,6 +646,113 @@ Value* Contech::convertValueToConstant(Value* v, int* offset, Value* stopInst)
     return v;
 }
 
+
+Value* Contech::convertValueToConstantEx(Value* v, int64_t* offset, int64_t* multFactor, Value* stopInst)
+{
+    bool zeroOrOneConstant = true;
+    
+    do {
+        Instruction* inst = dyn_cast<Instruction>(v);
+        if (inst == NULL) break;
+        if (v == stopInst) break;
+        
+        switch(inst->getOpcode())
+        {
+            case Instruction::Add:
+            {
+                Value* vOp[2];
+                zeroOrOneConstant = false;
+                for (int i = 0; i < 2; i++)
+                {
+                    vOp[i] = inst->getOperand(i);
+                    if (ConstantInt* ci = dyn_cast<ConstantInt>(vOp[i]))
+                    {
+                        *offset += (*multFactor * ci->getZExtValue());
+                        zeroOrOneConstant = true;
+                    }
+                    else
+                    {
+                        v = vOp[i];
+                    }
+                }
+                
+                if (zeroOrOneConstant == false)
+                {
+                    v = inst;
+                }
+            }
+            break;
+            case Instruction::Sub:
+            {
+                if (ConstantInt* ci = dyn_cast<ConstantInt>(inst->getOperand(1)))
+                {
+                    *offset -= (*multFactor * ci->getZExtValue());
+                    zeroOrOneConstant = true;
+                    v = inst->getOperand(0);
+                }
+                else if (ConstantInt* ci = dyn_cast<ConstantInt>(inst->getOperand(0)))
+                {
+                    *offset += (*multFactor * ci->getZExtValue());
+                    *multFactor *= -1;
+                    zeroOrOneConstant = true;
+                    v = inst->getOperand(1);
+                }
+                else
+                {
+                    zeroOrOneConstant = false;
+                }
+            }
+            break;
+            case Instruction::Mul:
+            {
+                Value* vOp[2];
+                zeroOrOneConstant = false;
+                for (int i = 0; i < 2; i++)
+                {
+                    vOp[i] = inst->getOperand(i);
+                    if (ConstantInt* ci = dyn_cast<ConstantInt>(vOp[i]))
+                    {
+                        *multFactor *= ci->getZExtValue();
+                        zeroOrOneConstant = true;
+                    }
+                    else
+                    {
+                        v = vOp[i];
+                    }
+                }
+                
+                if (zeroOrOneConstant == false)
+                {
+                    v = inst;
+                }
+            }
+            break;
+            case Instruction::Shl:
+            {
+                if (ConstantInt* ci = dyn_cast<ConstantInt>(inst->getOperand(1)))
+                {
+                    *multFactor <<= ci->getZExtValue();
+                    zeroOrOneConstant = true;
+                    v = inst->getOperand(0);
+                }
+                else
+                {
+                    zeroOrOneConstant = false;
+                }
+            }
+            break;
+            default:
+            {
+                zeroOrOneConstant = false;
+            }
+            break;
+        }
+        
+    } while (zeroOrOneConstant);
+    
+    return v;
+}
+
 //
 //  updateOffset
 //
@@ -654,6 +775,184 @@ int Contech::updateOffset(gep_type_iterator gepit, int val)
     }
     
     return offset;
+}
+
+int64_t Contech::updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t* multFactor)
+{
+    int64_t offset = 0;
+    if (StructType *STy = dyn_cast<StructType>(*gepit))
+    {
+        unsigned ElementIdx = val;
+        const StructLayout *SL = currentDataLayout->getStructLayout(STy);
+        offset = SL->getElementOffset(ElementIdx);
+    }
+    else
+    {
+        int64_t typeSize = currentDataLayout->getTypeAllocSize(gepit.getIndexedType());
+        offset = val * typeSize;
+        *multFactor *= typeSize;
+    }
+    
+    return offset;
+}
+
+Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset)
+{
+    //unordered_multiset<pair<Value*,int64_t> > addrComponents;
+    multimap<Value*, int64_t> addrComponents;
+    int64_t tOffset = 0, baseOffset = 0;
+
+    *offset = 0;
+    while (CastInst* ci = dyn_cast<CastInst>(addr))
+    {
+        if (ci->isLosslessCast() == true)
+        {
+            addr = ci->getOperand(0);
+        }
+        else
+        {
+            break;
+        }
+    }
+    
+    // Given addr, find the values that it depends on
+    GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    if (gepAddr == NULL)
+    {
+        
+    }
+    else
+    {
+        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
+        {
+            Value* gepI = itG.getOperand();
+            int64_t multFactor = 1;
+
+            // If the index of GEP is a Constant, then it can vary between mem ops
+            if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
+            {
+                baseOffset += updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
+                continue;
+            }
+            else
+            {
+                gepI = convertValueToConstantEx(gepI, &baseOffset, &multFactor, NULL);
+                baseOffset += updateOffsetEx(itG, baseOffset, &multFactor);
+            }
+
+            // TODO: if the value is a constant global, then it matters
+            //addrComponents.insert(make_pair(gepI, multFactor));
+            addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
+        }
+        addr = gepAddr->getPointerOperand();
+    }
+    
+    for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
+    {
+        GetElementPtrInst* gepAddrT = NULL;
+        // If the search has reached the current memory operation, then no match exists
+        if (memI == dyn_cast<Instruction>(&*it)) break;
+
+        Value* addrT = NULL;
+        if (LoadInst *li = dyn_cast<LoadInst>(&*it))
+        {
+            addrT = li->getPointerOperand();
+
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+        }
+        else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
+        {
+            addrT = si->getPointerOperand();
+
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+        }
+
+        if (addrT == NULL) continue;
+        if (gepAddrT != NULL && gepAddrT == gepAddr)
+        {
+            *offset = 0;
+            return &*it;
+        }
+        
+        if (gepAddrT == NULL)
+        {
+            while (CastInst* ci = dyn_cast<CastInst>(addrT))
+            {
+                if (addrT == addr) break;
+                if (ci->isLosslessCast() == true)
+                {
+                    addrT = ci->getOperand(0);
+                }
+                else
+                {
+                    break;
+                }
+            }
+            
+            // 
+            if (addrT == addr && addrComponents.size() == 0)
+            {
+                *offset = baseOffset;
+                return &*it;
+            }
+            
+            // If this instruction still does not use a GEPI and does not match
+            //   via casting, then continue.
+            if ((gepAddrT = dyn_cast<GetElementPtrInst>(addrT)) == NULL) continue;
+        }
+        addrT = gepAddrT->getPointerOperand();
+        
+        // No match, different addresses
+        if (addrT != addr) continue;
+        
+        //unordered_multiset<pair<Value*,int64_t> > addrComponentsT = addrComponents;
+        multimap<Value*, int64_t> addrComponentsT = addrComponents;
+        bool did_remove;
+        tOffset = 0;
+        
+        for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; ++itG)
+        {
+            Value* gepI = itG.getOperand();
+            int64_t multFactor = 1;
+            did_remove = true;
+
+            // If the index of GEP is a Constant, then it can vary between mem ops
+            if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
+            {
+                tOffset += updateOffsetEx(itG, gConst->getZExtValue(), &multFactor);
+                continue;
+            }
+            else
+            {
+                gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
+                tOffset += updateOffsetEx(itG, tOffset, &multFactor);
+                /*auto act = addrComponentsT.find(make_pair(gepI, multFactor));
+                if (act == addrComponentsT.end())
+                {
+                    did_remove = false;
+                    break;
+                }
+                addrComponentsT.erase(act);*/
+                auto rg = addrComponentsT.equal_range(gepI);
+                for (auto it = rg.first; it != rg.second; ++it)
+                {
+                    if (it->second == multFactor)
+                    {
+                        addrComponentsT.erase(it);
+                        did_remove = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (did_remove == false) continue;
+        if (addrComponentsT.size() != 0) continue;
+        
+        *offset = baseOffset - tOffset;
+        return &*it;
+    }
+    
+    return NULL;
 }
 
 //
@@ -1264,7 +1563,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
-void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int* memOpDelta, int* loopIVSize)
+void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
@@ -1288,6 +1587,19 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     Value* baseAddr = NULL;
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    
+    if (gepAddr == NULL)
+    {
+        CastInst* ci = dyn_cast<CastInst>(addr);
+        if (ci == NULL) return;
+        if (ci->isLosslessCast() == false) return;
+        if (ci->getSrcTy()->isPointerTy() == false) return;
+        
+        errs() << "CAST: " << *ci << "\n";
+        errs() << *ci->getOperand(0) << "\n";
+        gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
+    }
+    
     if (gepAddr != NULL)
     {
         baseAddr = gepAddr->getPointerOperand();

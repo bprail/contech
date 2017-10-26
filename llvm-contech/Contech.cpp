@@ -473,10 +473,17 @@ bool Contech::runOnModule(Module &M)
             BasicBlock &pB = *B;
             CallInst *ci;
             int status = 0;
-
+            
+            //
+            // It would be possible to detect empty blocks and remove some;
+            //   however, those blocks can be used for selecting values for
+            //   the PHI nodes.  They are generally infrequent and only
+            //   have minimal trace reduction.
+            //
+            
             if (internalSplitOnCall(pB, &ci, &status) == false)
             {
-                B++;
+                ++B;
                 #ifdef SPLIT_DEBUG
                 if (ci != NULL)
                     errs() << status << "\t" << *ci << "\n";
@@ -545,6 +552,7 @@ bool Contech::runOnModule(Module &M)
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ++B) 
         {
             BasicBlock &pB = *B;
+            
             internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, 
                                     costPerBlock, num_checks, origin_checks);
             bb_count++;
@@ -767,12 +775,12 @@ cleanup:
                         contechStateFile->write((char*)&t->loopIVSize, sizeof(int));
                         contechStateFile->write((char*)&loopHeaderId, sizeof(uint32_t));
                         contechStateFile->write((char*)&t->loopMemOp, sizeof(uint16_t));
-                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
                     else
                     {
                         contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
-                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
                 }
                 
@@ -950,7 +958,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
     vector<Instruction*> delayedAtomicInsts;
     map<Instruction*, Value*> dupMemOps;
-    map<Instruction*, int> dupMemOpOff;
+    map<Instruction*, int64_t> dupMemOpOff;
     map<Value*, unsigned short> dupMemOpPos;
     map<Instruction*, int> loopIVOp;
 
@@ -996,8 +1004,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         else if (LoadInst *li = dyn_cast<LoadInst>(&*I))
         {
-            int addrOffset = 0;
-            Value* addrSimilar = findSimilarMemoryInst(li, li->getPointerOperand(), &addrOffset);
+            int64_t addrOffset = 0;
+            Value* addrSimilar = findSimilarMemoryInstExt(li, li->getPointerOperand(), &addrOffset);
 
             if (addrSimilar != NULL)
             {
@@ -1006,7 +1014,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[li] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if ((addrOffset = is_loop_computable(li, &addrOffset)) != -1)
+            else if ((addrOffset = is_loop_computable(li, (int*)&addrOffset)) != -1)
             {
                 loopIVOp[li] = addrOffset;
                 memOpCount ++;
@@ -1018,8 +1026,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
         {
-            int addrOffset = 0;
-            Value* addrSimilar = findSimilarMemoryInst(si, si->getPointerOperand(), &addrOffset);
+            int64_t addrOffset = 0;
+            Value* addrSimilar = findSimilarMemoryInstExt(si, si->getPointerOperand(), &addrOffset);
 
             if (addrSimilar != NULL)
             {
@@ -1028,7 +1036,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 dupMemOpOff[si] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
             }
-            else if ((addrOffset = is_loop_computable(si, &addrOffset)) != -1)
+            else if ((addrOffset = is_loop_computable(si, (int*)&addrOffset)) != -1)
             {
                 loopIVOp[si] = addrOffset; 
                 memOpCount ++;                
