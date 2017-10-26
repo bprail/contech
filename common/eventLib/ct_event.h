@@ -219,7 +219,7 @@ namespace contech
             {
                 char memFlags, size;
                 int loopIVSize;
-                int baseOffset;  // N.B. Offset can be negative
+                int64_t baseOffset;  // N.B. Offset can be negative
                 union {
                     uint16_t baseOp;          // If BBI_FLAG_MEM_DUP
                     uint16_t constGVAddrId;   // if BBI_FLAG_MEM_GV
