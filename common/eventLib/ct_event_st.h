@@ -42,7 +42,9 @@ enum _ct_event_id { ct_event_basic_block = 0,
     ct_event_mpi_wait,
     ct_event_roi,
     ct_event_gv_info,
-    ct_event_loop,
+    ct_event_loop_enter,
+    ct_event_loop_short,
+    ct_event_loop_exit,
     ct_event_unknown};
 typedef enum _ct_event_id ct_event_id;
 

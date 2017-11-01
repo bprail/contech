@@ -831,15 +831,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         }
         break;
         
-        case (ct_event_loop):
+        case (ct_event_loop_enter):
         {
-            const int loop_size = sizeof(npe->loop.start) + 
-                                  sizeof(npe->loop.preLoopId);
+            const int loop_size = sizeof(npe->loop.preLoopId);
             uint8_t buf[loop_size];
             int bytesConsume = 0;
             fread_check(buf, sizeof(uint8_t), loop_size, fptr);
-            bytesConsume = unpack(buf, "bl", &npe->loop.start, 
-                                             &npe->loop.preLoopId);
+            bytesConsume = unpack(buf, "l", &npe->loop.preLoopId);
             assert(bytesConsume == loop_size);
             
             auto lv = loopTrack.find(npe->contech_id);
@@ -850,52 +848,93 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             }
             
             // Loop start and end events are slightly different.
-            if (npe->loop.start == 0)
+            const int loop_start_size = sizeof(npe->loop.clb.step) +
+                                        sizeof(npe->loop.clb.stepBlock) +
+                                        sizeof(npe->loop.clb.startValue) +
+                                        sizeof(npe->loop.clm.memOpId) +
+                                        sizeof(npe->loop.clm.baseAddr);
+            uint8_t bufS[loop_start_size];
+            fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
+            bytesConsume = unpack(bufS, "lltst", &npe->loop.clb.step,
+                                                 &npe->loop.clb.stepBlock,
+                                                 &npe->loop.clb.startValue,
+                                                 &npe->loop.clm.memOpId,
+                                                 &npe->loop.clm.baseAddr);
+            
+            internal_loop_track* clt = lv->second.back();
+            if (clt == NULL || 
+                clt->preLoopId != npe->loop.preLoopId ||
+                npe->loop.clm.memOpId == 0)
             {
-                internal_loop_track* clt = lv->second.back();
-                if (clt->preLoopId != npe->loop.preLoopId)
-                {
-                    printf("In %d, loop %d was instead %d\n", lastBBID, npe->loop.preLoopId, clt->preLoopId);
-                }
-                assert(clt->preLoopId == npe->loop.preLoopId);
-                lv->second.pop_back();
-                loopBlock[npe->contech_id][clt->clb.stepBlock].pop_back();
-                delete clt;
+                clt = new internal_loop_track;
+                clt->clb = npe->loop.clb;
+                clt->preLoopId = npe->loop.preLoopId;
+                lv->second.push_back(clt);
+                loopBlock[npe->contech_id][clt->clb.stepBlock].push_back(clt);
             }
-            else
+            
+            // resize will not shrink
+            if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
             {
-                const int loop_start_size = sizeof(npe->loop.clb.step) +
-                                            sizeof(npe->loop.clb.stepBlock) +
-                                            sizeof(npe->loop.clb.startValue) +
-                                            sizeof(npe->loop.clm.memOpId) +
-                                            sizeof(npe->loop.clm.baseAddr);
-                uint8_t bufS[loop_start_size];
-                fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
-                bytesConsume = unpack(bufS, "lltst", &npe->loop.clb.step,
-                                                     &npe->loop.clb.stepBlock,
-                                                     &npe->loop.clb.startValue,
-                                                     &npe->loop.clm.memOpId,
-                                                     &npe->loop.clm.baseAddr);
-                
-                internal_loop_track* clt = lv->second.back();
-                if (clt == NULL || 
-                    clt->preLoopId != npe->loop.preLoopId ||
-                    npe->loop.clm.memOpId == 0)
-                {
-                    clt = new internal_loop_track;
-                    clt->clb = npe->loop.clb;
-                    clt->preLoopId = npe->loop.preLoopId;
-                    lv->second.push_back(clt);
-                    loopBlock[npe->contech_id][clt->clb.stepBlock].push_back(clt);
-                }
-                
-                // resize will not shrink
-                if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
-                {
-                    clt->baseAddr.resize(npe->loop.clm.memOpId + 1);
-                }
-                clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;
+                clt->baseAddr.resize(npe->loop.clm.memOpId + 1);
             }
+            clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;
+        }
+        break;
+        
+        case ct_event_loop_short:
+        {
+            int bytesConsume = 0;
+            auto lv = loopTrack.find(npe->contech_id);
+            assert(lv != loopTrack.end());
+            if (lv == loopTrack.end())
+            {
+                dumpAndTerminate(fptr);
+            }
+            
+            internal_loop_track* clt = lv->second.back();
+            
+            const int loop_start_size = sizeof(npe->loop.clm.memOpId) +
+                                        sizeof(npe->loop.clm.baseAddr);
+            uint8_t bufS[loop_start_size];
+            fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
+            bytesConsume = unpack(bufS, "st", &npe->loop.clm.memOpId,
+                                              &npe->loop.clm.baseAddr);
+            // resize will not shrink
+            if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
+            {
+                clt->baseAddr.resize(npe->loop.clm.memOpId + 1);
+            }
+            clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;
+        }
+        break;
+        
+        case ct_event_loop_exit:
+        {
+            const int loop_size = sizeof(npe->loop.preLoopId);
+            uint8_t buf[loop_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), loop_size, fptr);
+            bytesConsume = unpack(buf, "l", &npe->loop.preLoopId);
+            assert(bytesConsume == loop_size);
+            
+            auto lv = loopTrack.find(npe->contech_id);
+            assert(lv != loopTrack.end());
+            if (lv == loopTrack.end())
+            {
+                dumpAndTerminate(fptr);
+            }
+            
+            // Loop start and end events are slightly different.
+            internal_loop_track* clt = lv->second.back();
+            if (clt->preLoopId != npe->loop.preLoopId)
+            {
+                printf("In %d, loop %d was instead %d\n", lastBBID, npe->loop.preLoopId, clt->preLoopId);
+            }
+            assert(clt->preLoopId == npe->loop.preLoopId);
+            lv->second.pop_back();
+            loopBlock[npe->contech_id][clt->clb.stepBlock].pop_back();
+            delete clt;
         }
         break;
         
