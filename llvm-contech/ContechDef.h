@@ -172,6 +172,7 @@ namespace llvm {
         Constant* storeGVEventFunction;
         Constant* storeLoopEntryFunction;
         Constant* storeLoopExitFunction;
+        Constant* storeLoopShortFunction;
 
         Constant* storeBasicBlockMarkFunction;
         Constant* storeMemReadMarkFunction;

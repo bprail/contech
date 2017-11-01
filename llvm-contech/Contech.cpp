@@ -165,6 +165,7 @@ bool Contech::doInitialization(Module &M)
     FunctionType* funVoidVoidPtrI32Ty;
     FunctionType* funVoidI64I64Ty;
     FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
+    FunctionType* funVoidI16VoidPtrTy;
     FunctionType* funI32I32Ty;
     FunctionType* funI32VoidPtrTy;
     FunctionType* funI32I32I32VoidPtrI8Ty;
@@ -240,7 +241,9 @@ bool Contech::doInitialization(Module &M)
     cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
     cct.storeLoopExitFunction = M.getOrInsertFunction("__ctStoreLoopExit", funVoidI32Ty);
 
-    
+    Type* argsLS[] = {cct.int16Ty, cct.voidPtrTy};
+    funVoidI16VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsLS, 2), false);
+    cct.storeLoopShortFunction = M.getOrInsertFunction("__ctStoreLoopEntryShort", funVoidI16VoidPtrTy);
     
     funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
     cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
@@ -626,26 +629,22 @@ bool Contech::runOnModule(Module &M)
             uint16_t i = 0;
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
-                /*Instruction* mAddr = dyn_cast<Instruction>(*mit);
-                if (mAddr != NULL &&
-                    mAddr->getParent() == it->first &&
-                    dyn_cast<PHINode>(mAddr) == NULL)
-                {
-                    auto it = convertInstToIter(mAddr);
-                    auto cit = convertInstToIter(iPt);
-                    if (cit < it)
-                    {
-                        ++it;
-                        iPt = convertIterToInst(it);
-                    }
-                }*/
-                
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
                 Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
-                Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
-                debugLog("storeLoopEntryFunction @" << __LINE__);
-                Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
-                MarkInstAsContechInst(loopEntry);
+                if (i == 0)
+                {
+                    Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
+                    debugLog("storeLoopEntryFunction @" << __LINE__);
+                    Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
+                    MarkInstAsContechInst(loopEntry);
+                }
+                else
+                {
+                    Value* argsShort[] = {opPos, voidAddr};
+                    debugLog("storeLoopEntryFunction @" << __LINE__);
+                    Instruction* loopEntry = CallInst::Create(cct.storeLoopShortFunction, ArrayRef<Value*>(argsShort, 2), "", iPt);
+                    MarkInstAsContechInst(loopEntry);
+                }
                 i++;
             }
             
