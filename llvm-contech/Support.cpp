@@ -817,11 +817,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
     
     // Given addr, find the values that it depends on
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
-    if (gepAddr == NULL)
-    {
-        
-    }
-    else
+    while (gepAddr != NULL)
     {
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
@@ -845,6 +841,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
             addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
         }
         addr = gepAddr->getPointerOperand();
+        gepAddr = dyn_cast<GetElementPtrInst>(addr);
     }
     
     for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
@@ -900,53 +897,56 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
             //   via casting, then continue.
             if ((gepAddrT = dyn_cast<GetElementPtrInst>(addrT)) == NULL) continue;
         }
-        addrT = gepAddrT->getPointerOperand();
+        
         
         // No match, different addresses
-        if (addrT != addr) continue;
+        //if (addrT != addr) continue;
         
         //unordered_multiset<pair<Value*,int64_t> > addrComponentsT = addrComponents;
         multimap<Value*, int64_t> addrComponentsT = addrComponents;
-        bool did_remove;
         tOffset = 0;
         
-        for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; ++itG)
+        while (gepAddrT != NULL)
         {
-            Value* gepI = itG.getOperand();
-            int64_t multFactor = 1;
-            did_remove = true;
+            addrT = gepAddrT->getPointerOperand();
+            for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; ++itG)
+            {
+                Value* gepI = itG.getOperand();
+                int64_t multFactor = 1;
 
-            // If the index of GEP is a Constant, then it can vary between mem ops
-            if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
-            {
-                tOffset += updateOffsetEx(itG, gConst->getZExtValue(), &multFactor);
-                continue;
-            }
-            else
-            {
-                gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
-                tOffset += updateOffsetEx(itG, tOffset, &multFactor);
-                /*auto act = addrComponentsT.find(make_pair(gepI, multFactor));
-                if (act == addrComponentsT.end())
+                // If the index of GEP is a Constant, then it can vary between mem ops
+                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
                 {
-                    did_remove = false;
-                    break;
+                    tOffset += updateOffsetEx(itG, gConst->getZExtValue(), &multFactor);
+                    continue;
                 }
-                addrComponentsT.erase(act);*/
-                auto rg = addrComponentsT.equal_range(gepI);
-                for (auto it = rg.first; it != rg.second; ++it)
+                else
                 {
-                    if (it->second == multFactor)
+                    gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
+                    tOffset += updateOffsetEx(itG, tOffset, &multFactor);
+                    /*auto act = addrComponentsT.find(make_pair(gepI, multFactor));
+                    if (act == addrComponentsT.end())
                     {
-                        addrComponentsT.erase(it);
-                        did_remove = true;
+                        did_remove = false;
                         break;
+                    }
+                    addrComponentsT.erase(act);*/
+                    auto rg = addrComponentsT.equal_range(gepI);
+                    for (auto it = rg.first; it != rg.second; ++it)
+                    {
+                        if (it->second == multFactor)
+                        {
+                            addrComponentsT.erase(it);
+                            break;
+                        }
                     }
                 }
             }
+            if (addrT == addr) break;
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
         }
-        if (did_remove == false) continue;
         if (addrComponentsT.size() != 0) continue;
+        if (addrT != addr) continue;
         
         *offset = baseOffset - tOffset;
         return &*it;
