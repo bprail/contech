@@ -350,7 +350,7 @@ namespace llvm{
         }
     }
     
-    Instruction* LoopIV::isAddOrPHIConstant(Value* v)
+    Value* LoopIV::isAddOrPHIConstant(Value* v, bool retFin)
     {
         bool zeroOrOneConstant = true;
     
@@ -393,14 +393,16 @@ namespace llvm{
             
         } while (zeroOrOneConstant);
         
+        if (retFin == true) return v;
         return NULL;
     }
 
     // TODO: the value is always an instruction, adjust the calls to return precisely
-    Value* LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived)
+    Value* LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived, Loop* L, vector<Value*>& ac)
     {
         Value* cnt_elided = NULL;
         bool non_const = false;
+        ac.clear();
 
         if (gepAddr != NULL) 
         {
@@ -415,20 +417,25 @@ namespace llvm{
                 }
                 else if (temp == NULL)
                 {
-                    if (dyn_cast<Argument>(gepI)) return NULL;
+                    if (dyn_cast<Argument>(gepI)) {ac.push_back(gepI); continue;}
                     continue;
                 }
                 else 
                 {
-                    Instruction* basePhi = isAddOrPHIConstant(gepI);
-                    if (basePhi == NULL) return NULL;
-                    if (non_const != false) return NULL;
-                    non_const = true;
+                    Value* basePhiV = isAddOrPHIConstant(gepI, false);
+                    if (basePhiV == NULL) return NULL;
                     
-                    if (std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
+                    Instruction* basePhi = dyn_cast<Instruction>(basePhiV);
+                    if (basePhi == NULL) return NULL;
+                    
+                    bool iv_set = false;
+                    if (L->isLoopInvariant(gepI) == false &&
+                        std::find(IVs.begin(), IVs.end(), gepI) != IVs.end()) 
                     {
                         //errs() << "THERE: " << *gepAddr << "\n";    //TODO:remove
+                        if (cnt_elided != NULL) return NULL;
                         cnt_elided = gepI;
+                        iv_set = true;
                     }
                     //traverse the operands
                     else if (!isa <Argument>(gepI)) //isa<CastInst>(gepI)
@@ -437,14 +444,19 @@ namespace llvm{
                         
                         if (StructType *STy = dyn_cast<StructType>(*itG))
                         {
-                            continue;
+                            if (L->isLoopInvariant(gepI) == false) return NULL;
+                            Value* v = isAddOrPHIConstant(gepI, true);
+                            if (v != NULL) {ac.push_back(v);}
+                            else return NULL;
                         }
                         
-                        if (std::find(IVs.begin(), IVs.end(), gepID) != IVs.end()) 
+                        if (L->isLoopInvariant(gepI) == false &&
+                            std::find(IVs.begin(), IVs.end(), gepID) != IVs.end()) 
                         {
                             //errs() << "FOUND IT 1: " << *gepAddr << "\n";
-                            
+                            if (cnt_elided != NULL) return NULL;
                             cnt_elided = gepID;
+                            iv_set = true;
                         }
 
                         else if (!isa <Argument>(gepID))  //any other operation involving IV and COnst or LI Inst
@@ -453,12 +465,12 @@ namespace llvm{
                             bool is_safe = true, is_found = false;
                             if (tempID == NULL) 
                             {
-                                continue;
+                                // The parent instruction gepI could be safe to use
+                                //   as an additional component, if it is loop invariant.
                             }
-                            
-                            int op = 0;
-                            if (tempID->getNumOperands() == 2) 
+                            else if (tempID->getNumOperands() == 2) 
                             {
+                                int op = 0;
                                 for (unsigned i = 0; i < tempID->getNumOperands(); i++)
                                 {    //assuming 2 operands in 3 add inst
                                     if (tempID->getOperand(i) == tempID->getOperand(1-i)) 
@@ -480,7 +492,9 @@ namespace llvm{
                                     {
                                         if (!is_derived) 
                                         {
+                                            if (cnt_elided != NULL) return NULL;
                                             cnt_elided = gepID;
+                                            iv_set = true;
                                             //errs() << "FOUND IT 2 : " << *gepAddr << "\n";
                                         }
                                     }
@@ -490,7 +504,9 @@ namespace llvm{
                             {
                                 if (std::find(IVs.begin(), IVs.end(), tempID->getOperand(0)) != IVs.end()) 
                                 {
+                                    if (cnt_elided != NULL) return NULL;
                                     cnt_elided = gepID;
+                                    iv_set = true;
                                     //errs() << "FOUND IT 3: " << *gepAddr << "\n";
                                 }
                             }
@@ -503,6 +519,14 @@ namespace llvm{
                     // In some loops, the GEP may use a PHI of the memIV and something else.
                     if (cnt_elided != NULL &&
                         basePhi != dyn_cast<Instruction>(cnt_elided)) return NULL;
+                        
+                    if (iv_set == false)
+                    {
+                        if (L->isLoopInvariant(gepI) == false) return NULL;
+                        Value* v = isAddOrPHIConstant(gepI, true);
+                        if (v != NULL) {ac.push_back(v);}
+                        else return NULL;
+                    }
                 }
             }
         }
@@ -552,7 +576,7 @@ namespace llvm{
                 }
                 
                 Value* memIV = NULL;
-                if ((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false)) != NULL) 
+                if ((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false, L, tempLoopMemoryOps.addtComponents)) != NULL) 
                 {
                     cnt_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
@@ -592,21 +616,21 @@ namespace llvm{
                     }
                     
                 }
-                else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, NonLinearIvs, false, L, tempLoopMemoryOps.addtComponents)) != NULL) 
                 {
                     cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
-                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedLinearIvs, true, L, tempLoopMemoryOps.addtComponents)) != NULL) 
                 {
                     cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = false;  //TODO: future work
                 }
-                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true)) != NULL) 
+                else if ((memIV = collectPossibleMemoryOps(gepAddr, DerivedNonlinearIvs, true, L, tempLoopMemoryOps.addtComponents)) != NULL) 
                 {
                     cnt_future_elided++;
                     tempLoopMemoryOps.memIV = dyn_cast<Instruction>(memIV);

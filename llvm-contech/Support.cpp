@@ -1565,6 +1565,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
 
 void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
+    vector<pair<Value*, int> > ac;
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
     if (ilte == loopInfoTrack.end())
@@ -1656,6 +1657,17 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 
                 gepI = convertValueToConstant(gepI, &tOffset, nextIV);
                 
+                // If this element is really an additional component, it is not the IV
+                if (std::find(llb->addtComponents.begin(), 
+                              llb->addtComponents.end(), gepI) != llb->addtComponents.end())
+                {
+                    int64_t scale = updateOffset(itG, 1);
+                    offset += scale * tOffset;
+ 
+                    //llt->compMap[gepI] = scale;
+                    ac.push_back(make_pair(gepI, scale));
+                    continue;
+                }
             }
             
             // If the convert did not end on the step instruction and
@@ -1677,14 +1689,6 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             isIVLast = true;
         }
         
-        // TODO: If IV is not last, then the scale multipler for IV
-        //   needs to be computed here and not just use the access size.
-        if (isIVLast == false)
-        {
-            errs() << "MemAddr did not end with IV: " << *addr << "\n";
-            errs() << "IV: " << *llb->memIV << "\n";
-            assert(0);
-        }
         *memOpDelta = offset;
     }
     
@@ -1696,10 +1700,17 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     // Find the base address, does another loop op share it ?
     *memOpPos = 0;
-    for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+    if (ac.size() == 0)
     {
-        if (*it == baseAddr) break;
-        *memOpPos = *memOpPos + 1;
+        for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+        {
+            if (*it == baseAddr) break;
+            *memOpPos = *memOpPos + 1;
+        }
+    }
+    else
+    {
+        *memOpPos = llt->baseAddr.size();
     }
     
     if (*memOpPos == llt->baseAddr.size())

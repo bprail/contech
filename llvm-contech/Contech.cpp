@@ -630,7 +630,32 @@ bool Contech::runOnModule(Module &M)
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
-                Value* voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                Value* voidAddr = NULL;
+                
+                auto ac = llt->compMap.find(i);
+                if (ac == llt->compMap.end())
+                {
+                    voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                }
+                else
+                {
+                    Value* bVal = castSupport(cct.int64Ty, *mit, iPt);
+                    
+                    for (auto acit = ac->second.begin(), acet = ac->second.end(); acit != acet; ++acit)
+                    {
+                        Value* val = acit->first;
+                        int scale = acit->second;
+                        Value* ival = castSupport(cct.int64Ty, val, iPt);
+                        Constant* cscale = ConstantInt::get(cct.int64Ty, scale);
+                        
+                        Instruction* imul = BinaryOperator::Create(Instruction::Mul, ival, cscale, "", iPt);
+                        
+                        bVal = BinaryOperator::Create(Instruction::Add, bVal, imul, "", iPt);
+                    }
+                    
+                    voidAddr = castSupport(cct.voidPtrTy, bVal, iPt);
+                }
+                
                 if (i == 0)
                 {
                     Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};

@@ -86,6 +86,7 @@ namespace llvm {
         BasicBlock* headerBlock;
         // 4 is chosen from the loopUnroll code.
         SmallVector<BasicBlock*, 4> exitBlocks;  //
+        std::vector<Value*> addtComponents;
         int stepIV;             // IV increment/decrement
         bool canElide;          // can the memory op be elided?
         bool wasElide;          // If the op can only be elided by loop code.
@@ -101,6 +102,7 @@ namespace llvm {
         // 4 is chosen from the loopUnroll code.
         SmallVector<BasicBlock*, 4> exitBlocks;
         std::vector<Value*> baseAddr;
+        std::map<int, std::vector<std::pair<Value*, int> > > compMap;
     } llvm_loop_track, *pllvm_loop_track;
     
     typedef enum _CONTECH_FUNCTION_TYPE {
