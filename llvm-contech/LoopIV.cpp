@@ -362,6 +362,9 @@ namespace llvm{
             switch(inst->getOpcode())
             {
                 case Instruction::Add:
+                case Instruction::Sub:
+                case Instruction::Mul:
+                case Instruction::Shl:
                 {
                     Value* vOp;
                     zeroOrOneConstant = false;

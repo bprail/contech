@@ -1572,6 +1572,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
 
 void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
+    int64_t multFactor = 1;
     vector<pair<Value*, int> > ac;
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
@@ -1612,18 +1613,19 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     {
         baseAddr = gepAddr->getPointerOperand();
         
-        int offset = 0;
+        int64_t offset = 0;
         bool isIVLast = false;
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
             Instruction* nCI = dyn_cast<Instruction>(gepI);
             Value* nextIV = llb->memIV;
+            multFactor = 1;
             
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
-                offset += updateOffset(itG, aConst->getZExtValue());
+                offset += updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
                 continue;
             }
             
@@ -1654,21 +1656,22 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 }
             }
             
-            int tOffset = 0;
+            int64_t tOffset = 0;
             if (nCI != llb->memIV)
             {
                 // memIV is always a PHI, but the item used may be an offset
                 //   of the IV, or even the next step of the IV so we tell 
                 //   the conversion not to capture this step.
                 
-                
-                gepI = convertValueToConstant(gepI, &tOffset, nextIV);
+                // Only this path needs to update multFactor, otherwise the PHI
+                //   is directly used by the GEPI
+                gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, nextIV);
                 
                 // If this element is really an additional component, it is not the IV
                 if (std::find(llb->addtComponents.begin(), 
                               llb->addtComponents.end(), gepI) != llb->addtComponents.end())
                 {
-                    int64_t scale = updateOffset(itG, 1);
+                    int64_t scale = updateOffsetEx(itG, 1, &multFactor);
                     offset += scale * tOffset;
  
                     //llt->compMap[gepI] = scale;
@@ -1691,8 +1694,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 tOffset += -1 * llb->stepIV;
             }
             
-            offset += updateOffset(itG, tOffset);
-            *loopIVSize = updateOffset(itG, 1);
+            offset += updateOffsetEx(itG, tOffset, &multFactor);
+            *loopIVSize = updateOffsetEx(itG, 1, &multFactor);
             isIVLast = true;
         }
         
