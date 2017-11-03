@@ -796,6 +796,23 @@ int64_t Contech::updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t* m
     return offset;
 }
 
+Value* Contech::castWalk(Value* v)
+{
+    while (CastInst* ci = dyn_cast<CastInst>(v))
+    {
+        if (ci->isLosslessCast() == true)
+        {
+            v = ci->getOperand(0);
+        }
+        else
+        {
+            break;
+        }
+    }
+    
+    return v;
+}
+
 Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset)
 {
     //unordered_multiset<pair<Value*,int64_t> > addrComponents;
@@ -803,17 +820,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
     int64_t tOffset = 0, baseOffset = 0;
 
     *offset = 0;
-    while (CastInst* ci = dyn_cast<CastInst>(addr))
-    {
-        if (ci->isLosslessCast() == true)
-        {
-            addr = ci->getOperand(0);
-        }
-        else
-        {
-            break;
-        }
-    }
+    addr = castWalk(addr);
     
     // Given addr, find the values that it depends on
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);

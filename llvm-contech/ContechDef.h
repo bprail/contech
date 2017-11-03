@@ -264,6 +264,7 @@ namespace llvm {
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);
         Value* castSupport(Type*, Value*, Instruction*);
+        Value* castWalk(Value*);
         Value* findCilkStructInBlock(BasicBlock& B, bool insert);
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
 

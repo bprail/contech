@@ -556,11 +556,23 @@ namespace llvm{
                 {
                     gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
                     cnt_GetElementPtrInst++;
+                    
+                    if (gepAddr == NULL)
+                    {
+                        Value* v = ctThis->castWalk(li->getPointerOperand());
+                        if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
+                    }
                 }
                 else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
                 {
                     gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
                     cnt_GetElementPtrInst++;
+                    
+                    if (gepAddr == NULL)
+                    {
+                        Value* v = ctThis->castWalk(si->getPointerOperand());
+                        if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
+                    }
                 }
                 else 
                 {
