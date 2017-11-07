@@ -538,6 +538,20 @@ namespace llvm{
 
     void LoopIV::iterateOnLoop(Loop *L)
     {
+        for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
+        {
+            iterateOnLoop(*subL);
+        }
+        
+        unsigned iterCount = SE->getSmallConstantTripCount(L);
+        if (iterCount != 0 && iterCount < 4) return ;
+        
+        /*if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
+        {
+            errs() << "BACK -- " << **(L->block_begin()) << "\n";
+            return;
+        }*/
+        
         llvm_loopiv_block tempLoopMemoryOps;
         
         tempLoopMemoryOps.canElide = false;
@@ -678,18 +692,10 @@ namespace llvm{
           for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
           {
             Loop *L = *i;
-
-            if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
-            {
-                continue;
-            }
             
             // Iterate on subloops of Loop L
             iterateOnLoop(L);
-            for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
-            {
-                iterateOnLoop(*subL);
-            }
+            
     #if 0
             outs() << "----------- Print summary for the loop --------------\n";
             
