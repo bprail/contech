@@ -59,6 +59,9 @@ namespace llvm {
         bool containCall;
         bool containGlobalAccess;
         bool containAtomic;
+        bool isLoopEntry;
+        int stepIV;
+        uint32_t stepBlock;
         pllvm_mem_op first_op;
         std::string fnName;
         std::string callFnName;
