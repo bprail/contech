@@ -727,16 +727,13 @@ void __ctStoreLoopEntry(uint32_t id, int32_t step, uint32_t stepBlock, int64_t s
     unsigned int p = __ctThreadLocalBuffer->pos;
    
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_loop_enter;
-    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t)]) = id;
-    *((int32_t*)&__ctThreadLocalBuffer->data[p + 2*sizeof(uint32_t)]) = step;
-    *((uint32_t*)&__ctThreadLocalBuffer->data[p + 3*sizeof(uint32_t)]) = stepBlock;
-    *((int64_t*)&__ctThreadLocalBuffer->data[p + 4*sizeof(uint32_t)]) = startValue;
-    *((uint16_t*)&__ctThreadLocalBuffer->data[p + 4*sizeof(uint32_t) + sizeof(int64_t)]) = memOpId;
-    *((uint64_t*)&__ctThreadLocalBuffer->data[p + 4*sizeof(uint32_t) + sizeof(int64_t) + sizeof(uint16_t)]) = (uint64_t)addr;
+    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(char)]) = id;
+    *((int64_t*)&__ctThreadLocalBuffer->data[p + 1*sizeof(char) + sizeof(uint32_t)]) = startValue;
+    *((uint64_t*)&__ctThreadLocalBuffer->data[p + 1*sizeof(char) + sizeof(int64_t) + sizeof(uint32_t)]) = (uint64_t)addr;
     
    
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + 4*sizeof(uint32_t) + 2*sizeof(uint64_t) + sizeof(uint16_t);
+    __ctThreadLocalBuffer->pos = p + 1*sizeof(char) + 1*sizeof(uint64_t) + 6*sizeof(char) + sizeof(uint32_t);
     #endif
 }
 
@@ -745,12 +742,11 @@ void __ctStoreLoopEntryShort(uint16_t memOpId, void* addr)
     unsigned int p = __ctThreadLocalBuffer->pos;
    
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_loop_short;
-    *((uint16_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t)]) = memOpId;
-    *((uint64_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t) + sizeof(uint16_t)]) = (uint64_t)addr;
+    *((uint64_t*)&__ctThreadLocalBuffer->data[p + sizeof(char)]) = (uint64_t)addr;
     
    
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + sizeof(uint32_t) + sizeof(uint64_t) + sizeof(uint16_t);
+    __ctThreadLocalBuffer->pos = p + sizeof(char) + 6*sizeof(char);
     #endif
 }
 
@@ -759,10 +755,10 @@ void __ctStoreLoopExit(uint32_t id)
     unsigned int p = __ctThreadLocalBuffer->pos;
    
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_loop_exit;
-    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(uint32_t)]) = id;
+    *((uint32_t*)&__ctThreadLocalBuffer->data[p + sizeof(char)]) = id;
    
     #ifdef POS_USED
-    __ctThreadLocalBuffer->pos = p + 2*sizeof(uint32_t);
+    __ctThreadLocalBuffer->pos = p + 1*sizeof(uint32_t) + sizeof(char);
     #endif
 }
 
@@ -1320,7 +1316,7 @@ void __ctRecordCilkFrame(pcontech_cilk_sync pccs, ct_tsc_t start, unsigned int c
     {
         if (__ctThreadLocalNumber != pccs->parentId)
         {
-            //printf("Switching - %d -> %d\n", __ctThreadLocalNumber, child);
+            printf("Switching - %d -> %d\n", __ctThreadLocalNumber, child);
             // Restore the frame, if we are in the fall through case, whereby the same thread
             //   is sequentially executing each cilk_spawn
             __ctRestoreCilkFrame(pccs);
