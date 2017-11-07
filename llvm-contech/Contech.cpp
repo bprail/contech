@@ -601,6 +601,7 @@ bool Contech::runOnModule(Module &M)
             debugLog("checkBufferFunction@" << __LINE__);
             Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
             MarkInstAsContechInst(callChk);
+            lib->second.insertPoint = callChk;
             num_checks++;
         }
         
@@ -609,13 +610,10 @@ bool Contech::runOnModule(Module &M)
 
         
         // Apply Loop entry / exits
-        //SCEVExpander Expander(*getAnalysisSCEV(*F), M.getDataLayout(), "Contech");
         for (auto it = loopInfoTrack.begin(), et = loopInfoTrack.end(); it != et; ++it)
         {
             pllvm_loop_track llt = it->second;
             uint32_t bbid = cfgInfoMap[it->first]->id;
-            int bb_val = blockHash(it->first);
-            //Instruction* iPt = costPerBlock.find(bb_val)->second.insertPoint;
             Instruction* iPt = it->first->getTerminator();
             Constant* cbbid = ConstantInt::get(cct.int32Ty, bbid);
             Constant* cstep = ConstantInt::get(cct.int32Ty, llt->stepIV);
@@ -624,6 +622,10 @@ bool Contech::runOnModule(Module &M)
             
             startValue = castSupport(cct.int64Ty, llt->startIV, iPt);
             stepID = ConstantInt::get(cct.int32Ty, cfgInfoMap[llt->stepBlock]->id);
+            
+            cfgInfoMap[it->first]->stepIV = llt->stepIV;
+            cfgInfoMap[it->first]->stepBlock = cfgInfoMap[llt->stepBlock]->id;
+            cfgInfoMap[it->first]->isLoopEntry = true;
             
             // Insert a call per elided loop memop
             uint16_t i = 0;
@@ -773,6 +775,14 @@ cleanup:
             contechStateFile->write((char*)&strLen, sizeof(int));
             *contechStateFile << bi->second->callFnName;
 
+            bool loopEntry = bi->second->isLoopEntry;
+            contechStateFile->write((char*)&loopEntry, sizeof(bool));
+            if (loopEntry)
+            {
+                contechStateFile->write((char*)&bi->second->stepBlock, sizeof(unsigned int));
+                contechStateFile->write((char*)&bi->second->stepIV, sizeof(int));
+            }
+            
             // Number of memory operations
             contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
 
@@ -1145,6 +1155,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bi->containGlobalAccess = false;
     bi->containAtomic = false;
     bi->containCall = false;
+    bi->isLoopEntry = false;
     bi->lineNum = lineNum;
     bi->numIROps = numIROps;
     bi->fnName.assign(fnName);
