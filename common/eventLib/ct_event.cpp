@@ -152,6 +152,13 @@ void EventLib::resetEventLib()
     maxConstGVId = 0;
 }
 
+void EventLib::readMemOp(pct_memory_op pmo, FILE* fptr)
+{
+    pmo->data = 0;
+    fread_check(&pmo->data32[0], sizeof(unsigned int), 1, fptr);
+    fread_check(&pmo->data32[1], sizeof(unsigned short), 1, fptr);
+}
+
 //
 // Deserialize a CT_EVENT from a FILE stream
 //
@@ -222,6 +229,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         // Also storing thread_id then gives TYPE + [3], ID[4], so read [7]
         if (npe->event_type != ct_event_basic_block &&
             npe->event_type != ct_event_basic_block_info && 
+            npe->event_type != ct_event_loop_enter && 
+            npe->event_type != ct_event_loop_short && 
+            npe->event_type != ct_event_loop_exit && 
             npe->event_type != ct_event_buffer &&
             npe->event_type != ct_event_roi)
         {
@@ -420,8 +430,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         }
                         else
                         {
-                            fread_check(&npe->bb.mem_op_array[i].data32[0], sizeof(unsigned int), 1, fptr);
-                            fread_check(&npe->bb.mem_op_array[i].data32[1], sizeof(unsigned short), 1, fptr);
+                            //fread_check(&npe->bb.mem_op_array[i].data32[0], sizeof(unsigned int), 1, fptr);
+                            //fread_check(&npe->bb.mem_op_array[i].data32[1], sizeof(unsigned short), 1, fptr);
+                            readMemOp(&npe->bb.mem_op_array[i], fptr);
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
@@ -535,6 +546,19 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             else
             {
                 npe->bbi.callFun_name = NULL;
+            }
+            
+            bool loopEntry = false;
+            fread_check(&loopEntry, sizeof(bool), 1, fptr);
+            if (loopEntry == false)
+            {
+                bb_info_table[id].loopStepBlock = -1;
+            }
+            else
+            {
+                fread_check(&bb_info_table[id].loopStepBlock, sizeof(int), 1, fptr);
+                fread_check(&bb_info_table[id].loopStepValue, sizeof(unsigned int), 1, fptr);
+                //printf("%d has %d of %d\n", id, bb_info_table[id].loopStepBlock, bb_info_table[id].loopStepValue);
             }
             
             fread_check(&len, sizeof(unsigned int), 1, fptr);
@@ -848,18 +872,18 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             }
             
             // Loop start and end events are slightly different.
-            const int loop_start_size = sizeof(npe->loop.clb.step) +
-                                        sizeof(npe->loop.clb.stepBlock) +
-                                        sizeof(npe->loop.clb.startValue) +
-                                        sizeof(npe->loop.clm.memOpId) +
-                                        sizeof(npe->loop.clm.baseAddr);
+            const int loop_start_size = sizeof(npe->loop.clb.startValue);
             uint8_t bufS[loop_start_size];
             fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
-            bytesConsume = unpack(bufS, "lltst", &npe->loop.clb.step,
-                                                 &npe->loop.clb.stepBlock,
-                                                 &npe->loop.clb.startValue,
-                                                 &npe->loop.clm.memOpId,
-                                                 &npe->loop.clm.baseAddr);
+            bytesConsume = unpack(bufS, "t", &npe->loop.clb.startValue);
+                                                 
+            npe->loop.clm.memOpId = 0;
+            npe->loop.clb.step = bb_info_table[npe->loop.preLoopId].loopStepValue;
+            npe->loop.clb.stepBlock = bb_info_table[npe->loop.preLoopId].loopStepBlock;
+            
+            ct_memory_op pmo;
+            readMemOp(&pmo, fptr);
+            npe->loop.clm.baseAddr = pmo.data;
             
             internal_loop_track* clt = lv->second.back();
             if (clt == NULL || 
@@ -894,18 +918,22 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             
             internal_loop_track* clt = lv->second.back();
             
-            const int loop_start_size = sizeof(npe->loop.clm.memOpId) +
-                                        sizeof(npe->loop.clm.baseAddr);
+            /*const int loop_start_size = sizeof(npe->loop.clm.memOpId);
             uint8_t bufS[loop_start_size];
             fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
-            bytesConsume = unpack(bufS, "st", &npe->loop.clm.memOpId,
-                                              &npe->loop.clm.baseAddr);
+            bytesConsume = unpack(bufS, "s", &npe->loop.clm.memOpId);*/
+                                              
+            ct_memory_op pmo;
+            readMemOp(&pmo, fptr);
+            npe->loop.clm.baseAddr = pmo.data;
+            
             // resize will not shrink
-            if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
+            /*if (clt->baseAddr.size() <= npe->loop.clm.memOpId)
             {
                 clt->baseAddr.resize(npe->loop.clm.memOpId + 1);
             }
-            clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;
+            clt->baseAddr[npe->loop.clm.memOpId] = npe->loop.clm.baseAddr;*/
+            clt->baseAddr.push_back(npe->loop.clm.baseAddr);
         }
         break;
         
@@ -917,6 +945,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             fread_check(buf, sizeof(uint8_t), loop_size, fptr);
             bytesConsume = unpack(buf, "l", &npe->loop.preLoopId);
             assert(bytesConsume == loop_size);
+            
+            printf("Exit: %d\n", npe->loop.preLoopId);
             
             auto lv = loopTrack.find(npe->contech_id);
             assert(lv != loopTrack.end());

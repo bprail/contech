@@ -234,6 +234,8 @@ namespace contech
                 int32_t next_basic_block_id;
                 int count;
                 uint32_t totalBytes;
+                int32_t loopStepBlock;
+                int32_t loopStepValue;
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
             
@@ -265,6 +267,7 @@ namespace contech
             void displayContechEventDiagInfo();
             void displayContechEventStats();
             void resetEventLib();
+            void readMemOp(pct_memory_op, FILE*);
             uint64_t getSum() {return sum;}
     };
     
