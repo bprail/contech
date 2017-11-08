@@ -1766,7 +1766,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     if (*memOpPos == llt->baseAddr.size())
     {
-        llt->baseAddr.push_back(baseAddr);
+        if (baseAddr == llb->memIV) llt->baseAddr.push_back(NULL);
+        else llt->baseAddr.push_back(baseAddr);
         if (ac.size() > 0) {llt->compMap[*memOpPos] = ac;}
     }
 }

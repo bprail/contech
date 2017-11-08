@@ -637,7 +637,9 @@ bool Contech::runOnModule(Module &M)
                 auto ac = llt->compMap.find(i);
                 if (ac == llt->compMap.end())
                 {
-                    voidAddr = castSupport(cct.voidPtrTy, *mit, iPt);
+                    Value* v = *mit;
+                    if (*mit == NULL) v = ConstantInt::get(cct.int64Ty, 0);
+                    voidAddr = castSupport(cct.voidPtrTy, v, iPt);
                 }
                 else
                 {

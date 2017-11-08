@@ -467,6 +467,7 @@ namespace llvm{
             }
         }
         
+        llb.memIV = dyn_cast<Instruction>(baseAddr);
         llb.memOp = NULL;
         llb.canElide = true;
         llb.stepIV = IVToIncMap[dyn_cast<Instruction>(baseAddr)];
@@ -680,6 +681,10 @@ namespace llvm{
                     memIV = inferredMemoryOps(gepAddr, false, L, tempLoopMemoryOps);
                     if (memIV == NULL) continue;
                     tempLoopMemoryOps.memOp = &*I;
+                    llvm_loopiv_block* t = new llvm_loopiv_block;
+                    *t = tempLoopMemoryOps;
+                    LoopMemoryOps.push_back(t);
+                    continue;
                 }
                 
                 // Is the base address of the memory operation
