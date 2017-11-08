@@ -1043,7 +1043,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (addrSimilar != NULL)
             {
-                //errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
+                // errs() << *addrSimilar << " ?=? " << *li << "\t" << addrOffset << "\n";
                 dupMemOps[li] = addrSimilar;
                 dupMemOpOff[li] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
@@ -1065,7 +1065,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
             if (addrSimilar != NULL)
             {
-                //errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
+                // errs() << *addrSimilar << " ?=? " << *si << "\t" << addrOffset << "\n";
                 dupMemOps[si] = addrSimilar;
                 dupMemOpOff[si] = addrOffset;
                 dupMemOpPos[addrSimilar] = 0;
@@ -1370,6 +1370,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             if (dupMemOps.find(li) != dupMemOps.end())
             {
                 tMemOp = insertMemOp(NULL, li->getPointerOperand(), false, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
+                
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(li)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[li];
@@ -1435,6 +1436,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             if (dupMemOps.find(si) != dupMemOps.end())
             {
                 tMemOp = insertMemOp(NULL, si->getPointerOperand(), true, memOpPos, posValue, elideBasicBlockId, M, loopIVOp);
+                
                 tMemOp->isDep = true;
                 tMemOp->depMemOp = dupMemOpPos[dupMemOps.find(si)->second];
                 tMemOp->depMemOpDelta = dupMemOpOff[si];

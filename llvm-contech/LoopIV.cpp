@@ -400,13 +400,89 @@ namespace llvm{
         return NULL;
     }
 
+    // For the case where the base address is the IV.
+    Value* LoopIV::inferredMemoryOps(GetElementPtrInst* gepAddr, bool is_derived, Loop* L, llvm_loopiv_block &llb)
+    {
+        if (gepAddr == NULL) return NULL;
+        llb.addtComponents.clear();
+        
+        Value* baseAddr = gepAddr->getPointerOperand();
+        if (PHINode* pn = dyn_cast<PHINode>(baseAddr))
+        {
+            llb.startIV = NULL;
+            for (int i = 0; i < pn->getNumIncomingValues(); i++)
+            {
+                BasicBlock* pnBB = pn->getIncomingBlock(i);
+                Value* v = pn->getIncomingValue(i);
+                
+                if (L->contains(pnBB) == true)
+                {
+                    Instruction* inst = dyn_cast<Instruction>(v);
+                    if (inst != NULL)
+                    {
+                        llb.stepBlock = inst->getParent();
+                    }
+                    else
+                    {
+                        llb.stepBlock = pnBB;
+                    }
+                }
+                else
+                {
+                    llb.startIV = v;
+                }
+            }
+            if (llb.startIV == NULL) return NULL;
+        }
+        else
+        {
+            return NULL;
+        }
+        
+        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
+        {
+            Value* gepI = itG.getOperand();
+            Instruction* temp = dyn_cast<Instruction>(gepI);
+            if (dyn_cast<ConstantInt>(gepI)) 
+            {
+                continue;
+            }
+            else if (temp == NULL)
+            {
+                if (dyn_cast<Argument>(gepI)) {llb.addtComponents.push_back(gepI); continue;}
+                continue;
+            }
+            else
+            {
+                Value* basePhiV = isAddOrPHIConstant(gepI, false);
+                if (basePhiV == NULL) return NULL;
+                
+                Instruction* basePhi = dyn_cast<Instruction>(basePhiV);
+                if (basePhi == NULL) return NULL;
+                
+                if (L->isLoopInvariant(gepI) == false) return NULL;
+                Value* v = isAddOrPHIConstant(gepI, true);
+                if (v != NULL) {llb.addtComponents.push_back(v);}
+                else return NULL;
+            }
+        }
+        
+        llb.memOp = NULL;
+        llb.canElide = true;
+        llb.stepIV = IVToIncMap[dyn_cast<Instruction>(baseAddr)];
+        
+        errs() << "HIT " << *gepAddr << "\t" << llb.stepIV << "\n";
+        
+        return gepAddr;
+    }
+    
     // TODO: the value is always an instruction, adjust the calls to return precisely
     Value* LoopIV::collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived, Loop* L, vector<Value*>& ac)
     {
         Value* cnt_elided = NULL;
         bool non_const = false;
         ac.clear();
-
+        
         if (gepAddr != NULL) 
         {
             for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
@@ -596,6 +672,16 @@ namespace llvm{
                     continue;
                 }
                 
+                if (gepAddr == NULL) continue;
+                
+                Value* memIV = NULL;
+                if (std::find(PossibleIVs.begin(), PossibleIVs.end(), gepAddr->getPointerOperand()) != PossibleIVs.end())
+                {
+                    memIV = inferredMemoryOps(gepAddr, false, L, tempLoopMemoryOps);
+                    if (memIV == NULL) continue;
+                    tempLoopMemoryOps.memOp = &*I;
+                }
+                
                 // Is the base address of the memory operation
                 //   invariant in this loop.
                 if (gepAddr != NULL &&
@@ -604,7 +690,7 @@ namespace llvm{
                     continue;
                 }
                 
-                Value* memIV = NULL;
+                
                 if ((memIV = collectPossibleMemoryOps(gepAddr, PossibleIVs, false, L, tempLoopMemoryOps.addtComponents)) != NULL) 
                 {
                     cnt_elided++;
@@ -620,6 +706,12 @@ namespace llvm{
                     {
                         memIV = NULL;
                         continue;
+                    }
+                    // errs() << "LE: " << *&*I << "\n";
+                    // errs() << "LED: " << *memIV << "\t" << tempLoopMemoryOps.addtComponents.size() << "\n";
+                    for (auto it = tempLoopMemoryOps.addtComponents.begin(), et = tempLoopMemoryOps.addtComponents.end(); it != et; ++it)
+                    {
+                        // errs() << "\t" << **it << "\n";
                     }
                     for (int i = 0; i < pn->getNumIncomingValues(); i++)
                     {

@@ -121,6 +121,7 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
 {
     GlobalValue* gv = dyn_cast<GlobalValue>(consGV);
     assert(NULL != gv);
+
     auto id = elidedGlobalValues.find(consGV);
     if (id == elidedGlobalValues.end())
     {
@@ -587,7 +588,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
             assert(0);
         }
     }
-    errs() << "TD " << *pred << "\n";
+    //errs() << "TD " << *pred << "\n";
     tailCount++;
     
     return true;
@@ -824,30 +825,46 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
     
     // Given addr, find the values that it depends on
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+    
     while (gepAddr != NULL)
     {
+        if (gepAddr != NULL)
+        {
+            //errs() << "Start: " << *gepAddr << "\n";
+        }
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
             int64_t multFactor = 1;
+            tOffset = 0;
 
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
                 baseOffset += updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
+                // errs() << "BO EX " << baseOffset << "\n";
                 continue;
             }
             else
             {
-                gepI = convertValueToConstantEx(gepI, &baseOffset, &multFactor, NULL);
-                baseOffset += updateOffsetEx(itG, baseOffset, &multFactor);
+                gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
+                baseOffset += updateOffsetEx(itG, tOffset, &multFactor);
+                //errs() << "EX " << *gepI << " " << tOffset << "\n";
             }
 
             // TODO: if the value is a constant global, then it matters
             //addrComponents.insert(make_pair(gepI, multFactor));
-            addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
+            /*if (addrComponents.find(gepI) != addrComponents.end())
+            {
+                addrComponents[gepI] += multFactor;
+            }
+            else*/
+            {
+                addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
+            }
         }
         addr = gepAddr->getPointerOperand();
+        addr = castWalk(addr);
         gepAddr = dyn_cast<GetElementPtrInst>(addr);
     }
     
@@ -861,24 +878,22 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
         if (LoadInst *li = dyn_cast<LoadInst>(&*it))
         {
             addrT = li->getPointerOperand();
-
-            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
         }
         else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
         {
             addrT = si->getPointerOperand();
-
-            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
         }
 
         if (addrT == NULL) continue;
-        if (gepAddrT != NULL && gepAddrT == gepAddr)
+        addrT = castWalk(addrT);
+        gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+        /*if (gepAddrT != NULL && gepAddrT == gepAddr)
         {
             *offset = 0;
             return &*it;
-        }
+        }*/
         
-        if (gepAddrT == NULL)
+        /*if (gepAddrT == NULL)
         {
             while (CastInst* ci = dyn_cast<CastInst>(addrT))
             {
@@ -903,7 +918,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
             // If this instruction still does not use a GEPI and does not match
             //   via casting, then continue.
             if ((gepAddrT = dyn_cast<GetElementPtrInst>(addrT)) == NULL) continue;
-        }
+        }*/
         
         
         // No match, different addresses
@@ -912,6 +927,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
         //unordered_multiset<pair<Value*,int64_t> > addrComponentsT = addrComponents;
         multimap<Value*, int64_t> addrComponentsT = addrComponents;
         tOffset = 0;
+        bool unmatchedValue = false;
         
         while (gepAddrT != NULL)
         {
@@ -929,8 +945,9 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
                 }
                 else
                 {
-                    gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
-                    tOffset += updateOffsetEx(itG, tOffset, &multFactor);
+                    int64_t sOffset = 0;
+                    gepI = convertValueToConstantEx(gepI, &sOffset, &multFactor, NULL);
+                    tOffset += updateOffsetEx(itG, sOffset, &multFactor);
                     /*auto act = addrComponentsT.find(make_pair(gepI, multFactor));
                     if (act == addrComponentsT.end())
                     {
@@ -939,19 +956,40 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
                     }
                     addrComponentsT.erase(act);*/
                     auto rg = addrComponentsT.equal_range(gepI);
+                    if (rg.first == addrComponentsT.end())
+                    {
+                        unmatchedValue = true;
+                        goto finish_gep_walk;
+                    }
                     for (auto it = rg.first; it != rg.second; ++it)
                     {
                         if (it->second == multFactor)
                         {
+                            // errs() << "TR " << *gepAddrT << "\n";
+                            // errs() << "RM " << *gepI << " at MF " << multFactor << "with of " << (baseOffset - tOffset) << " " << sOffset << "\n";
                             addrComponentsT.erase(it);
                             break;
                         }
+                        else
+                        {
+                            // errs() << "MF != " << it->second << "\t" << multFactor <<"\n";
+                            unmatchedValue = true;
+                            goto finish_gep_walk;
+                        }
+                        /*else
+                        {
+                            addrComponentsT[gepI] = it->second - multFactor;
+                        }*/
                     }
                 }
             }
-            if (addrT == addr) break;
+            addrT = castWalk(addrT);
+            //if (addrT == addr) { errs() << "ADDR: " << *addrT << "\t" << *addr<< "\n"; errs() << *gepAddrT << "\n"; break;}
             gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
         }
+
+finish_gep_walk:        
+        if (unmatchedValue == true) continue;
         if (addrComponentsT.size() != 0) continue;
         if (addrT != addr) continue;
         
@@ -1604,8 +1642,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         if (ci->isLosslessCast() == false) return;
         if (ci->getSrcTy()->isPointerTy() == false) return;
         
-        errs() << "CAST: " << *ci << "\n";
-        errs() << *ci->getOperand(0) << "\n";
+        //errs() << "CAST: " << *ci << "\n";
+        //errs() << *ci->getOperand(0) << "\n";
         gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
     }
     
@@ -1694,8 +1732,11 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 tOffset += -1 * llb->stepIV;
             }
             
+            // N.B. UpdateOffsetEx updates multFactor, while not using it.
+            //   This order applies the factor to the IV
+            *loopIVSize = updateOffsetEx(itG, multFactor, &multFactor);
             offset += updateOffsetEx(itG, tOffset, &multFactor);
-            *loopIVSize = updateOffsetEx(itG, 1, &multFactor);
+            
             isIVLast = true;
         }
         
@@ -1726,5 +1767,6 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     if (*memOpPos == llt->baseAddr.size())
     {
         llt->baseAddr.push_back(baseAddr);
+        if (ac.size() > 0) {llt->compMap[*memOpPos] = ac;}
     }
 }
