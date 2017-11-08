@@ -332,8 +332,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                              * computed correctly.
                              *
                              * This also requires changing the driver to not omit the operations and
-                             * also including the duplicate operations in the count.
-                            ct_memory_op tmo;
+                             * also including the duplicate operations in the count.*/
+                            /*ct_memory_op tmo;
                             tmo.data = 0;
                             fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
                             fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
@@ -407,7 +407,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                              * The following code verified the loop elide addresses are computed
                              *   correctly.  Along with a change in the LLVM Pass to not omit these operations.
                              */
-                            /* ct_memory_op tmo;
+                             /*ct_memory_op tmo;
                              tmo.data = 0;
                              fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
                             fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
@@ -945,8 +945,6 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             fread_check(buf, sizeof(uint8_t), loop_size, fptr);
             bytesConsume = unpack(buf, "l", &npe->loop.preLoopId);
             assert(bytesConsume == loop_size);
-            
-            printf("Exit: %d\n", npe->loop.preLoopId);
             
             auto lv = loopTrack.find(npe->contech_id);
             assert(lv != loopTrack.end());
