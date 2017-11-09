@@ -1614,6 +1614,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     vector<pair<Value*, int> > ac;
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
+    bool createEntry = false;
     if (ilte == loopInfoTrack.end())
     {
         llt = new llvm_loop_track;
@@ -1624,6 +1625,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         llt->memIV = llb->memIV;
         llt->exitBlocks = llb->exitBlocks;
         loopInfoTrack[bbid] = llt;
+        createEntry = true;
     }
     else
     {
@@ -1632,6 +1634,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         assert(llt->memIV == llb->memIV);
     }
     
+    *loopIVSize = 1;
     Value* baseAddr = NULL;
     GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
     
@@ -1766,8 +1769,41 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     
     if (*memOpPos == llt->baseAddr.size())
     {
-        if (baseAddr == llb->memIV) llt->baseAddr.push_back(NULL);
-        else llt->baseAddr.push_back(baseAddr);
+        if (baseAddr == llb->memIV) 
+        {
+            llt->baseAddr.push_back(NULL);
+            if (createEntry == true)
+            {
+                loopInfoTrack[bbid]->stepIV *= getSizeofType(gepAddr->getPointerOperand()->getType()->getPointerElementType());
+            }
+            
+            // N.B. This code is duplicated from above.
+            //   If the memop depends on the IV address, then it was
+            //   the step was a GEPI with a constant.
+            PHINode* pn = dyn_cast<PHINode>(llb->memIV);
+            if (pn != NULL)
+            {
+                for (int i = 0; i < pn->getNumIncomingValues(); i++)
+                {
+                    Value* inCV = pn->getIncomingValue(i);
+                    Instruction* inCVInst = dyn_cast<Instruction>(inCV);
+                    
+                    // If this is not the start value, then it is the step value.
+                    //   If this value dominates the load or store
+                    if (inCV != llb->startIV &&
+                        (inCVInst == NULL ||
+                         (DT->dominates(inCVInst, memOp) == true &&
+                          inCVInst->getParent() != memOp->getParent())))
+                    {
+                        *memOpDelta += -1 * loopInfoTrack[bbid]->stepIV;
+                    }
+                }
+            }
+        }
+        else 
+        {
+            llt->baseAddr.push_back(baseAddr);
+        }
         if (ac.size() > 0) {llt->compMap[*memOpPos] = ac;}
     }
 }
