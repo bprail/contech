@@ -417,7 +417,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                 fprintf(stderr, "In loopTrack[%d] size %d:\n", npe->contech_id, lv.size());
                                 fprintf(stderr, "%d.%d of loop %d.%d with %d in %d\n", id, i, loopId, loopMemOpId, clt->clb.step, clt->clb.stepBlock);
                                 fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
-                                fprintf(stderr, "%p[%d * %d] + %d -> %p\n", clt->baseAddr[loopMemOpId], 
+                                fprintf(stderr, "%p[%d * %ld] + %d -> %p\n", clt->baseAddr[loopMemOpId], 
                                                                             bb_info_table[id].mem_op_info[i].loopIVSize, 
                                                                             clt->clb.startValue, 
                                                                             offset, 
