@@ -36,9 +36,9 @@ public:
     {
 
       if(n1.first>n2.first)
-      return true;
+        return true;
       else
-      return false;
+        return false;
 
     }
     
@@ -46,9 +46,9 @@ public:
     {
 
       if(n1.first>n2.first)
-      return true;
+        return true;
       else
-      return false;
+        return false;
 
     }
 };
