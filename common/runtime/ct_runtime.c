@@ -958,6 +958,42 @@ void __ctStoreMPIWait(void* req, ct_tsc_t start_t)
     __ctThreadLocalBuffer->pos = p + sizeof(ct_addr_t) + sizeof(unsigned int) + sizeof(ct_tsc_t)*2;
 }
 
+void __ctStoreMPIAllOne(bool isToAll, int count, int datatype, int comm_rank, void* buf, ct_tsc_t start_t)
+{
+    /*
+    int MPIAPI MPI_Bcast(
+  _Inout_  void        *buffer,
+  _In_    int          count,
+  _In_    MPI_Datatype datatype,
+  _In_    int          root,
+  _In_    MPI_Comm     comm
+);
+
+int MPIAPI MPI_Reduce(
+  _In_      void         *sendbuf,
+  _Out_opt_ void         *recvbuf,
+            int          count,
+            MPI_Datatype datatype,
+            MPI_Op       op,
+            int          root,
+            MPI_Comm     comm
+);
+
+    */
+    unsigned int p = __ctThreadLocalBuffer->pos;
+    ct_tsc_t t = rdtsc();
+    
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_mpi_allone;
+    *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = isToAll;
+    *((int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(char)*1]) = comm_rank;
+    *((ct_addr_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*1]) = (ct_addr_t) buf;
+    *((size_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*1 + sizeof(ct_addr_t)]) = count * __ctGetSizeofMPIDatatype(datatype);
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*1 + sizeof(ct_addr_t) + sizeof(size_t)]) = start_t;
+    *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)*2 + sizeof(char)*1 + sizeof(ct_addr_t) + sizeof(size_t) + sizeof(ct_tsc_t)]) = t;
+    
+    __ctThreadLocalBuffer->pos += sizeof(unsigned int)*3 + sizeof(char)*2 + sizeof(ct_addr_t)*1 + sizeof(size_t) + sizeof(ct_tsc_t)*2;
+}
+
 // Each thread maintains a map of pthread_t to ctid
 // Insert this pair into the map
 //   Currently the map is a linked list, as # of threads created by 1 thread stays low (<64)
