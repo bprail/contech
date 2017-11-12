@@ -106,6 +106,16 @@ namespace contech
         ct_addr_t req_ptr; // Used when the request is non-blocking
     } ct_mpi_transfer, *pct_mpi_transfer;
 
+    typedef struct _ct_mpi_allone
+    {
+        bool isToAll;   // Broadcast is to all (true), Reduce is from all (false)
+        int one_comm_rank;
+        ct_addr_t buf_ptr;
+        size_t buf_size;
+        ct_tsc_t start_time;
+        ct_tsc_t end_time;
+    } ct_mpi_allone, *pct_mpi_allone;
+    
     typedef struct _ct_mpi_wait
     {
         ct_addr_t req_ptr;
@@ -170,6 +180,7 @@ namespace contech
             ct_delay            dly;
             ct_rank             rank;
             ct_mpi_transfer     mpixf;
+            ct_mpi_allone       mpiao;
             ct_mpi_wait         mpiw;
             ct_roi_event        roi;
             ct_gv_info          gvi;

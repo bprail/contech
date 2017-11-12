@@ -802,6 +802,27 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         }
         break;
         
+        case (ct_event_mpi_allone):
+        {
+            const size_t mpi_size = sizeof(npe->mpiao.isToAll) +
+                                    sizeof(npe->mpiao.one_comm_rank) +
+                                    sizeof(npe->mpiao.buf_ptr) +
+                                    sizeof(npe->mpiao.buf_size) +
+                                    sizeof(npe->mpiao.start_time) +
+                                    sizeof(npe->mpiao.end_time);
+            uint8_t buf[mpi_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), mpi_size, fptr);
+            bytesConsume = unpack(buf, "", &npe->mpiao.isToAll,
+                                           &npe->mpiao.one_comm_rank,
+                                           &npe->mpiao.buf_ptr,
+                                           &npe->mpiao.buf_size,
+                                           &npe->mpiao.start_time,
+                                           &npe->mpiao.end_time);
+            assert(bytesConsume == mpi_size);
+        }
+        break;
+        
         case (ct_event_mpi_wait):
         {
             fread_check(&npe->mpiw.req_ptr, sizeof(ct_addr_t), 1, fptr);
