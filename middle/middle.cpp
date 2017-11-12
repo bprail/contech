@@ -85,6 +85,14 @@ reset_middle:
     map <int, map <int, map <int, Task*> > > mpiRecvQ;
     map <int, map <ct_addr_t, mpi_recv_req> > mpiReq;
     
+    struct mpi_bcast {
+        int arrival_count;
+        Task* root_sync, *root_bb;
+        vector<Task*> dst_sync;
+    } ;
+    
+    map <int, map <size_t, mpi_bcast*> > mpiBCast;
+    
     // Context 0 is special, since it is uncreated
     if (totalRanks > 1)
     {
@@ -217,6 +225,10 @@ reset_middle:
             case ct_event_mpi_transfer:
                 startTime = event->mpixf.start_time;
                 endTime = event->mpixf.end_time;
+                break;
+            case ct_event_mpi_allone:
+                startTime = event->mpiao.start_time;
+                endTime = event->mpiao.end_time;
                 break;
             default:
                 hasTime = false;
@@ -807,8 +819,8 @@ reset_middle:
                     // scratch
                     ct_memory_op srcA, dstA;
                     srcA.data = 0;
-                    srcA.addr = event->bm.src_addr;
-                    srcA.rank = currentRank;
+                    srcA.addr = event->bm.src_addr; // TODO: fix this addr
+                    srcA.rank = event->mpixf.comm_rank;
                     dstA.data = 0;
                     dstA.addr = event->bm.dst_addr;
                     dstA.rank = currentRank;
@@ -816,7 +828,77 @@ reset_middle:
                 }
             }
         }
-        
+        else if (event->event_type == ct_event_mpi_allone)
+        {
+            if (event->mpiao.isToAll == true)
+            {
+                auto bcast = mpiBCast[event->mpiao.one_comm_rank].find(event->mpiao.buf_size);
+                mpi_bcast* mbc = NULL;
+                if (bcast == mpiBCast[event->mpiao.one_comm_rank].end())
+                {
+                    mbc = new mpi_bcast;
+                    mbc->arrival_count = 1;
+                    mbc->root_sync = NULL;
+                    mbc->dst_sync.clear();
+                    mbc->dst_sync.resize(totalRanks);
+                    mpiBCast[event->mpiao.one_comm_rank][event->mpiao.buf_size] = mbc;
+                }
+                else
+                {
+                    mbc = bcast->second;
+                }
+                
+                // If the current rank is the comm rank, then this is the broadcaster.
+                if (event->mpiao.one_comm_rank == currentRank)
+                {
+                    activeContech.createContinuation(task_type_sync, startTime, endTime);
+                    activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
+                    bcast->second->root_sync = activeContech.activeTask();
+                }
+                else
+                {
+                    Task* current = activeContech.activeTask();
+                    activeContech.createContinuation(task_type_sync, startTime, endTime);
+                    activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
+                    bcast->second->dst_sync.push_back(activeContech.activeTask());
+                    backgroundQueueTask(current);
+                }
+                mbc->arrival_count++;
+                
+                if (mbc->arrival_count == totalRanks)
+                {
+                    Task* root_sync = mbc->root_sync;
+                    Task* root_bb = mbc->root_bb;
+                    
+                    for (auto it = mbc->dst_sync.begin(), et = mbc->dst_sync.end(); it != et; ++it)
+                    {
+                        Task* dst_sync = *it;
+                        root_sync->addSuccessor(dst_sync->getTaskId());
+                        dst_sync->addPredecessor(root_sync->getTaskId());
+                        
+                        ct_memory_op srcA, dstA;
+                        srcA.data = 0;
+                        srcA.addr = event->mpiao.buf_ptr;
+                        srcA.rank = event->mpiao.one_comm_rank;
+                        dstA.data = 0;
+                        dstA.addr = event->mpiao.buf_ptr;
+                        dstA.rank = currentRank;
+                        root_bb->recordMemCpyAction(event->mpiao.buf_size, dstA.data, srcA.data);
+                        backgroundQueueTask(*it);
+                    }
+                    
+                    backgroundQueueTask(root_bb);
+                    backgroundQueueTask(root_sync);
+                    
+                    mpiBCast[event->mpiao.one_comm_rank].erase(bcast);
+                    delete mbc;
+                }
+            }
+            else
+            {
+                // MPI_Reduce
+            }
+        }
         else if (event->event_type == ct_event_mpi_wait)
         {
             struct mpi_recv_req mrr;
