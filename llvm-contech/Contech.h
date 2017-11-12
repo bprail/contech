@@ -1014,6 +1014,7 @@ namespace llvm {
             {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
                 insertMPITransfer(true, true, nGetTick, ci, cct, ctPass);
             }
             break;
@@ -1021,6 +1022,7 @@ namespace llvm {
             {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
                 insertMPITransfer(false, true, nGetTick, ci, cct, ctPass);
             }
             break;
@@ -1028,6 +1030,7 @@ namespace llvm {
             {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
                 insertMPITransfer(true, false, nGetTick, ci, cct, ctPass);
             }
             break;
@@ -1035,7 +1038,34 @@ namespace llvm {
             {
                 debugLog("getCurrentTickFunction @" << __LINE__);
                 CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
                 insertMPITransfer(false, false, nGetTick, ci, cct, ctPass);
+            }
+            break;
+            case(MPI_BROADCAST):
+            {
+                Instruction* initialPt = NULL;
+                debugLog("getCurrentTickFunction @" << __LINE__);
+                CallInst* nGetTick = CallInst::Create(cct->getCurrentTickFunction, "tick", ci);
+                MarkInstAsContechInst(nGetTick);
+                Constant* cTrue = ConstantInt::get(cct->int8Ty, true);
+                
+                // (bool isToAll, int count, int datatype, int comm_rank, void* buf, ct_tsc_t start_t)
+                Value* argsMPIAO[] = {cTrue, ci->getOperand(1), ci->getOperand(2), ci->getOperand(3), ci->getOperand(0), nGetTick};
+                
+                if (isa<CallInst>(ci))
+                {
+                    ++I;
+                    initialPt = dyn_cast<Instruction>(I);
+                }
+                else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
+                {
+                    initialPt = ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime();
+                }
+                
+                debugLog("storeMPIAllOneFunction @" << __LINE__);
+                CallInst* storeAll = CallInst::Create(cct->storeMPIAllOneFunction, ArrayRef<Value*>(argsMPIAO, 6), "", initialPt);
+                MarkInstAsContechInst(storeAll);
             }
             break;
             case(MPI_TRANSFER_WAIT):

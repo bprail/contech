@@ -67,7 +67,7 @@ uint64_t tailCount = 0;
 
 namespace llvm {
 #define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 60
+#define FUNCTIONS_INSTRUMENT_SIZE 61
 // NB Order matters in this array.  Put the most specific function names first, then
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
@@ -127,6 +127,7 @@ namespace llvm {
                                            {STORE_AND_LEN("mpi_isend_"), MPI_SEND_NONBLOCKING},
                                            {STORE_AND_LEN("MPI_Irecv"), MPI_RECV_NONBLOCKING},
                                            {STORE_AND_LEN("mpi_irecv_"), MPI_RECV_NONBLOCKING},
+                                           {STORE_AND_LEN("MPI_Bcast"), MPI_BROADCAST},
                                            {STORE_AND_LEN("MPI_Barrier"), BARRIER_WAIT},
                                            {STORE_AND_LEN("mpi_barrier_"), BARRIER_WAIT},
                                            {STORE_AND_LEN("MPI_Wait"), MPI_TRANSFER_WAIT},
@@ -173,6 +174,7 @@ bool Contech::doInitialization(Module &M)
     FunctionType* funVoidVoidPtrI64I32I32Ty;
     FunctionType* funVoidI32I64I64Ty;
     FunctionType* funVoidI32I32I32I64I16VoidPtrTy;
+    FunctionType* funVoidI8I32I32I32VoidPtrI64Ty;
 
     // Get the different integer types required by Contech
     LLVMContext &ctx = M.getContext();
@@ -270,6 +272,10 @@ bool Contech::doInitialization(Module &M)
     funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
     cct.storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
 
+    Type* argsSMAO[] = {cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty};
+    funVoidI8I32I32I32VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMAO, 6), false);
+    cct.storeMPIAllOneFunction = M.getOrInsertFunction("__ctStoreMPIAllOne", funVoidI8I32I32I32VoidPtrI64Ty);
+    
     Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
     funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
     cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);

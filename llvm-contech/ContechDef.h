@@ -136,6 +136,7 @@ namespace llvm {
         MPI_RECV_BLOCKING,
         MPI_SEND_NONBLOCKING,
         MPI_RECV_NONBLOCKING,
+        MPI_BROADCAST,
         MPI_TRANSFER_WAIT,
         CILK_FRAME_CREATE,
         CILK_FRAME_DESTROY,
@@ -184,6 +185,7 @@ namespace llvm {
         Constant* storeMemWriteMarkFunction;
 
         Constant* storeMPITransferFunction;
+        Constant* storeMPIAllOneFunction;
         Constant* storeMPIWaitFunction;
 
         Constant* ompThreadCreateFunction;
