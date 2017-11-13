@@ -15,7 +15,8 @@ typedef struct _ct_memory_op {
     struct {
         // NB. Addr must come first so that the storing to data32[0] is completely stored into
         //   the address field.
-        uint64_t addr : 50;
+        uint64_t addr : 48;
+        uint64_t resrv : 2;
         uint64_t rank : 8;
         uint64_t is_write : 1;
         uint64_t pow_size : 3; // the size of the op is 2^pow_size
