@@ -67,6 +67,8 @@ reset_middle:
     
     pthread_mutex_init(&taskQueueLock, NULL);
     pthread_cond_init(&taskQueueCond, NULL);
+    pthread_mutex_init(&taskMemLock, NULL);
+    pthread_cond_init(&taskMemCond, NULL);
     taskQueue = new deque<Task*>;
     int r = pthread_create(&backgroundT, NULL, backgroundTaskWriter, &out);
     assert(r == 0);
@@ -87,8 +89,10 @@ reset_middle:
     
     struct mpi_bcast {
         int arrival_count;
+        ct_addr_t buf_ptr;
         Task* root_sync, *root_bb;
         vector<Task*> dst_sync;
+        vector<ct_memory_op> dst_buf;
     } ;
     
     map <int, map <size_t, mpi_bcast*> > mpiBCast;
@@ -807,24 +811,22 @@ reset_middle:
                         rem = context[recvT->getContextId()].removeTask(recvT);
                         assert(rem == true);
                         backgroundQueueTask(recvT);
+                        
+                        // scratch
+                        ct_memory_op srcA, dstA;
+                        srcA.data = 0;
+                        srcA.addr = event->bm.src_addr; // TODO: fix this addr
+                        srcA.rank = event->mpixf.comm_rank;
+                        dstA.data = 0;
+                        dstA.addr = event->mpixf.buf_ptr;
+                        dstA.rank = currentRank;
+                        activeContech.activeTask()->recordMemCpyAction(event->bm.size, dstA.data, srcA.data);
                     }
                     else
                     {
                         mpiRecvQ[currentRank][event->mpixf.comm_rank][event->mpixf.tag] = activeContech.activeTask();
                         activeContech.createBasicBlockContinuation();
                     }
-                    
-                    
-                    
-                    // scratch
-                    ct_memory_op srcA, dstA;
-                    srcA.data = 0;
-                    srcA.addr = event->bm.src_addr; // TODO: fix this addr
-                    srcA.rank = event->mpixf.comm_rank;
-                    dstA.data = 0;
-                    dstA.addr = event->bm.dst_addr;
-                    dstA.rank = currentRank;
-                    activeContech.activeTask()->recordMemCpyAction(event->bm.size, dstA.data, srcA.data);
                 }
             }
         }
@@ -854,13 +856,22 @@ reset_middle:
                     activeContech.createContinuation(task_type_sync, startTime, endTime);
                     activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
                     bcast->second->root_sync = activeContech.activeTask();
+                    bcast->second->buf_ptr = event->mpiao.buf_ptr;
                 }
                 else
                 {
+                    ct_memory_op dstA;
+                    
                     Task* current = activeContech.activeTask();
                     activeContech.createContinuation(task_type_sync, startTime, endTime);
                     activeContech.activeTask()->setSyncType(sync_type_mpi_transfer);
                     bcast->second->dst_sync.push_back(activeContech.activeTask());
+                    
+                    dstA.data = 0;
+                    dstA.addr = event->mpiao.buf_ptr;
+                    dstA.rank = currentRank;
+                    
+                    bcast->second->dst_buf.push_back(dstA);
                     backgroundQueueTask(current);
                 }
                 mbc->arrival_count++;
@@ -869,21 +880,19 @@ reset_middle:
                 {
                     Task* root_sync = mbc->root_sync;
                     Task* root_bb = mbc->root_bb;
+                    int i = 0;
                     
-                    for (auto it = mbc->dst_sync.begin(), et = mbc->dst_sync.end(); it != et; ++it)
+                    for (auto it = mbc->dst_sync.begin(), et = mbc->dst_sync.end(); it != et; ++it, i++)
                     {
                         Task* dst_sync = *it;
                         root_sync->addSuccessor(dst_sync->getTaskId());
                         dst_sync->addPredecessor(root_sync->getTaskId());
                         
-                        ct_memory_op srcA, dstA;
+                        ct_memory_op srcA;
                         srcA.data = 0;
-                        srcA.addr = event->mpiao.buf_ptr;
+                        srcA.addr = mbc->buf_ptr;
                         srcA.rank = event->mpiao.one_comm_rank;
-                        dstA.data = 0;
-                        dstA.addr = event->mpiao.buf_ptr;
-                        dstA.rank = currentRank;
-                        root_bb->recordMemCpyAction(event->mpiao.buf_size, dstA.data, srcA.data);
+                        root_bb->recordMemCpyAction(event->mpiao.buf_size, mbc->dst_buf[i].data, srcA.data);
                         backgroundQueueTask(*it);
                     }
                     
