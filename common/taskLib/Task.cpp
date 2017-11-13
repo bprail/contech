@@ -171,11 +171,13 @@ void Task::recordFreeAction(uint64 addr)
 
 void Task::recordMemCpyAction(uint64 size, uint64 dst, uint64 src)
 {
+    // We assign the whole value to data, as it might include the rank bits
     MemoryAction mem;
+    mem.data = dst;
     mem.type = action_type_memcpy;
-    mem.addr = dst;
     this->a.push_back(mem);
-    mem.addr = src;
+    mem.data = src;
+    mem.type = action_type_memcpy;
     this->a.push_back(mem);
     mem.type = action_type_size;
     mem.addr = size;
