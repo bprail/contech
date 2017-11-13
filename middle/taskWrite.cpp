@@ -9,12 +9,17 @@ using namespace std;
 using namespace contech;
 
 bool noMoreTasks = false;
-pthread_mutex_t taskQueueLock;
-pthread_cond_t taskQueueCond;
+pthread_mutex_t taskQueueLock, taskMemLock;
+pthread_cond_t taskQueueCond, taskMemCond;
 deque<Task*>* taskQueue;
 
 TaskId roiStart = 0;
 TaskId roiEnd = 0;
+uint64 taskCount = 0, taskWriteCount = 0;
+
+unsigned long long baseFree = 0;
+
+unsigned long long getCurrentFreeMemory();
 
 void setROIStart(TaskId t)
 {
@@ -52,6 +57,15 @@ void backgroundQueueTask(Task* t)
     {
         totalCycles += tcyc;
     }
+    
+    pthread_mutex_lock(&taskMemLock);
+    while (baseFree > 0 &&
+        (taskCount - taskWriteCount) > 1 &&
+        (baseFree / getCurrentFreeMemory()) > 10)
+    {
+        pthread_cond_wait(&taskMemCond, &taskMemLock);
+    }
+    pthread_mutex_unlock(&taskMemLock);
 }
 
 //
@@ -78,7 +92,14 @@ void displayContextTasks(map<ContextId, Context> &context, int id)
     }
     if (last != NULL)
     {
-        cout << endl << last->toString() << endl;
+        if (last->getType() == task_type_basic_blocks)
+        {
+            
+        }
+        else
+        {
+            cout << endl << last->toString() << endl;
+        }
         
         if (last->getType() == task_type_join)
         {
@@ -344,12 +365,13 @@ void* backgroundTaskWriter(void* v)
 
     deque<Task*> writeTaskQueue;
     map<TaskId, TaskWrapper> writeTaskMap;
-    uint64 taskCount = 0, taskWriteCount = 0;
     
     uint64 bytesWritten = ftell(out);
     long pos;
     bool firstTime = true;
     unsigned int sec = 0, msec = 0, taskLastWriteCount = 0;
+    
+    baseFree = getCurrentFreeMemory();
     
     //
     // noMoreTasks is a flag from the foreground thread
@@ -438,11 +460,16 @@ void* backgroundTaskWriter(void* v)
             }
             
             bytesWritten += Task::writeContechTask(*t, out);
+            pthread_mutex_lock(&taskMemLock);
             taskWriteCount += 1;
-                
+            
             // Delete the task
             delete t;
+            pthread_cond_signal(&taskMemCond);
+            pthread_mutex_unlock(&taskMemLock);
         }
+        
+        
         taskLastWriteCount = taskWriteCount;
     }
     

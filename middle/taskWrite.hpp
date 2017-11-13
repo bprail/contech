@@ -7,8 +7,8 @@
 #include <deque>
 
 extern bool noMoreTasks;
-extern pthread_mutex_t taskQueueLock;
-extern pthread_cond_t taskQueueCond;
+extern pthread_mutex_t taskQueueLock, taskMemLock;
+extern pthread_cond_t taskQueueCond, taskMemCond;
 extern std::deque<contech::Task*>* taskQueue;
 
 void updateContextTaskList(contech::Context &c);
