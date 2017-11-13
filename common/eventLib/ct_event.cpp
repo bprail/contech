@@ -570,6 +570,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             if (len > 0)
             {
                 bb_info_table[id].mem_op_info = (pinternal_memory_op_info) malloc(sizeof(internal_memory_op_info) * len);
+                assert(bb_info_table[id].mem_op_info != NULL);
 
                 for (int i = 0; i < len; i++)
                 {
