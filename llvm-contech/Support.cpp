@@ -595,59 +595,11 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
 }
 
 //
-// convertValueToConstant
+// convertValueToConstantEx
 //
 //   Given a value v, determine if it is a function of a single base value and other
 //     constants.  If so, then return the base value.
 //
-Value* Contech::convertValueToConstant(Value* v, int* offset, Value* stopInst)
-{
-    bool zeroOrOneConstant = true;
-    
-    do {
-        Instruction* inst = dyn_cast<Instruction>(v);
-        if (inst == NULL) break;
-        if (v == stopInst) break;
-        
-        switch(inst->getOpcode())
-        {
-            case Instruction::Add:
-            {
-                Value* vOp[2];
-                zeroOrOneConstant = false;
-                for (int i = 0; i < 2; i++)
-                {
-                    vOp[i] = inst->getOperand(i);
-                    if (ConstantInt* ci = dyn_cast<ConstantInt>(vOp[i]))
-                    {
-                        *offset += ci->getZExtValue();
-                        zeroOrOneConstant = true;
-                    }
-                    else
-                    {
-                        v = vOp[i];
-                    }
-                }
-                
-                if (zeroOrOneConstant == false)
-                {
-                    v = inst;
-                }
-            }
-            break;
-            default:
-            {
-                zeroOrOneConstant = false;
-            }
-            break;
-        }
-        
-    } while (zeroOrOneConstant);
-    
-    return v;
-}
-
-
 Value* Contech::convertValueToConstantEx(Value* v, int64_t* offset, int64_t* multFactor, Value* stopInst)
 {
     bool zeroOrOneConstant = true;
@@ -755,29 +707,12 @@ Value* Contech::convertValueToConstantEx(Value* v, int64_t* offset, int64_t* mul
 }
 
 //
-//  updateOffset
+//  updateOffsetEx
 //
 // GetElementPtr supports computing a constant offset; however, it requires
 //   all fields to be constant.  The code is reproduced here, in order to compute
 //   a partial constant offset along with the delta from the other GEP inst.
 //
-int Contech::updateOffset(gep_type_iterator gepit, int val)
-{
-    int offset = 0;
-    if (StructType *STy = dyn_cast<StructType>(*gepit))
-    {
-        unsigned ElementIdx = val;
-        const StructLayout *SL = currentDataLayout->getStructLayout(STy);
-        offset = SL->getElementOffset(ElementIdx);
-    }
-    else
-    {
-        offset = val * currentDataLayout->getTypeAllocSize(gepit.getIndexedType());
-    }
-    
-    return offset;
-}
-
 int64_t Contech::updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t* multFactor)
 {
     int64_t offset = 0;
@@ -814,6 +749,15 @@ Value* Contech::castWalk(Value* v)
     return v;
 }
 
+//
+// findSimilarMemoryInstEx
+//
+//   A key performance feature, this function will determine whether a given memory operation
+//     is statically offset from another memory operation within that same basic block.  If so,
+//     then the later operation's address can be omitted and computed after execution.
+//   If such a pair is found, then this function will compute the static offset between the two
+//     memory accesses.
+//
 Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset)
 {
     //unordered_multiset<pair<Value*,int64_t> > addrComponents;
@@ -828,10 +772,6 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
     
     while (gepAddr != NULL)
     {
-        if (gepAddr != NULL)
-        {
-            //errs() << "Start: " << *gepAddr << "\n";
-        }
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
@@ -842,26 +782,15 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
                 baseOffset += updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
-                // errs() << "BO EX " << baseOffset << "\n";
                 continue;
             }
             else
             {
                 gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
                 baseOffset += updateOffsetEx(itG, tOffset, &multFactor);
-                //errs() << "EX " << *gepI << " " << tOffset << "\n";
             }
 
-            // TODO: if the value is a constant global, then it matters
-            //addrComponents.insert(make_pair(gepI, multFactor));
-            /*if (addrComponents.find(gepI) != addrComponents.end())
-            {
-                addrComponents[gepI] += multFactor;
-            }
-            else*/
-            {
-                addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
-            }
+            addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
         }
         addr = gepAddr->getPointerOperand();
         addr = castWalk(addr);
@@ -887,42 +816,6 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
         if (addrT == NULL) continue;
         addrT = castWalk(addrT);
         gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
-        /*if (gepAddrT != NULL && gepAddrT == gepAddr)
-        {
-            *offset = 0;
-            return &*it;
-        }*/
-        
-        /*if (gepAddrT == NULL)
-        {
-            while (CastInst* ci = dyn_cast<CastInst>(addrT))
-            {
-                if (addrT == addr) break;
-                if (ci->isLosslessCast() == true)
-                {
-                    addrT = ci->getOperand(0);
-                }
-                else
-                {
-                    break;
-                }
-            }
-            
-            // 
-            if (addrT == addr && addrComponents.size() == 0)
-            {
-                *offset = baseOffset;
-                return &*it;
-            }
-            
-            // If this instruction still does not use a GEPI and does not match
-            //   via casting, then continue.
-            if ((gepAddrT = dyn_cast<GetElementPtrInst>(addrT)) == NULL) continue;
-        }*/
-        
-        
-        // No match, different addresses
-        //if (addrT != addr) continue;
         
         //unordered_multiset<pair<Value*,int64_t> > addrComponentsT = addrComponents;
         multimap<Value*, int64_t> addrComponentsT = addrComponents;
@@ -948,13 +841,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
                     int64_t sOffset = 0;
                     gepI = convertValueToConstantEx(gepI, &sOffset, &multFactor, NULL);
                     tOffset += updateOffsetEx(itG, sOffset, &multFactor);
-                    /*auto act = addrComponentsT.find(make_pair(gepI, multFactor));
-                    if (act == addrComponentsT.end())
-                    {
-                        did_remove = false;
-                        break;
-                    }
-                    addrComponentsT.erase(act);*/
+                    
                     auto rg = addrComponentsT.equal_range(gepI);
                     if (rg.first == addrComponentsT.end())
                     {
@@ -965,21 +852,14 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
                     {
                         if (it->second == multFactor)
                         {
-                            // errs() << "TR " << *gepAddrT << "\n";
-                            // errs() << "RM " << *gepI << " at MF " << multFactor << "with of " << (baseOffset - tOffset) << " " << sOffset << "\n";
                             addrComponentsT.erase(it);
                             break;
                         }
                         else
                         {
-                            // errs() << "MF != " << it->second << "\t" << multFactor <<"\n";
                             unmatchedValue = true;
                             goto finish_gep_walk;
                         }
-                        /*else
-                        {
-                            addrComponentsT[gepI] = it->second - multFactor;
-                        }*/
                     }
                 }
             }
@@ -997,202 +877,6 @@ finish_gep_walk:
         return &*it;
     }
     
-    return NULL;
-}
-
-//
-// findSimilarMemoryInst
-//
-//   A key performance feature, this function will determine whether a given memory operation
-//     is statically offset from another memory operation within that same basic block.  If so,
-//     then the later operation's address can be omitted and computed after execution.
-//   If such a pair is found, then this function will compute the static offset between the two
-//     memory accesses.
-//
-Value* Contech::findSimilarMemoryInst(Instruction* memI, Value* addr, int* offset)
-{
-    vector<Value*> addrComponents;
-    Instruction* addrI = dyn_cast<Instruction>(addr);
-    int tOffset = 0, baseOffset = 0;
-
-    *offset = 0;
-
-    //return NULL; // memdup toggle
-
-    if (addrI == NULL)
-    {
-        // No instruction generates the address, it is probably a global value
-        for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-        {
-            // Stop iterating at self
-            if (memI == dyn_cast<Instruction>(&*it)) break;
-            if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-            {
-                Value* addrT = li->getPointerOperand();
-
-                if (addrT == addr) return li;
-            }
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-            {
-                Value* addrT = si->getPointerOperand();
-
-                if (addrT == addr) return si;
-            }
-        }
-
-        return NULL;
-    }
-    else if (CastInst* bci = dyn_cast<CastInst>(addr))
-    {
-        for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-        {
-            if (memI == dyn_cast<Instruction>(&*it)) break;
-            if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-            {
-                Value* addrT = li->getPointerOperand();
-
-                if (addrT == addr) return li;
-            }
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-            {
-                Value* addrT = si->getPointerOperand();
-
-                if (addrT == addr) return si;
-            }
-        }
-
-        return NULL;
-    }
-
-    // Given addr, find the values that it depends on
-    GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
-    if (gepAddr == NULL)
-    {
-        //errs() << *addr << "\n";
-        //errs() << "Mem instruction did not come from GEP\n";
-        return NULL;
-    }
-
-    for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
-    {
-        Value* gepI = itG.getOperand();
-
-        // If the index of GEP is a Constant, then it can vary between mem ops
-        if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
-        {
-            baseOffset += updateOffset(itG, aConst->getZExtValue());
-        }
-        else
-        {
-            // Reset to 0 if there is a variable offset
-            baseOffset = 0;
-            gepI = convertValueToConstant(gepI, &baseOffset, NULL);
-            baseOffset += updateOffset(itG, baseOffset);
-        }
-
-        // TODO: if the value is a constant global, then it matters
-        addrComponents.push_back(gepI);
-    }
-
-    for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-    {
-        GetElementPtrInst* gepAddrT = NULL;
-        // If the search has reached the current memory operation, then no match exists
-        if (memI == dyn_cast<Instruction>(&*it)) break;
-
-        if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-        {
-            Value* addrT = li->getPointerOperand();
-
-            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
-        }
-        else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-        {
-            Value* addrT = si->getPointerOperand();
-
-            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
-        }
-
-        if (gepAddrT == NULL) continue;
-        if (gepAddrT == gepAddr)
-        {
-            *offset = 0;
-            return &*it;
-        }
-
-        unsigned int i = 0;
-        bool constMode = false, finConst = false, isMatch = true;
-        if (gepAddrT->getPointerOperand() != gepAddr->getPointerOperand()) continue;
-        tOffset = 0;
-        for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; i++, ++itG)
-        {
-            Value* gepI = itG.getOperand();
-
-            // If the index of GEP is a Constant, then it can vary between mem ops
-            if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
-            {
-                if (i == addrComponents.size())
-                {
-                    finConst = true;
-                    // Last field was not a constant, but that can be alright
-                    if (constMode == false)
-                    {
-                        
-                    }
-                }
-                ConstantInt* aConst = NULL;
-                if (finConst == true ||
-                    (aConst = dyn_cast<ConstantInt>(addrComponents[i])))
-                {
-                    if (!finConst &&
-                        aConst->getSExtValue() != gConst->getSExtValue()) constMode = true;
-                    isMatch = true;
-                    
-                    tOffset += updateOffset(itG, gConst->getZExtValue());
-                    continue;
-                }
-                else
-                {
-                    isMatch = false;
-                    break;
-                }
-            }
-            else if (constMode == true)
-            {
-                // Only can handle cases where a varying constant is at the end of the calculation
-                //   or has non-varying constants around it.
-                isMatch = false;
-                break;
-            }
-
-            // temp offset remains 0 until a final sequence of constant int offsets
-            //   At this point, the current component is not constant, so it must match.
-            tOffset = 0;
-            if (i >= addrComponents.size())
-            {
-                isMatch = false;
-                break;
-            }
-            else if (gepI != addrComponents[i])
-            {
-                gepI = convertValueToConstant(gepI, &tOffset, NULL);
-                if (gepI != addrComponents[i])
-                {
-                    isMatch = false;
-                    break;
-                }
-            }
-        }
-
-        if (isMatch ||
-            (i == addrComponents.size() && (gepAddrT->getNumIndices() != gepAddr->getNumIndices())))
-        {
-            //errs() << *gepAddrT << " ?=? " << *gepAddr << "\t" << baseOffset << "\t" << tOffset << "\n";
-            *offset = baseOffset - tOffset;
-            return &*it;
-        }
-    }
-
     return NULL;
 }
 

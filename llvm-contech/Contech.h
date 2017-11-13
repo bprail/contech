@@ -175,7 +175,6 @@ namespace llvm {
                                                  bool &hasUninstCall,
                                                  bool &containQueueBuf,
                                                  bool hasInstAllMemOps,
-                                                 bool ContechMinimal,
                                                  BasicBlock::iterator I,
                                                  Instruction* &iPt,
                                                  llvm_basic_block* bi,

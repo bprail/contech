@@ -59,10 +59,6 @@ map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 // ContechState is required to reconstruct the basic block events from the event trace
 cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current Contech state"), cl::value_desc("filename"));
 
-// MarkFrontEnd and Minimal cover variations of the instrumentation that are used in special cases
-cl::opt<bool> ContechMarkFrontend("ContechMarkFE", cl::desc("Generate a minimal marked output"));
-cl::opt<bool> ContechMinimal("ContechMinimal", cl::desc("Generate a minimally instrumented output"));
-
 uint64_t tailCount = 0;
 
 namespace llvm {
@@ -433,13 +429,9 @@ bool Contech::runOnModule(Module &M)
         //   and associated instrumentation
         if (__ctStrCmp(fmn, "main\0") == 0)
         {
-            // Only rename main if this is not the marker front end
-            if (ContechMarkFrontend == false)
-            {
-                // This invalidates F->getName(), ie possibly fmn is invalid
-                //F->setName(Twine("ct_orig_main"));
-                inMain = true;
-            }
+            // This invalidates F->getName(), ie possibly fmn is invalid
+            //F->setName(Twine("ct_orig_main"));
+            inMain = true;
         }
         // Add other functions that Contech should not instrument here
         // NB Main is checked above and is special cased
@@ -478,7 +470,8 @@ bool Contech::runOnModule(Module &M)
 
 
         // "Normalize" every basic block to have only one function call in it
-        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) {
+        for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) 
+        {
             BasicBlock &pB = *B;
             CallInst *ci;
             int status = 0;
@@ -562,7 +555,7 @@ bool Contech::runOnModule(Module &M)
         {
             BasicBlock &pB = *B;
             
-            internalRunOnBasicBlock(pB, M, bb_count, ContechMarkFrontend, fmn, 
+            internalRunOnBasicBlock(pB, M, bb_count, fmn, 
                                     costPerBlock, num_checks, origin_checks);
             bb_count++;
         }
@@ -730,8 +723,6 @@ bool Contech::runOnModule(Module &M)
         }
     }
 
-    if (ContechMarkFrontend == true) goto cleanup;
-
 cleanup:
     ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
     //contechStateFile->seekp(0, ios_base::beg);
@@ -749,7 +740,6 @@ cleanup:
     }
     //contechStateFile->seekp(0, ios_base::end);
 
-    if (ContechMarkFrontend == false && ContechMinimal == false)
     {
         int wcount = 0;
         unsigned char evTy = ct_event_basic_block_info;
@@ -855,14 +845,6 @@ int Contech::is_loop_computable(Instruction* memI, int* offset)
     if (elem == loopMemOps.end()) return -1;
     
     return elem->second;
-    /*for (int iter =0; iter < LoopMemoryOps.size(); iter++) 
-    {
-        if (LoopMemoryOps[iter]->memOp == memI && LoopMemoryOps[iter]->canElide)
-        {
-            return true;
-        }
-    }
-    return false; */
 }
 
 // returns size in bytes
@@ -971,12 +953,10 @@ bool Contech::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
     return false;
 }
 
-    
-
 //
 // For each basic block
 //
-bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const bool markOnly, const char* fnName, 
+bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const char* fnName, 
                                       map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check)
 {
     Instruction* iPt = B.getTerminator();
@@ -1088,45 +1068,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 memOpCount ++;
             }
         }
-        else if (ContechMinimal == true)
-        {
-            if (CallInst* ci = dyn_cast<CallInst>(&*I))
-            {
-                Function *f = ci->getCalledFunction();
-
-                // call is indirect
-                // TODO: add dynamic check on function called
-                if (f == NULL) { continue; }
-
-                int status;
-                const char* fmn = f->getName().data();
-                char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
-                const char* fn = fdn;
-                if (status != 0)
-                {
-                    fn = fmn;
-                }
-
-                CONTECH_FUNCTION_TYPE tID = classifyFunctionName(fn);
-                if (tID == EXIT || // We need to replace exit otherwise the trace is corrupt
-                    tID == SYNC_ACQUIRE ||
-                    tID == SYNC_RELEASE ||
-                    tID == BARRIER_WAIT ||
-                    tID == THREAD_CREATE ||
-                    tID == THREAD_JOIN ||
-                    tID == COND_WAIT ||
-                    tID == COND_SIGNAL)
-                {
-                    containKeyCall = true;
-                }
-
-                if (status == 0)
-                {
-                    free(fdn);
-                }
-            }
-
-        }
 
         // LLVM won't do insertAfter, so we have to get the instruction after the instruction
         // to insert before it
@@ -1135,11 +1076,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             aPhi = convertIterToInst(I);
             getNextI = false;
         }
-    }
-
-    if (ContechMinimal == true && containKeyCall == false)
-    {
-        return false;
     }
 
     llvm_basic_block* bi = new llvm_basic_block;
@@ -1153,7 +1089,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     // Large blocks cannot have their IDs elided.
     // TODO: permament value or different approach to checks
     //
-    if (memOpCount < 160) {
+    if (memOpCount < 160) 
+    {
         elideBasicBlockId = checkAndApplyElideId(&B, bbid, costOfBlock);
     }
 
@@ -1181,15 +1118,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     CallInst* sbbc = NULL;
     unsigned int memOpPos = 0;
 
-    if (markOnly == true)
-    {
-        llvm_bbid = ConstantInt::get(cct.int32Ty, bbid);
-        Value* argsBB[] = {llvm_bbid};
-        debugLog("storeBasicBlockMarkFunction @" << __LINE__);
-        sbb = CallInst::Create(cct.storeBasicBlockMarkFunction, ArrayRef<Value*>(argsBB, 1), "", aPhi);
-        MarkInstAsContechInst(sbb);
-    }
-    else
     {
         Instruction* bufV = CallInst::Create(cct.getBufFunction, "bufPos", aPhi);
         MarkInstAsContechInst(bufV);
@@ -1272,7 +1200,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
         // After all of the known memOps have been instrumented, close out the basic
         //   block event based on the number of memOps
-        if (hasInstAllMemOps == false && memOpPos == memOpCount && markOnly == false)
+        if (hasInstAllMemOps == false && memOpPos == memOpCount)
         {
             Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
             llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
@@ -1340,32 +1268,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                             "", iPt);
                 MarkInstAsContechInst(nStoreSync);
             }
-        }
-
-        // If this block is only being marked, then only memops are needed
-        if (markOnly == true)
-        {
-            // Don't bother maintaining a list of memory ops for the basic block
-            //   at this time
-            bi->len = 0;
-            if (LoadInst *li = dyn_cast<LoadInst>(&*I))
-            {
-                debugLog("storeMemReadMarkFunction @" << __LINE__);
-                CallInst::Create(cct.storeMemReadMarkFunction, "", li);
-            }
-            else if (StoreInst *si = dyn_cast<StoreInst>(&*I))
-            {
-                debugLog("storeMemWriteMarkFunction @" << __LINE__);
-                CallInst::Create(cct.storeMemWriteMarkFunction, "", si);
-            }
-            if (CallInst *ci = dyn_cast<CallInst>(&*I))
-            {
-                if (ci->doesNotReturn())
-                {
-                    iPt = ci;
-                }
-            }
-            continue;
         }
 
         // <result> = load [volatile] <ty>* <pointer>[, align <alignment>][, !nontemporal !<index>][, !invariant.load !<index>]
@@ -1575,7 +1477,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                  hasUninstCall,
                                                  containQueueBuf,
                                                  hasInstAllMemOps,
-                                                 ContechMinimal,
                                                  I,
                                                  iPt,
                                                  bi,
@@ -1591,7 +1492,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                  hasUninstCall,
                                                  containQueueBuf,
                                                  hasInstAllMemOps,
-                                                 ContechMinimal,
                                                  I,
                                                  iPt,
                                                  bi,
@@ -1645,73 +1545,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         }
         costOfBlock[bb_val] = lib;
     }
-    #if 0
-    //
-    // Being conservative, if another function was called, then
-    // the instrumentation needs to check that the buffer isn't full
-    //
-    // Being really conservative every block has a check, this also
-    //   requires disabling the dominator tree traversal in the runOnModule routine
-    //
-    //if (/*containCall == true && */containQueueBuf == false && markOnly == false)
-    else if ((B.getTerminator()->getNumSuccessors() != 1 && markOnly == false) ||
-             (&B == &(B.getParent()->getEntryBlock())))
-    {
-        // Since calls terminate basic blocks
-        //   These blocks would have only 1 successor
-        Value* argsCheck[] = {sbbc};
-        debugLog("checkBufferFunction @" << __LINE__);
-        
-        // calculate the original check counts
-        origin_check++;
-
-        hash<BasicBlock*> blockHash{};
-        int bb_val = blockHash(&B);
-        // the terminator
-        Instruction* last = &*B.end();
-        if (needCheckAtBlock.find(bb_val) == needCheckAtBlock.end()) {
-          // we do not actually need the check
-          // by the result of analysis
-          if ((&B != &(B.getParent()->getEntryBlock())) &&
-            (B.getTerminator()->getNumSuccessors() != 0) &&
-            loopExits.find(bb_val) == loopExits.end() &&
-            !isa<CallInst>(last)) {
-            // no need to check
-            // we always add checks on 
-            // (1) function entry and exit
-            // (2) loop exit
-          }
-          else {
-            Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
-            MarkInstAsContechInst(callChk);
-            num_checks++;
-          }
-        }
-        else 
-        {
-          // we need to add check according to the analysis result
-          needCheckAtBlock.erase(bb_val);
-          Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
-          MarkInstAsContechInst(callChk);
-          num_checks++;
-        }
-    }
-    else {
-        // straight line code
-        // need to see whether we need to add check 
-         Value* argsCheck[] = {sbbc};
-        hash<BasicBlock*> blockHash{};
-        int bb_val = blockHash(&B);
-
-        if (needCheckAtBlock.find(bb_val) != needCheckAtBlock.end()) {
-          // straight line code and need check according to analysis
-          Instruction* callChk = CallInst::Create(cct.checkBufferFunction, ArrayRef<Value*>(argsCheck, 1), "", iPt);
-          MarkInstAsContechInst(callChk);
-          num_checks++;
-        }
-
-    }
-    #endif
 
     // Finally record the information about this basic block
     //  into the CFG structure, so that targets can be matched up

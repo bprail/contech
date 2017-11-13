@@ -246,7 +246,7 @@ namespace llvm {
 
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
-        virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, bool markOnly, const char* fnName, 
+        virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);
         void addCheckAfterPhi(BasicBlock* B);
@@ -255,9 +255,7 @@ namespace llvm {
         bool attemptTailDuplicate(BasicBlock* bbTail);
         pllvm_mem_op insertMemOp(Instruction* li, Value* addr, bool isWrite, unsigned int memOpPos, 
                                  Value*, bool elide, Module&, std::map<llvm::Instruction*, int>&);
-        Value* convertValueToConstant(Value*, int*, Value*);
         Value* convertValueToConstantEx(Value*, int64_t*, int64_t*, Value*);
-        int updateOffset(gep_type_iterator gepit, int val);
         int64_t updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t*);
         unsigned int getSizeofType(Type*);
         unsigned int getSimpleLog(unsigned int);
@@ -273,7 +271,6 @@ namespace llvm {
         Value* findCilkStructInBlock(BasicBlock& B, bool insert);
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
 
-        Value* findSimilarMemoryInst(Instruction*, Value*, int*);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
