@@ -630,21 +630,6 @@ void __ctCheckBufferSizeDebug(unsigned int bbid)
 #endif
 }
 
-void __ctStoreBasicBlockMark(unsigned int bbid)
-{
-
-}
-
-void __ctStoreMemReadMark()
-{
-
-}
-
-void __ctStoreMemWriteMark()
-{
-
-}
-
 pct_serial_buffer __ctGetBuffer()
 {
     return __ctThreadLocalBuffer;
