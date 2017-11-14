@@ -242,6 +242,10 @@ namespace llvm {
 
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
+        
+        Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
+        Type* getTypeFromStr(const char ty);
+        
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
         virtual bool internalSplitOnCall(BasicBlock &B, CallInst**, int*);

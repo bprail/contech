@@ -136,6 +136,49 @@ namespace llvm {
     ModulePass* createContechPass() { return new Contech(); }
 }
 
+Type* Contech::getTypeFromStr(const char ty)
+{
+    switch(ty)
+    {
+        case 'v': return cct.voidTy;
+        case 'c': return cct.int8Ty;
+        case 's': return cct.int16Ty;
+        case 'i': return cct.int32Ty;
+        case 'l': return cct.int64Ty;
+        case 't': return cct.pthreadTy;
+        case 'p': return cct.voidPtrTy;
+        default:
+            return NULL;
+    }
+}
+
+Constant* Contech::getFunction(Module &M, const char* fname, const char* fmt, bool isVarg)
+{
+    size_t argLen = strlen(fmt);
+    assert(argLen > 0);
+    Type* retTy = getTypeFromStr(fmt[0]);
+    
+    if (argLen > 1)
+    {
+        Type* argTy[argLen - 1];
+        
+        for (int i = 1; i < argLen; i++)
+        {
+            argTy[i - 1] = getTypeFromStr(fmt[i]);
+        }
+        
+        FunctionType* funTy = FunctionType::get(retTy, ArrayRef<Type*>(argTy, (argLen - 1)), isVarg);
+        return M.getOrInsertFunction(fname, funTy);
+    }
+    else
+    {
+        FunctionType* funVoidVoidTy = FunctionType::get(retTy, isVarg);
+        return M.getOrInsertFunction(fname, funVoidVoidTy);
+    }
+    
+    return NULL;
+}
+
 //
 // Create any globals required for this module
 //
@@ -145,33 +188,6 @@ namespace llvm {
 //
 bool Contech::doInitialization(Module &M)
 {
-    // Function types are named fun(Return type)(arg1 ... argN)Ty
-    FunctionType* funVoidPtrI32I32VoidPtrI8Ty;
-    FunctionType* funVoidVoidPtrI32VoidPtrI8Ty;
-    FunctionType* funVoidVoidPtrI32I32I64I64Ty;
-    FunctionType* funVoidPtrVoidPtrTy;
-    FunctionType* funVoidPtrVoidTy;
-    FunctionType* funVoidVoidTy;
-    FunctionType* funVoidVoidPtrTy;
-    FunctionType* funVoidVoidPtrVoidPtrI32Ty;
-    FunctionType* funVoidI8I64VoidPtrTy;
-    FunctionType* funVoidI64VoidPtrVoidPtrTy;
-    FunctionType* funVoidI8Ty;
-    FunctionType* funVoidI32Ty;
-    FunctionType* funVoidI8VoidPtrI64Ty;
-    FunctionType* funVoidVoidPtrI32Ty;
-    FunctionType* funVoidI64I64Ty;
-    FunctionType* funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy;
-    FunctionType* funVoidI16VoidPtrTy;
-    FunctionType* funI32I32Ty;
-    FunctionType* funI32VoidPtrTy;
-    FunctionType* funI32I32I32VoidPtrI8Ty;
-    FunctionType* funVoidVoidPtrI64Ty;
-    FunctionType* funVoidVoidPtrI64I32I32Ty;
-    FunctionType* funVoidI32I64I64Ty;
-    FunctionType* funVoidI32I32I32I64I16VoidPtrTy;
-    FunctionType* funVoidI8I32I32I32VoidPtrI64Ty;
-
     // Get the different integer types required by Contech
     LLVMContext &ctx = M.getContext();
     currentDataLayout = &M.getDataLayout();
@@ -181,128 +197,7 @@ bool Contech::doInitialization(Module &M)
     cct.int64Ty = Type::getInt64Ty(ctx);
     cct.voidTy = Type::getVoidTy(ctx);
     cct.voidPtrTy = cct.int8Ty->getPointerTo();
-
-    Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
-    funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
-
-    funI32VoidPtrTy = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
-    cct.getBufPosFunction = M.getOrInsertFunction("__ctGetBufferPos",funI32VoidPtrTy);
-
-    Type* argsBB[] = {cct.int32Ty, cct.int32Ty, cct.voidPtrTy,  cct.int8Ty};
-    funVoidPtrI32I32VoidPtrI8Ty = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(argsBB, 4), false);
-    cct.storeBasicBlockFunction = M.getOrInsertFunction("__ctStoreBasicBlock", funVoidPtrI32I32VoidPtrI8Ty);
-
-    funI32I32I32VoidPtrI8Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsBB, 4), false);
-    cct.storeBasicBlockCompFunction = M.getOrInsertFunction("__ctStoreBasicBlockComplete", funI32I32I32VoidPtrI8Ty);
-
-    Type* argsMO[] = {cct.voidPtrTy, cct.int32Ty, cct.voidPtrTy, cct.int8Ty};
-    funVoidVoidPtrI32VoidPtrI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMO, 4), false);
-    cct.storeMemOpFunction = M.getOrInsertFunction("__ctStoreMemOp", funVoidVoidPtrI32VoidPtrI8Ty);
-
-    funVoidPtrVoidTy = FunctionType::get(cct.voidPtrTy, false);
-    cct.getBufFunction = M.getOrInsertFunction("__ctGetBuffer",funVoidPtrVoidTy);
-    cct.cilkInitFunction = M.getOrInsertFunction("__ctInitCilkSync", funVoidPtrVoidTy);
-
-    // void (void) functions:
-    funVoidVoidTy = FunctionType::get(cct.voidTy, false);
-    cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
-    cct.ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
-    cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
-    cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
-
-    // Void -> Int32 / 64
-    cct.allocateCTidFunction = M.getOrInsertFunction("__ctAllocateCTid", FunctionType::get(cct.int32Ty, false));
-    cct.getThreadNumFunction = M.getOrInsertFunction("__ctGetLocalNumber", FunctionType::get(cct.int32Ty, false));
-    cct.getCurrentTickFunction = M.getOrInsertFunction("__ctGetCurrentTick", FunctionType::get(cct.int64Ty, false));
-    cct.allocateTicketFunction =  M.getOrInsertFunction("__ctAllocateTicket", FunctionType::get(cct.int64Ty, false));
-
-    cct.ctPeekParentIdFunction = M.getOrInsertFunction("__ctPeekParent", FunctionType::get(cct.int32Ty, false));
-    cct.ompGetNestLevelFunction = M.getOrInsertFunction("omp_get_level", FunctionType::get(cct.int32Ty, false));
-
-
-    Type* argsSSync[] = {cct.voidPtrTy, cct.int32Ty/*type*/, cct.int32Ty/*retVal*/, cct.int64Ty /*ct_tsc_t*/, cct.int64Ty};
-    funVoidVoidPtrI32I32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSSync, 5), false);
-    cct.storeSyncFunction = M.getOrInsertFunction("__ctStoreSync", funVoidVoidPtrI32I32I64I64Ty);
-
-    Type* argsTC[] = {cct.int32Ty};
-
-    // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
-    funVoidI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsTC, 1), false);
-    cct.pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
-    cct.ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
-    cct.ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
-    cct.ompTaskCreateFunction = M.getOrInsertFunction("__ctOMPTaskCreate", funVoidI32Ty);
-    cct.checkBufferFunction = M.getOrInsertFunction("__ctCheckBufferSize", funVoidI32Ty);
-    cct.checkBufferLargeFunction = M.getOrInsertFunction("__ctCheckBufferBySize", funVoidI32Ty);
-    cct.storeLoopExitFunction = M.getOrInsertFunction("__ctStoreLoopExit", funVoidI32Ty);
-
-    Type* argsLS[] = {cct.int16Ty, cct.voidPtrTy};
-    funVoidI16VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsLS, 2), false);
-    cct.storeLoopShortFunction = M.getOrInsertFunction("__ctStoreLoopEntryShort", funVoidI16VoidPtrTy);
     
-    funI32I32Ty = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsTC, 1), false);
-    cct.ompGetParentFunction = M.getOrInsertFunction("omp_get_ancestor_thread_num", funI32I32Ty);
-
-    
-    Type* argsLE[] = {cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int64Ty, cct.int16Ty, cct.voidPtrTy};
-    funVoidI32I32I32I64I16VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsLE, 6), false);
-    cct.storeLoopEntryFunction = M.getOrInsertFunction("__ctStoreLoopEntry", funVoidI32I32I32I64I16VoidPtrTy);
-    
-    Type* argsQB[] = {cct.int8Ty};
-    funVoidI8Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsQB, 1), false);
-    cct.queueBufferFunction = M.getOrInsertFunction("__ctQueueBuffer", funVoidI8Ty);
-    cct.ompTaskJoinFunction = M.getOrInsertFunction("__ctOMPTaskJoin", funVoidVoidTy);
-
-    Type* argsSB[] = {cct.int8Ty, cct.voidPtrTy, cct.int64Ty};
-    funVoidI8VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSB, 3), false);
-    cct.storeBarrierFunction = M.getOrInsertFunction("__ctStoreBarrier", funVoidI8VoidPtrI64Ty);
-
-    Type* argsATI[] = {cct.voidPtrTy, cct.int32Ty};
-    funVoidVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsATI, 2), false);
-    cct.storeThreadInfoFunction = M.getOrInsertFunction("__ctAddThreadInfo", funVoidVoidPtrI32Ty);
-
-    Type* argsSMPIXF[] = {cct.int8Ty, cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty, cct.voidPtrTy};
-    funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMPIXF, 9), false);
-    cct.storeMPITransferFunction = M.getOrInsertFunction("__ctStoreMPITransfer", funVoidI8I8I32I32I32I32VoidPtrI64VoidPtrTy);
-
-    Type* argsSMAO[] = {cct.int8Ty, cct.int32Ty, cct.int32Ty, cct.int32Ty, cct.voidPtrTy, cct.int64Ty};
-    funVoidI8I32I32I32VoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSMAO, 6), false);
-    cct.storeMPIAllOneFunction = M.getOrInsertFunction("__ctStoreMPIAllOne", funVoidI8I32I32I32VoidPtrI64Ty);
-    
-    Type* argsMPIW[] = {cct.voidPtrTy, cct.int64Ty};
-    funVoidVoidPtrI64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsMPIW, 2), false);
-    cct.storeMPIWaitFunction = M.getOrInsertFunction("__ctStoreMPIWait", funVoidVoidPtrI64Ty);
-
-    Type* argsCFC[] = {cct.voidPtrTy, cct.int64Ty, cct.int32Ty, cct.int32Ty};
-    funVoidVoidPtrI64I32I32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCFC, 4), false);
-    cct.cilkCreateFunction = M.getOrInsertFunction("__ctRecordCilkFrame", funVoidVoidPtrI64I32I32Ty);
-
-    Type* argsInit[] = {cct.voidPtrTy};
-    funVoidVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsInit, 1), false);
-    cct.cilkSyncFunction = M.getOrInsertFunction("__ctRecordCilkSync", funVoidVoidPtrTy);
-    cct.cilkRestoreFunction = M.getOrInsertFunction("__ctRestoreCilkFrame", funVoidVoidPtrTy);
-    cct.cilkParentFunction = M.getOrInsertFunction("__ctCilkPromoteParent", funVoidVoidPtrTy);
-    cct.writeElideGVEventsFunction =  M.getOrInsertFunction("__ctWriteElideGVEvents", funVoidVoidPtrTy);
-    
-    Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
-    if (f != NULL) 
-    {
-        Instruction* iPt;
-        if (f->empty())
-        {
-            BasicBlock* bbEntry = BasicBlock::Create(M.getContext(), "", f, NULL);
-            iPt = ReturnInst::Create(M.getContext(), bbEntry);
-        }
-    }
-
-    Type* argsSGV[] = {cct.voidPtrTy, cct.voidPtrTy, cct.int32Ty};
-    funVoidVoidPtrVoidPtrI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSGV, 3), false);
-    cct.storeGVEventFunction = M.getOrInsertFunction("__ctStoreGVEvent", funVoidVoidPtrVoidPtrI32Ty);
-    
-    Type* argsCTCreate[] = {cct.int32Ty, cct.int64Ty, cct.int64Ty};
-    funVoidI32I64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsCTCreate, 3), false);
-    cct.storeThreadCreateFunction = M.getOrInsertFunction("__ctStoreThreadCreate", funVoidI32I64I64Ty);
-
     if (currentDataLayout->getPointerSizeInBits() == 64)
     {
         cct.pthreadTy = cct.int64Ty;
@@ -314,20 +209,82 @@ bool Contech::doInitialization(Module &M)
         cct.pthreadSize = 4;
     }
 
-    Type* argsSTJ[] = {cct.pthreadTy, cct.int64Ty};
-    funVoidI64I64Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsSTJ, 2), false);
-    cct.storeThreadJoinFunction = M.getOrInsertFunction("__ctStoreThreadJoin", funVoidI64I64Ty);
+    
+    
+    FunctionType* funVoidPtrVoidPtrTy;
+    Type* funVoidPtrVoidTypes[] = {cct.voidPtrTy};
+    funVoidPtrVoidPtrTy = FunctionType::get(cct.voidPtrTy, ArrayRef<Type*>(funVoidPtrVoidTypes, 1), false);
 
-    Type* argsME[] = {cct.int8Ty, cct.pthreadTy, cct.voidPtrTy};
-    funVoidI8I64VoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsME, 3), false);
-    cct.storeMemoryEventFunction = M.getOrInsertFunction("__ctStoreMemoryEvent", funVoidI8I64VoidPtrTy);
-    Type* argsBulkMem[] = {cct.pthreadTy, cct.voidPtrTy, cct.voidPtrTy};
-    funVoidI64VoidPtrVoidPtrTy = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsBulkMem, 3), false);
-    cct.storeBulkMemoryOpFunction = M.getOrInsertFunction("__ctStoreBulkMemoryEvent", funVoidI64VoidPtrVoidPtrTy);
+    // v - void, c - int8, s - int16, i - int32, l - int64, t - pthread, p - voidPtr
+    //   First type is the return type.  Remaining are arguments.
+    cct.getBufPosFunction = getFunction(M, "__ctGetBufferPos", "ip");
+    cct.storeBasicBlockFunction = getFunction(M, "__ctStoreBasicBlock", "piipc");
+    cct.storeBasicBlockCompFunction = getFunction(M, "__ctStoreBasicBlockComplete", "iiipc");
+    cct.storeMemOpFunction = getFunction(M, "__ctStoreMemOp", "vpipc");
+    cct.getBufFunction = getFunction(M, "__ctGetBuffer", "p");
+    cct.cilkInitFunction = getFunction(M, "__ctInitCilkSync", "p");
+    cct.allocateBufferFunction = getFunction(M, "__ctAllocateLocalBuffer", "v");
+    cct.ompPushParentFunction = getFunction(M, "__ctOMPPushParent", "v");
+    cct.ompPopParentFunction = getFunction(M, "__ctOMPPopParent", "v");
+    cct.ompProcessJoinFunction = getFunction(M, "__ctOMPProcessJoinStack", "v");
+    cct.allocateCTidFunction = getFunction(M, "__ctAllocateCTid", "i");
+    cct.getThreadNumFunction = getFunction(M, "__ctGetLocalNumber", "i");
+    cct.getCurrentTickFunction = getFunction(M, "__ctGetCurrentTick", "l");
+    cct.allocateTicketFunction = getFunction(M, "__ctAllocateTicket", "l");
+    cct.ctPeekParentIdFunction = getFunction(M, "__ctPeekParent", "i");
+    cct.ompGetNestLevelFunction = getFunction(M, "omp_get_level", "i");
 
-    Type* argsOMPSD[] = {cct.voidPtrTy, cct.pthreadTy, cct.int32Ty, cct.int32Ty};
-    FunctionType* funVoidVoidPtrI64I32I32 = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsOMPSD, 4), false);
-    cct.ompStoreInOutDepsFunction = M.getOrInsertFunction("__ctOMPStoreInOutDeps", funVoidVoidPtrI64I32I32);
+    cct.storeSyncFunction = getFunction(M, "__ctStoreSync", "vpiill");
+    cct.pthreadExitFunction = getFunction(M, "pthread_exit", "vi");
+    cct.ompThreadCreateFunction = getFunction(M, "__ctOMPThreadCreate", "vi");
+    cct.ompThreadJoinFunction = getFunction(M, "__ctOMPThreadJoin", "vi");
+    cct.ompTaskCreateFunction = getFunction(M, "__ctOMPTaskCreate", "vi");
+    cct.checkBufferFunction = getFunction(M, "__ctCheckBufferSize", "vi");
+    cct.checkBufferLargeFunction = getFunction(M, "__ctCheckBufferBySize", "vi");
+    cct.storeLoopExitFunction = getFunction(M, "__ctStoreLoopExit", "vi");
+    cct.storeLoopShortFunction = getFunction(M, "__ctStoreLoopEntryShort", "vsp");
+    
+    cct.ompGetParentFunction = getFunction(M, "omp_get_ancestor_thread_num", "ii");
+
+    cct.storeLoopEntryFunction = getFunction(M, "__ctStoreLoopEntry", "viiilsp");
+    
+    cct.queueBufferFunction = getFunction(M, "__ctQueueBuffer", "vc");
+    cct.ompTaskJoinFunction = getFunction(M, "__ctOMPTaskJoin", "v");
+
+    cct.storeBarrierFunction = getFunction(M, "__ctStoreBarrier", "vcpl");
+
+    cct.storeThreadInfoFunction = getFunction(M, "__ctAddThreadInfo", "vpi");
+
+    cct.storeMPITransferFunction = getFunction(M, "__ctStoreMPITransfer", "vcciiiiplp");
+    cct.storeMPIAllOneFunction = getFunction(M, "__ctStoreMPIAllOne", "vciiipl");
+    cct.storeMPIWaitFunction = getFunction(M, "__ctStoreMPIWait", "vpl");
+
+    cct.cilkCreateFunction = getFunction(M, "__ctRecordCilkFrame", "vplii");
+    cct.cilkSyncFunction = getFunction(M, "__ctRecordCilkSync", "vp");
+    cct.cilkRestoreFunction = getFunction(M, "__ctRestoreCilkFrame", "vp");
+    cct.cilkParentFunction = getFunction(M, "__ctCilkPromoteParent", "vp");
+    
+    cct.writeElideGVEventsFunction =  getFunction(M, "__ctWriteElideGVEvents", "vp");
+    Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
+    if (f != NULL) 
+    {
+        Instruction* iPt;
+        if (f->empty())
+        {
+            BasicBlock* bbEntry = BasicBlock::Create(M.getContext(), "", f, NULL);
+            iPt = ReturnInst::Create(M.getContext(), bbEntry);
+        }
+    }
+
+    cct.storeGVEventFunction = getFunction(M, "__ctStoreGVEvent", "vppi");
+    
+    cct.storeThreadCreateFunction = getFunction(M, "__ctStoreThreadCreate", "vill");
+    cct.storeThreadJoinFunction = getFunction(M, "__ctStoreThreadJoin", "vtl");
+
+    cct.storeMemoryEventFunction = getFunction(M, "__ctStoreMemoryEvent", "vctp");
+    cct.storeBulkMemoryOpFunction = getFunction(M, "__ctStoreBulkMemoryEvent", "vtpp");
+
+    cct.ompStoreInOutDepsFunction = getFunction(M, "__ctOMPStoreInOutDeps", "vptii");
     cct.ompPrepareTaskFunction = NULL;
 
     Type* pthreadTyPtr = cct.pthreadTy->getPointerTo();
