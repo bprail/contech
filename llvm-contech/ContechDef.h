@@ -179,11 +179,7 @@ namespace llvm {
         Constant* storeLoopEntryFunction;
         Constant* storeLoopExitFunction;
         Constant* storeLoopShortFunction;
-
-        Constant* storeBasicBlockMarkFunction;
-        Constant* storeMemReadMarkFunction;
-        Constant* storeMemWriteMarkFunction;
-
+        
         Constant* storeMPITransferFunction;
         Constant* storeMPIAllOneFunction;
         Constant* storeMPIWaitFunction;

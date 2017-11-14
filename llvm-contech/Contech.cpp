@@ -206,8 +206,6 @@ bool Contech::doInitialization(Module &M)
     // void (void) functions:
     funVoidVoidTy = FunctionType::get(cct.voidTy, false);
     cct.allocateBufferFunction = M.getOrInsertFunction("__ctAllocateLocalBuffer", funVoidVoidTy);
-    cct.storeMemReadMarkFunction = M.getOrInsertFunction("__ctStoreMemReadMark", funVoidVoidTy);
-    cct.storeMemWriteMarkFunction = M.getOrInsertFunction("__ctStoreMemWriteMark", funVoidVoidTy);
     cct.ompPushParentFunction = M.getOrInsertFunction("__ctOMPPushParent", funVoidVoidTy);
     cct.ompPopParentFunction = M.getOrInsertFunction("__ctOMPPopParent", funVoidVoidTy);
     cct.ompProcessJoinFunction =  M.getOrInsertFunction("__ctOMPProcessJoinStack", funVoidVoidTy);
@@ -230,7 +228,6 @@ bool Contech::doInitialization(Module &M)
 
     // TODO: See how one might flag a function as having the attribute of "does not return", for exit()
     funVoidI32Ty = FunctionType::get(cct.voidTy, ArrayRef<Type*>(argsTC, 1), false);
-    cct.storeBasicBlockMarkFunction = M.getOrInsertFunction("__ctStoreBasicBlockMark", funVoidI32Ty);
     cct.pthreadExitFunction = M.getOrInsertFunction("pthread_exit", funVoidI32Ty);
     cct.ompThreadCreateFunction = M.getOrInsertFunction("__ctOMPThreadCreate", funVoidI32Ty);
     cct.ompThreadJoinFunction = M.getOrInsertFunction("__ctOMPThreadJoin", funVoidI32Ty);
