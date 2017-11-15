@@ -665,20 +665,26 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     return r;
 }
 
-__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide)
+__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide, char skipStore)
 {
+    unsigned int nPos = 0;
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int (-1 byte) for id + event
     if (elide)
     {
-        (t->pos = p + numMemOps * 6 * sizeof(char));
+        nPos = p + numMemOps * 6 * sizeof(char);
     }
     else
     {
-        (t->pos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char));
+        nPos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char);
+    }
+    if (skipStore == 0)
+    {
+        t->pos = nPos;
     }
     #endif
-    return t->pos;
+    
+    return nPos;
 }
 
 __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r, char elide)
