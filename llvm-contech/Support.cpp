@@ -122,13 +122,14 @@ unsigned int Contech::getCriticalPathLen(BasicBlock& B)
 void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock)
 {
     hash<BasicBlock*> blockHash{};
+    map<BasicBlock*, Instruction*> blockPosCall;
+    map<BasicBlock*, int> blockChainCount;
+    
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
         BasicBlock* bb = &*it;
         int bb_val = blockHash(bb);
         auto costInfo = costPerBlock.find(bb_val);
-        
-        errs() << cfgInfoMap[bb]->id << "\t";
         
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
@@ -144,8 +145,86 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                 dyn_cast<CallInst>(&*bbit) != NULL) {noInst = false; break;}
         }
         if (!noInst) {errs() << "CBC - inst CT\n"; continue;}
+        blockPosCall[bb] = bbPos;
+        int count = 1;
+        for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
+        {
+            BasicBlock* succ = *sbbit;
+            count++;
+        }
+        blockChainCount[bb] = count;
+    }
+        
+    for (auto it = F->begin(), et = F->end(); it != et; ++it)
+    {
+        BasicBlock* bb = &*it;
+        map<BasicBlock*, Instruction*> chainQueue;
         
         int chainCount = 0, count = 0;
+        for (auto predit = pred_begin(bb), predet = pred_end(bb); predit != predet; ++predit)
+        {
+            BasicBlock* pred = *predit;
+            
+            count++;
+            auto elem = blockPosCall.find(pred);
+            if (elem == blockPosCall.end()) break;
+            if (pred == bb) break;
+            chainQueue[elem->first] = elem->second;
+            chainCount++;
+        }
+        
+        if (count != chainCount) continue;
+        if (chainCount == 0) continue;
+        
+        // At this point, all predecessors of bb can chain to it.
+        int bb_val = blockHash(bb);
+        auto costInfo = costPerBlock.find(bb_val);
+        Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
+        if (chainQueue.size() == 1)
+        {
+            // No PHI required
+            auto elem = chainQueue.begin();
+            
+            dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(elem->second);
+            dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(elem->second->getOperand(2));
+            
+            blockChainCount[elem->first] -= 1;
+            if (blockChainCount[elem->first] == 1)
+            {
+                Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
+                elem->second->setOperand(4, skipStore);
+            }
+        }
+        else
+        {
+            Instruction* istPt = bb->getFirstNonPHI();
+            PHINode* phiBuf = PHINode::Create(cct.voidPtrTy, chainQueue.size(), "", istPt);
+            PHINode* phiPos = PHINode::Create(cct.int32Ty, chainQueue.size(), "", istPt);
+            
+            //for (auto chit = chainQueue.begin(), chet = chainQueue.end(); chit != chet; ++chit)
+            for (auto predit = pred_begin(bb), predet = pred_end(bb); predit != predet; ++predit)
+            {
+                auto chit = chainQueue.find(*predit);
+                BasicBlock* pred = chit->first;
+                Instruction* predPos = chit->second;
+                
+                phiBuf->addIncoming(predPos->getOperand(2), pred);
+                phiPos->addIncoming(predPos, pred);
+                
+                blockChainCount[pred] -= 1;
+                if (blockChainCount[pred] == 1)
+                {
+                    Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
+                    predPos->setOperand(4, skipStore);
+                }
+            }
+            
+            dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(phiBuf);
+            dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(phiPos);
+        }
+    }
+    
+    /*    int chainCount = 0, count = 0;
         for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
         {
             BasicBlock* succ = *sbbit;
@@ -178,7 +257,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
             bbPos->setOperand(4, skipStore);
         }
-    }
+    }*/
 }
 
 //
