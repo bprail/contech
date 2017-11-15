@@ -235,6 +235,7 @@ namespace llvm {
         std::vector <llvm_loopiv_block*> LoopMemoryOps;
         std::map<Value*, int> loopMemOps;
         std::map<BasicBlock*, llvm_loop_track*> loopInfoTrack;
+        std::map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
@@ -245,6 +246,7 @@ namespace llvm {
         
         Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
+        void chainBufferCalls(Function*, std::map<int, llvm_inst_block>&);
         
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);

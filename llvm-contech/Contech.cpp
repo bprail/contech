@@ -54,8 +54,6 @@
 using namespace llvm;
 using namespace std;
 
-map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
-
 // ContechState is required to reconstruct the basic block events from the event trace
 cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current Contech state"), cl::value_desc("filename"));
 
@@ -219,7 +217,7 @@ bool Contech::doInitialization(Module &M)
     //   First type is the return type.  Remaining are arguments.
     cct.getBufPosFunction = getFunction(M, "__ctGetBufferPos", "ip");
     cct.storeBasicBlockFunction = getFunction(M, "__ctStoreBasicBlock", "piipc");
-    cct.storeBasicBlockCompFunction = getFunction(M, "__ctStoreBasicBlockComplete", "iiipc");
+    cct.storeBasicBlockCompFunction = getFunction(M, "__ctStoreBasicBlockComplete", "iiipcc");
     cct.storeMemOpFunction = getFunction(M, "__ctStoreMemOp", "vpipc");
     cct.getBufFunction = getFunction(M, "__ctGetBuffer", "p");
     cct.cilkInitFunction = getFunction(M, "__ctInitCilkSync", "p");
@@ -663,6 +661,8 @@ bool Contech::runOnModule(Module &M)
             delete llt;
         }
         loopInfoTrack.clear();
+        
+        chainBufferCalls(&*F, costPerBlock);
         
         // If fmn is fn, then it was allocated by the demangle routine and we are required to free
         if (fmn == fn)
@@ -1157,8 +1157,9 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         if (hasInstAllMemOps == false && memOpPos == memOpCount)
         {
             Value* cElide = ConstantInt::get(cct.int8Ty, elideBasicBlockId);
+            Value* skipStore = ConstantInt::get(cct.int8Ty, 0);
             llvm_nops = ConstantInt::get(cct.int32Ty, memOpCount);
-            Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide};
+            Value* argsBBc[] = {llvm_nops, basePosValue, baseBufValue, cElide, skipStore};
             #ifdef TSC_IN_BB
             if (memOpCount == 1)
             #else
@@ -1166,7 +1167,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             #endif
             {
                 debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", aPhi);
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 5), "", aPhi);
                 MarkInstAsContechInst(sbbc);
 
                 Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
@@ -1176,7 +1177,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
             else
             {
                 debugLog("storeBasicBlockCompFunction @" << __LINE__);
-                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 4), "", convertIterToInst(I));
+                sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 5), "", convertIterToInst(I));
                 MarkInstAsContechInst(sbbc);
 
                 Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));

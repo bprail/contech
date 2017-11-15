@@ -113,6 +113,75 @@ unsigned int Contech::getCriticalPathLen(BasicBlock& B)
 }
 
 //
+//  ChainBufferCalls
+//    This routine achieves a long standing dream of reusing some of the common
+//    operations between basic blocks, such as requsting the buffer or its position.
+//    The idea is to search all instrumentation and find cases where it can be
+//    chained together, thus skipping the redundant calls and thereby saving operations.
+//
+void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock)
+{
+    hash<BasicBlock*> blockHash{};
+    for (auto it = F->begin(), et = F->end(); it != et; ++it)
+    {
+        BasicBlock* bb = &*it;
+        int bb_val = blockHash(bb);
+        auto costInfo = costPerBlock.find(bb_val);
+        
+        errs() << cfgInfoMap[bb]->id << "\t";
+        
+        Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
+        if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
+        if (cfgInfoMap[bb]->containCall) {errs() << "CBC - contain call\n"; continue;}
+        
+        // Verify that the position value is still valid to use in subsequent blocks
+        //   Move past the Contech generated instruction.
+        auto bbit = ++convertInstToIter(bbPos);
+        bool noInst = true;
+        for (auto bbet = bb->end(); bbit != bbet; ++bbit)
+        {
+            if ((&*bbit)->getMetadata(cct.ContechMDID) &&
+                dyn_cast<CallInst>(&*bbit) != NULL) {noInst = false; break;}
+        }
+        if (!noInst) {errs() << "CBC - inst CT\n"; continue;}
+        
+        int chainCount = 0, count = 0;
+        for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
+        {
+            BasicBlock* succ = *sbbit;
+            count++;
+            if (!DT->dominates(bb, succ)) continue;
+            if (succ->getSinglePredecessor() == NULL) continue;
+            
+            int succ_val = blockHash(succ);
+            auto succInfo = costPerBlock.find(succ_val);
+            Instruction* sucPos = dyn_cast<Instruction>(succInfo->second.posValue);
+            if (sucPos == NULL) continue;
+            
+            Instruction* oldGetPos = dyn_cast<Instruction>(sucPos->getOperand(1));
+            if (oldGetPos == NULL) continue;
+            
+            oldGetPos->replaceAllUsesWith(bbPos);
+            
+            Instruction* bbGetBuf = dyn_cast<Instruction>(bbPos->getOperand(2));
+            if (bbGetBuf == NULL) continue;
+            
+            Instruction* oldGetBuf = dyn_cast<Instruction>(sucPos->getOperand(2));
+            if (oldGetBuf == NULL) continue;
+            oldGetBuf->replaceAllUsesWith(bbGetBuf);
+            chainCount++;
+            errs() << "REPLACE from " << cfgInfoMap[bb]->id << " to " << cfgInfoMap[succ]->id << "\n";
+        }
+        
+        if (count == chainCount)
+        {
+            Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
+            bbPos->setOperand(4, skipStore);
+        }
+    }
+}
+
+//
 //  Determine if the global value (Constant*) has already been elided
 //    If it has, return its id
 //    If not, then add it to the elide constant function
