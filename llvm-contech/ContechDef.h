@@ -155,6 +155,8 @@ namespace llvm {
     typedef struct _ConstantsCT {
         Constant* storeBasicBlockFunction;
         Constant* storeBasicBlockCompFunction;
+        Constant* extendPathInfoFunction;
+        Constant* storePathInfoFunction;
         Constant* storeMemOpFunction;
         Constant* allocateBufferFunction;
         Constant* checkBufferFunction;
