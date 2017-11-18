@@ -92,8 +92,8 @@ void __ctQueueBuffer(bool);
 char* __ctStoreBasicBlock(unsigned int bbid, unsigned int, pct_serial_buffer, char);
 // (basic block id, size of string, string)
 void __ctStoreBasicBlockInfo (unsigned int, unsigned int, char*);
-void __ctStoreMemOp(void*, unsigned int, char*, char);
-unsigned int __ctStoreBasicBlockComplete(unsigned int, unsigned int, pct_serial_buffer, char, char);
+void __ctStoreMemOp(void*, unsigned int, char*, char, char);
+unsigned int __ctStoreBasicBlockComplete(unsigned int, unsigned int, pct_serial_buffer, char, char, char);
 void __ctStoreThreadCreate(unsigned int, long long, ct_tsc_t);
 void __ctStoreThreadJoin(pthread_t, ct_tsc_t);
 void __ctStoreThreadJoinInternal(bool ie, unsigned int id, ct_tsc_t start);

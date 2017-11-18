@@ -665,18 +665,29 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     return r;
 }
 
-__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide, char skipStore)
+__attribute__((always_inline)) char __ctExtendPathInfo(char info, char dir)
+{
+    return (info << 1) | dir;
+}
+
+__attribute__((always_inline)) void __ctStorePathInfo(char* r, char info)
+{
+    *(r + 3 * sizeof(char)) = info;
+}
+
+__attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide, char skipStore, char pathInfo)
 {
     unsigned int nPos = 0;
     #ifdef POS_USED
     // 6 bytes per memory op, unsigned int (-1 byte) for id + event
-    if (elide)
+    nPos = p + numMemOps * 6 * sizeof(char);
+    if (elide == 0)
     {
-        nPos = p + numMemOps * 6 * sizeof(char);
+        nPos += 3 * sizeof(char);
     }
-    else
+    if (pathInfo == 1)
     {
-        nPos = p + numMemOps * 6 * sizeof(char) + 3 * sizeof(char);
+        nPos += 1 * sizeof(char);
     }
     if (skipStore == 0)
     {
@@ -687,7 +698,7 @@ __attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned
     return nPos;
 }
 
-__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r, char elide)
+__attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, char* r, char elide, char pathInfo)
 {
     #ifdef __NULL_CHECK
     if (__ctThreadLocalBuffer == NULL) return;
@@ -697,14 +708,10 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     //   bytes with the next write.  Thus we have the 6 bytes of interest in the buffer
     // void __builtin_ia32_movnti64 (di *, di)
     #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    if (elide)
-    {
-        *((uint64_t*)(r + c * 6 * sizeof(char))) = (uint64_t)addr;
-    }
-    else
-    {
-        *((uint64_t*)(r + c * 6 * sizeof(char) + 3 * sizeof(char))) = (uint64_t)addr;
-    }
+    r += c * 6 * sizeof(char);
+    if (elide == 0) r += 3 * sizeof(char);
+    if (pathInfo == 1) r += 1 * sizeof(char);
+    *((uint64_t*)r) = (uint64_t)addr;
     #else
         #error "Compiling for big endian machine"
     // TODO:
