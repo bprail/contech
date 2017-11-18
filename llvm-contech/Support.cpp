@@ -224,40 +224,419 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         }
     }
     
-    /*    int chainCount = 0, count = 0;
-        for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
+    bool updateChain = false;
+    do
+    {
+        updateChain = false;
+        // The final chaining optimization is to store direction bits rather than IDs
+        //   First, this needs to find a start of a chain path.
+        //   Second, if it can either chain through an elide or another branch, then
+        //     do so, else store the current path info.  Also, only 8 branch bits, so
+        //     if more, then have to store anyway.
+        for (auto it = blockChainCount.begin(), et = blockChainCount.end(); it != et; ++it)
         {
-            BasicBlock* succ = *sbbit;
-            count++;
-            if (!DT->dominates(bb, succ)) continue;
-            if (succ->getSinglePredecessor() == NULL) continue;
             
-            int succ_val = blockHash(succ);
-            auto succInfo = costPerBlock.find(succ_val);
-            Instruction* sucPos = dyn_cast<Instruction>(succInfo->second.posValue);
-            if (sucPos == NULL) continue;
+            if (it->second != 1) continue;
+            BasicBlock* startBlock = it->first;
             
-            Instruction* oldGetPos = dyn_cast<Instruction>(sucPos->getOperand(1));
-            if (oldGetPos == NULL) continue;
+            // If the first branch is elide, then skip.
+            if (startBlock->getUniqueSuccessor() != NULL) continue;
             
-            oldGetPos->replaceAllUsesWith(bbPos);
+            Value* startPos = NULL; // TODO: getBufPos in it.
+            Value* pathInfo = ConstantInt::get(cct.int8Ty, 0);
             
-            Instruction* bbGetBuf = dyn_cast<Instruction>(bbPos->getOperand(2));
-            if (bbGetBuf == NULL) continue;
+            {
+                int bb_val = blockHash(startBlock);
+                auto costInfo = costPerBlock.find(bb_val);
+                Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
+                auto ub = bbPos->getOperand(1)->user_begin();
+                while ((*ub)->getType() != cct.voidPtrTy) ++ub;
+                startPos = *(ub);
+            }
             
-            Instruction* oldGetBuf = dyn_cast<Instruction>(sucPos->getOperand(2));
-            if (oldGetBuf == NULL) continue;
-            oldGetBuf->replaceAllUsesWith(bbGetBuf);
-            chainCount++;
-            errs() << "REPLACE from " << cfgInfoMap[bb]->id << " to " << cfgInfoMap[succ]->id << "\n";
+            //
+            // Two-phase, work out the maximum depth for each basic block
+            //   Do so with BFS.  If a lower depth block is encountered, then
+            //   this required a cycle.
+            //   -1 indicates that this block has to store and does not chain
+            //
+            map<BasicBlock*, int> depthSet;
+            map<BasicBlock*, int> visitSet;
+            deque<BasicBlock*> pathQueue;
+            BasicBlock* workBlock = startBlock;
+            int depth = 0;
+            do {
+                depth = 0;
+                for (auto pit = pred_begin(workBlock), pet = pred_end(workBlock); pit != pet; ++pit)
+                {
+                    auto ds = depthSet.find(*pit);
+                    if (ds != depthSet.end())
+                    {
+                        if (ds->second >= depth) depth = ds->second + 1;
+                    }
+                }
+                
+                if (blockChainCount[workBlock] != 1)
+                {
+                    depthSet[workBlock] = depth;
+                    visitSet[workBlock] = -1;
+                }
+                else
+                {
+                    if (visitSet.find(workBlock) == visitSet.end())
+                    {
+                        // This is a proxy for elide BBID
+                        if (workBlock->getUniqueSuccessor() != NULL)
+                        {
+                            visitSet[workBlock] = 0;
+                        }
+                        else
+                        {
+                            visitSet[workBlock] = 1;
+                        }
+                    }
+                    
+                    auto ds = depthSet.find(workBlock);
+                    if (ds != depthSet.end() &&
+                        ds->second == depth)
+                    {
+                        
+                    }
+                    else
+                    {
+                        depthSet[workBlock] = depth;
+                    
+                        for (auto sbbit = succ_begin(workBlock), sbbet = succ_end(workBlock); sbbit != sbbet; ++sbbit)
+                        {
+                            BasicBlock* sbb = *sbbit;
+                            auto dsbb = depthSet.find(sbb);
+                            if (dsbb != depthSet.end() &&
+                                dsbb->second < depth)
+                            {
+                                errs() << "Have exit - " << dsbb->second << "\t" << depth << "\n" ;
+                                visitSet[workBlock] = -1;
+                            }
+                            else
+                            {
+                                pathQueue.push_back(sbb);
+                            }
+                        }
+                    }
+                }
+                
+                if (pathQueue.size() > 0)
+                {
+                    workBlock = pathQueue.front();
+                    pathQueue.pop_front();
+                }
+                else
+                {
+                    workBlock = NULL;
+                }
+            } while (workBlock != NULL);
+            
+            if (visitSet.size() < 2) return;
+            
+            depthSet.clear();
+            workBlock = startBlock;
+            do {
+                bool pushPred = false;
+                depth = 0;
+                for (auto pit = pred_begin(workBlock), pet = pred_end(workBlock); pit != pet; ++pit)
+                {
+                    auto ds = depthSet.find(*pit);
+                    if (ds != depthSet.end())
+                    {
+                        // One of the prior blocks has to store info.
+                        //   Start a new path here.
+                        if (visitSet[*pit] == -1)
+                        {
+                            depth = 0;
+                            pushPred = true;
+                            break;
+                        }
+                        int td = ds->second + visitSet[ds->first];
+                        if (td > depth) depth = td;
+                    }
+                }
+                
+                if (pushPred)
+                {
+                    for (auto pit = pred_begin(workBlock), pet = pred_end(workBlock); pit != pet; ++pit)
+                    {
+                        auto vs = visitSet.find(*pit);
+                        if (vs != visitSet.end())
+                        {
+                            visitSet[*pit] = -1;
+                        }
+                    }
+                }
+                
+                bool pushSucc = false;
+                if (depth == 8)
+                {
+                    depth = -1;
+                    visitSet[workBlock] = -1;
+                    pushSucc = true;
+                }
+                
+                if (depthSet.find(workBlock) == depthSet.end() ||
+                    depth != depthSet[workBlock])
+                {
+                    pushSucc = true;
+                    depthSet[workBlock] = depth;
+                }
+                
+                restart:
+                for (auto sbbit = succ_begin(workBlock), sbbet = succ_end(workBlock); sbbit != sbbet; ++sbbit)
+                {
+                    // If any of the successor blocks starts a path,
+                    //   then this block must end the path.
+                    auto ds = depthSet.find(*sbbit);
+                    if (ds != depthSet.end() &&
+                        ds->second == 0)
+                    {
+                        if (visitSet[workBlock] != -1)
+                        {
+                            visitSet[workBlock] = -1;
+                            if (pushSucc == false)
+                            {
+                                pushSucc = true;
+                                goto restart;
+                            }
+                        }
+                    }
+                    if (pushSucc) pathQueue.push_back(*sbbit);
+                }
+                
+                if (pathQueue.size() > 0)
+                {
+                    workBlock = pathQueue.front();
+                    pathQueue.pop_front();
+                }
+                else
+                {
+                    workBlock = NULL;
+                }
+            } while (workBlock != NULL);
+            
+            struct workItem {
+                PHINode* phiInfo;
+                BasicBlock* par;
+                Value* pathStart;
+                int paths;
+            };
+            
+            // How to follow workQueue?  Pre-populate?  Add items as encountered?
+            //   There is much state, so each elem should only be present once,
+            //   thus prepopulate.
+            
+            workItem item;
+            item.phiInfo = NULL;
+            item.pathStart = startPos;
+            item.par = NULL;
+            item.paths = 0;
+            map<BasicBlock*, workItem> workQueue;
+            workQueue[startBlock] = item;
+            workBlock = startBlock;
+            errs()<< "SB - " << *startBlock << "\n";
+            
+            for (auto sbbit = succ_begin(workBlock), sbbet = succ_end(workBlock); sbbit != sbbet; ++sbbit)
+            {
+                auto wi = workQueue.find(*sbbit);
+                if (wi == workQueue.end()) // TODO: Currently the failing PHIs are created here
+                //  give the constant 0 passed in.  Change pathInfo and address the fail case
+                {
+                    workItem nwi;
+                    nwi.pathStart = startPos;
+                    nwi.phiInfo = PHINode::Create(cct.int8Ty, 0, "", (*sbbit)->getFirstNonPHI());
+                    nwi.phiInfo->addIncoming(pathInfo, workBlock);
+                    workQueue[*sbbit] = nwi;
+                    pathQueue.push_back(*sbbit);
+                    if (depthSet[*sbbit] == 0)
+                    {
+                        errs() << "DeP - " << *sbbit << "\n";
+                    }
+                }
+            }
+            blockChainCount.erase(startBlock);
+            workBlock = pathQueue.front();
+            pathQueue.pop_front();
+            do {
+                int bb_val = blockHash(workBlock);
+                auto costInfo = costPerBlock.find(bb_val);
+                auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
+                ++iPt;
+                
+                bool isCreate = false;
+                if (workQueue.find(workBlock) != workQueue.end())
+                {
+                    if (visitSet[workBlock] > 0 && depthSet[workBlock] == 0)
+                    {
+                        auto wi = workQueue.find(workBlock);
+                        if (wi != workQueue.end() &&
+                            wi->second.phiInfo != NULL)
+                        {
+                            // TODO - Some erases are real PHIs
+                            //   Can a partial start happen, or did this preds need to store?
+                            errs() << "ERA - " << *pathInfo << "\n";
+                            wi->second.phiInfo->eraseFromParent();
+                            workQueue[workBlock].phiInfo = NULL;
+                        }
+                        pathInfo = ConstantInt::get(cct.int8Ty, 0);
+                        auto ub = dyn_cast<Instruction>(costInfo->second.posValue)->getOperand(1)->user_begin();
+                        while ((*ub)->getType() != cct.voidPtrTy) ++ub;
+                        startPos = *(ub);
+                        errs() << "STA - " << startPos << "\t" << pathInfo << "\n";
+                        // TODO: second arg is the compare result.
+                        Value* argsEPI[] = {pathInfo, pathInfo};
+                        pathInfo = CallInst::Create(cct.extendPathInfoFunction, 
+                                                    ArrayRef<Value*>(argsEPI, 2), "",  convertIterToInst(iPt));
+                        isCreate = true;
+                        {
+                            workItem nwi;
+                            nwi.pathStart = NULL;
+                            nwi.phiInfo = NULL;
+                            workQueue[workBlock] = nwi;
+                        }
+                    }
+                    
+                    for (auto sbbit = succ_begin(workBlock), sbbet = succ_end(workBlock); sbbit != sbbet; ++sbbit)
+                    {
+                        auto wi = workQueue.find(*sbbit);
+                        PHINode* succPhi = NULL;
+                        if (wi == workQueue.end() )
+                        {
+                            if (isCreate == true)
+                            {
+                                workItem nwi;
+                                nwi.pathStart = startPos;
+                                nwi.phiInfo = PHINode::Create(cct.int8Ty, 0, "", (*sbbit)->getFirstNonPHI());
+                                nwi.phiInfo->addIncoming(pathInfo, workBlock);
+                                errs() << "CR - " << *nwi.phiInfo << "\n";
+                                workQueue[*sbbit] = nwi;
+                            }
+                            pathQueue.push_back(*sbbit);
+                        }
+                    }
+                }
+                
+                if (pathQueue.size() > 0)
+                {
+                    workBlock = pathQueue.front();
+                    pathQueue.pop_front();
+                }
+                else
+                {
+                    workBlock = NULL;
+                }
+            } while (workBlock != NULL);
+            
+            for (auto sbbit = succ_begin(startBlock), sbbet = succ_end(startBlock); sbbit != sbbet; ++sbbit)
+            {
+                pathQueue.push_back(*sbbit);
+            }
+            
+            do {
+                auto wqit = workQueue.find(workBlock);
+                if (wqit == workQueue.end())
+                {
+                    pathQueue.push_back(workBlock);
+                }
+                else
+                {
+                    item = workQueue[workBlock];
+                    int bb_val = blockHash(workBlock);
+                    auto costInfo = costPerBlock.find(bb_val);
+                    auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
+                    ++iPt;
+                    startPos = item.pathStart;
+                    
+                    
+                    // End path info
+                    if (visitSet[workBlock] == -1)
+                    {
+                        Value* argsSPI[] = {item.pathStart, item.phiInfo};
+                        errs() << "END - " << item.pathStart << "\t" << item.phiInfo << "\n";
+                        CallInst* storePathInfo = CallInst::Create(cct.storePathInfoFunction, 
+                                                                   ArrayRef<Value*>(argsSPI, 2), 
+                                                                   "",  convertIterToInst(iPt));
+                        pathInfo = NULL;
+                        startPos = NULL;
+                    }
+                    // Start path info
+                    //   TODO: Handle case where consecutive depth zero blocks exist
+                    //     delete earlier ones
+                    
+                    else 
+                    {
+                        pathInfo = item.phiInfo;
+                        if (depthSet[workBlock] == 0)
+                        {
+                            
+                        }
+                        else
+                        {
+                            // TODO: second arg is the compare result.
+                            Value* argsEPI[] = {pathInfo, pathInfo};
+                            pathInfo = CallInst::Create(cct.extendPathInfoFunction, 
+                                                        ArrayRef<Value*>(argsEPI, 2), "",  convertIterToInst(iPt));
+                        }
+                    }
+                    
+                    // TODO: Set the pathInfo bit on events
+                    
+                    for (auto sbbit = succ_begin(workBlock), sbbet = succ_end(workBlock); sbbit != sbbet; ++sbbit)
+                    {
+                        auto wi = workQueue.find(*sbbit);
+                        PHINode* succPhi = NULL;
+                        
+                        if (wi == workQueue.end() && pathInfo != NULL)
+                        {
+                            workItem nwi;
+                            nwi.pathStart = startPos;
+                            nwi.phiInfo = PHINode::Create(cct.int8Ty, 0, "", (*sbbit)->getFirstNonPHI());
+                            errs() << "CRX - " << *nwi.phiInfo << "\n";
+                            workQueue[*sbbit] = nwi;
+                            succPhi = nwi.phiInfo;
+                        }
+                        else
+                        {
+                            succPhi = wi->second.phiInfo;
+                        }
+                        
+                        errs() << "ADD - " << succPhi << "\t" << pathInfo <<"\n";
+                        if (pathInfo != NULL)
+                        {
+                            if (succPhi == NULL)
+                            {
+                                errs() << *workBlock << "\n";
+                                errs() << **sbbit << "\n";
+                            }
+                            succPhi->addIncoming(pathInfo, workBlock);
+                        }
+                        if (visitSet.find(*sbbit) != visitSet.end()) pathQueue.push_back(*sbbit);
+                    }
+                    
+                    blockChainCount.erase(workBlock);
+                }
+                
+                if (pathQueue.size() > 0)
+                {
+                    workBlock = pathQueue.front();
+                    pathQueue.pop_front();
+                }
+                else
+                {
+                    workBlock = NULL;
+                }
+            } while (workBlock != NULL);
+            
+            errs() << blockChainCount.size() << "\n";
+            updateChain = true;
+            break;
         }
-        
-        if (count == chainCount)
-        {
-            Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
-            bbPos->setOperand(4, skipStore);
-        }
-    }*/
+    } while(updateChain);
 }
 
 //
@@ -424,9 +803,10 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
             MarkInstAsContechInst(addrI);
 
-            Value* argsMO[] = {addrI, cPos, pos, cElide};
+            Constant* path = ConstantInt::get(cct.int8Ty, 0);
+            Value* argsMO[] = {addrI, cPos, pos, cElide, path};
             debugLog("storeMemOpFunction @" << __LINE__);
-            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 5), "", li);
             MarkInstAsContechInst(smo);
 
             assert(smo != NULL);
