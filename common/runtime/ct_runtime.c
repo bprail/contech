@@ -660,8 +660,9 @@ __attribute__((always_inline)) char* __ctStoreBasicBlock(unsigned int bbid, unsi
     {
         // Shift 1 bit of 0s, which is the basic block event
         *((unsigned int*)r) = ((bbid & 0x7fff80) << 1 ) | (bbid & 0x7f);
+        r += 3 * sizeof(char);
     }
-           
+
     return r;
 }
 
@@ -672,7 +673,8 @@ __attribute__((always_inline)) char __ctExtendPathInfo(char info, char dir)
 
 __attribute__((always_inline)) void __ctStorePathInfo(char* r, char info)
 {
-    *(r + 3 * sizeof(char)) = info;
+   // *(r + 3 * sizeof(char)) = info;
+   *r = info;
 }
 
 __attribute__((always_inline)) unsigned int __ctStoreBasicBlockComplete(unsigned int numMemOps, unsigned int p, pct_serial_buffer t, char elide, char skipStore, char pathInfo)
@@ -709,7 +711,7 @@ __attribute__((always_inline)) void __ctStoreMemOp(void* addr, unsigned int c, c
     // void __builtin_ia32_movnti64 (di *, di)
     #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
     r += c * 6 * sizeof(char);
-    if (elide == 0) r += 3 * sizeof(char);
+    //if (elide == 0) r += 3 * sizeof(char);
     if (pathInfo == 1) r += 1 * sizeof(char);
     *((uint64_t*)r) = (uint64_t)addr;
     #else
