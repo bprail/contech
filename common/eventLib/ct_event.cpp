@@ -288,10 +288,19 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 dumpAndTerminate();
             }*/
             id = npe->bb.basic_block_id;
-            this->next_basic_block_id = bb_info_table[id].next_basic_block_id;
+            this->next_basic_block_id = bb_info_table[id].next_basic_block_id[0];
             if (this->next_basic_block_id != -1)
             {
-                //fprintf(stderr, "%d -> %d\n", id, this->next_basic_block_id);
+                if (bb_info_table[id].next_basic_block_id[1] != -1)
+                {
+                    char dir = 0;
+                    fread_check(&dir, sizeof(char), 1, fptr);
+                    //fprintf(stderr, "DIR - %x - (%u %u)\n", dir, bb_info_table[id].next_basic_block_id[0], bb_info_table[id].next_basic_block_id[1]);
+                    if (dir & 1)
+                    {
+                        this->next_basic_block_id = bb_info_table[id].next_basic_block_id[1];
+                    }
+                }
             }
             if (npe->bb.len > 0)
             {
@@ -468,10 +477,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             npe->bbi.basic_block_id = id;
             
             fread_check(&nbi, sizeof(int32_t), 1, fptr);
-            npe->bbi.next_basic_block_id = nbi;
-            bb_info_table[id].next_basic_block_id = nbi;
-            if (nbi != -1)
-                fprintf(stderr, "NBI: %u -> %d\n", id, nbi);
+            npe->bbi.next_basic_block_id[0] = nbi;
+            bb_info_table[id].next_basic_block_id[0] = nbi;
+            fread_check(&nbi, sizeof(int32_t), 1, fptr);
+            npe->bbi.next_basic_block_id[1] = nbi;
+            bb_info_table[id].next_basic_block_id[1] = nbi;
             
             fread_check(&line, sizeof(unsigned int), 1, fptr);
             npe->bbi.flags = line;

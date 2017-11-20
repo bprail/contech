@@ -17,7 +17,7 @@ namespace contech
     typedef struct _ct_basic_block_info
     {
         uint32_t basic_block_id, fun_name_len, file_name_len, callFun_name_len, num_mem_ops, line_num, num_ops, crit_path_len;
-        int32_t next_basic_block_id;
+        int32_t next_basic_block_id[2];
         uint32_t flags;
         char* file_name;
         char* fun_name;
@@ -242,7 +242,7 @@ namespace contech
             typedef struct _internal_basic_block_info
             {
                 unsigned int len;
-                int32_t next_basic_block_id;
+                int32_t next_basic_block_id[2];
                 int count;
                 uint32_t totalBytes;
                 int32_t loopStepBlock;
