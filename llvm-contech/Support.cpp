@@ -224,40 +224,208 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         }
     }
     
-    /*    int chainCount = 0, count = 0;
-        for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
-        {
-            BasicBlock* succ = *sbbit;
-            count++;
-            if (!DT->dominates(bb, succ)) continue;
-            if (succ->getSinglePredecessor() == NULL) continue;
-            
-            int succ_val = blockHash(succ);
-            auto succInfo = costPerBlock.find(succ_val);
-            Instruction* sucPos = dyn_cast<Instruction>(succInfo->second.posValue);
-            if (sucPos == NULL) continue;
-            
-            Instruction* oldGetPos = dyn_cast<Instruction>(sucPos->getOperand(1));
-            if (oldGetPos == NULL) continue;
-            
-            oldGetPos->replaceAllUsesWith(bbPos);
-            
-            Instruction* bbGetBuf = dyn_cast<Instruction>(bbPos->getOperand(2));
-            if (bbGetBuf == NULL) continue;
-            
-            Instruction* oldGetBuf = dyn_cast<Instruction>(sucPos->getOperand(2));
-            if (oldGetBuf == NULL) continue;
-            oldGetBuf->replaceAllUsesWith(bbGetBuf);
-            chainCount++;
-            errs() << "REPLACE from " << cfgInfoMap[bb]->id << " to " << cfgInfoMap[succ]->id << "\n";
-        }
+    bool hasChanged = false;
+    do {
+        hasChanged = false;
         
-        if (count == chainCount)
+        for (auto it = blockChainCount.begin(), et = blockChainCount.end(); it != et; ++it)
         {
-            Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
-            bbPos->setOperand(4, skipStore);
+            int bb_val = blockHash(it->first);
+            if (it->second != 1 ||
+                costPerBlock[bb_val].preElide == true) 
+            {
+                continue;
+            }
+            
+            deque<BasicBlock*> predTest;
+            set<BasicBlock*> predList;
+            deque<BasicBlock*> succTest;
+            set<BasicBlock*> succList;
+            
+            predTest.push_back(it->first);
+            bool enqueue, success;
+            
+            do {
+                enqueue = false;
+                success = true;
+                
+                for (auto pit = predTest.begin(), pet = predTest.end(); pit != pet; ++pit)
+                {
+                    bb_val = blockHash(*pit);
+                    if (costPerBlock[bb_val].preElide == true ||
+                        blockChainCount[*pit] != 1)
+                    {
+                        success = false;
+                        break;
+                    }
+                    BranchInst* brI = dyn_cast<BranchInst>((*pit)->getTerminator());
+                    if (brI == NULL ||
+                        brI->isUnconditional() == true)
+                    {
+                        success = false;
+                        break;
+                    }
+                    
+                    predList.insert(*pit);
+                    for (auto sbbit = succ_begin(*pit), sbbet = succ_end(*pit); sbbit != sbbet; ++sbbit)
+                    {
+                        if (succList.find(*sbbit) != succList.end()) continue;
+                        if (*sbbit == *pit)
+                        {
+                            success = false;
+                            break;
+                        }
+                        succTest.push_back(*sbbit);
+                        enqueue = true;
+                    }
+                }
+                predTest.clear();
+                
+                if (success == false) break;
+                
+                for (auto sit = succTest.begin(), set = succTest.end(); sit != set; ++sit)
+                {
+                    bb_val = blockHash(*sit);
+                    if (costPerBlock[bb_val].hasElide == true)
+                    {
+                        success = false;
+                        break;
+                    }
+                    
+                    for (auto pbbit = pred_begin(*sit), pbbet = pred_end(*sit); pbbit != pbbet; ++pbbit)
+                    {
+                        if (predList.find(*pbbit) != predList.end()) continue;
+                        predTest.push_back(*pbbit);
+                        enqueue = true;
+                    }
+                    succList.insert(*sit);
+                }
+                succTest.clear();
+                if (success == false) break;
+                
+            } while (enqueue == true);
+            
+            if (success == false) continue;
+            map<BasicBlock*, PHINode*> succPHIInfo;
+            map<BasicBlock*, PHINode*> succPHIStart;
+            for (auto sit = succList.begin(), set = succList.end(); sit != set; ++sit)
+            {
+                int bb_val = blockHash(*sit);
+                auto costInfo = costPerBlock.find(bb_val);
+                auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
+                ++iPt;
+                
+                PHINode* phi = PHINode::Create(cct.int8Ty, 0, "", (*sit)->getFirstNonPHI());
+                succPHIInfo[*sit] = phi;
+                PHINode* phiSt = PHINode::Create(cct.voidPtrTy, 0, "", (*sit)->getFirstNonPHI());
+                succPHIStart[*sit] = phiSt;
+                Value* argsSPI[] = {phiSt, phi};
+                CallInst* storePathInfo = CallInst::Create(cct.storePathInfoFunction, 
+                                                           ArrayRef<Value*>(argsSPI, 2), 
+                                                           "",  convertIterToInst(iPt));
+                MarkInstAsContechInst(storePathInfo);
+
+                storePathInfo->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
+                                                           
+                // TODO: Update stores in block for elide
+                Instruction* posValue = dyn_cast<Instruction>(costInfo->second.posValue);
+                for (auto inst = (*sit)->begin(); inst != (*sit)->end(); ++inst)
+                {
+                    if ((&*inst)->getMetadata(cct.ContechMDID) &&
+                        dyn_cast<CallInst>(&*inst) != NULL)
+                    {
+                        Value* cOne = ConstantInt::get(cct.int8Ty, 1);
+                        switch ((&*inst)->getNumOperands())
+                        {
+                            case 5: // storeBasicBlock
+                            (&*inst)->setOperand(3, cOne);
+                            break;
+                            case 6: // storeMemOp
+                            (&*inst)->setOperand(3, cOne);
+                            break;
+                            case 7: // storeBasicBlockComplete
+                            (&*inst)->setOperand(3, cOne);
+                            break;
+                            default:
+                            break;
+                        }
+                        //errs () << *inst << "\n";
+                    }
+                    if (&*inst == posValue) break;
+                }
+            }
+            
+            for (auto pit = predList.begin(), pet = predList.end(); pit!= pet; ++pit)
+            {
+                Value* startPos;
+                Value* pathInfo = ConstantInt::get(cct.int8Ty, 0);
+                int bb_val = blockHash(*pit);
+                auto costInfo = costPerBlock.find(bb_val);
+                auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
+                ++iPt;
+                auto ub = dyn_cast<Instruction>(costInfo->second.posValue)->getOperand(1)->user_begin();
+                while ((*ub)->getType() != cct.voidPtrTy ||
+                       (dyn_cast<Instruction>(*ub))->getParent() != *pit) ++ub;
+                startPos = *(ub);
+                
+                BranchInst* brInst = dyn_cast<BranchInst>((*pit)->getTerminator());
+                if (brInst == NULL) {continue;} // Should always succed, checked above
+                if (brInst->isUnconditional())
+                {
+                    // Already assigned
+                }
+                else
+                {
+                    Value* cond = brInst->getCondition();
+                    Value* argsEPI[] = {pathInfo, cond};
+                    /*CallInst* callEPI = CallInst::Create(cct.extendPathInfoFunction, 
+                                                ArrayRef<Value*>(argsEPI, 2), "",  brInst);*/
+                    Value* castCond = castSupport(cct.int8Ty, cond, brInst);
+                    //MarkInstAsContechInst(callEPI);
+
+                    //callEPI->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
+                    pathInfo = castCond;
+                }
+                
+                int pos = 0;
+                for (auto sit = succ_begin(*pit), set = succ_end(*pit); sit != set; ++sit)
+                {
+                    succPHIInfo[*sit]->addIncoming(pathInfo, *pit);
+                    succPHIStart[*sit]->addIncoming(startPos, *pit);
+                    assert(pos < 2);
+                    cfgInfoMap[*pit]->next_id[1-pos] = cfgInfoMap[*sit]->id;
+                    pos++;
+                }
+                
+                blockChainCount.erase(*pit);
+                hasChanged = true;
+                
+                Instruction* posValue = dyn_cast<Instruction>(costInfo->second.posValue);
+                for (auto inst = (*pit)->begin(); inst != (*pit)->end(); ++inst)
+                {
+                    if ((&*inst)->getMetadata(cct.ContechMDID) &&
+                        dyn_cast<CallInst>(&*inst) != NULL)
+                    {
+                        Value* cOne = ConstantInt::get(cct.int8Ty, 1);
+                        switch ((&*inst)->getNumOperands())
+                        {
+                            case 6: // storeMemOp
+                            (&*inst)->setOperand(4, cOne);
+                            break;
+                            case 7: // storeBasicBlockComplete
+                            (&*inst)->setOperand(5, cOne);
+                            break;
+                            default:
+                            break;
+                        }
+                        //errs () << (&*inst)->getNumOperands() << "\t" << *inst << "\n";
+                    }
+                    if (&*inst == posValue) break;
+                }
+            }
+            break;
         }
-    }*/
+    } while (hasChanged);
 }
 
 //
@@ -421,12 +589,13 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
+             Constant* cPath = ConstantInt::get(cct.int8Ty, 0);
             Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
             MarkInstAsContechInst(addrI);
 
-            Value* argsMO[] = {addrI, cPos, pos, cElide};
+            Value* argsMO[] = {addrI, cPos, pos, cElide, cPath};
             debugLog("storeMemOpFunction @" << __LINE__);
-            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 4), "", li);
+            CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 5), "", li);
             MarkInstAsContechInst(smo);
 
             assert(smo != NULL);
@@ -497,7 +666,7 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
         pred = *pit;
 #endif
         auto bbInfo = cfgInfoMap.find(pred);
-        bbInfo->second->next_id = (int32_t)bbid;
+        bbInfo->second->next_id[0] = (int32_t)bbid;
         
         int bb_val = blockHash(pred);
         costOfBlock[bb_val].preElide = true;

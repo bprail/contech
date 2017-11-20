@@ -55,7 +55,7 @@ namespace llvm {
 
     typedef struct _llvm_basic_block {
         unsigned int id, len, lineNum, numIROps, critPathLen;
-        int32_t next_id;
+        int32_t next_id[2];
         bool containCall;
         bool containGlobalAccess;
         bool containAtomic;
@@ -208,6 +208,7 @@ namespace llvm {
 
         Constant* pthreadExitFunction;
 
+        Type* int1Ty;
         Type* int8Ty;
         Type* int16Ty;
         Type* int32Ty;

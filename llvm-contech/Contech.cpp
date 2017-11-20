@@ -139,6 +139,7 @@ Type* Contech::getTypeFromStr(const char ty)
     switch(ty)
     {
         case 'v': return cct.voidTy;
+        case 'b': return cct.int1Ty;
         case 'c': return cct.int8Ty;
         case 's': return cct.int16Ty;
         case 'i': return cct.int32Ty;
@@ -189,6 +190,7 @@ bool Contech::doInitialization(Module &M)
     // Get the different integer types required by Contech
     LLVMContext &ctx = M.getContext();
     currentDataLayout = &M.getDataLayout();
+    cct.int1Ty = Type::getInt1Ty(ctx);
     cct.int8Ty = Type::getInt8Ty(ctx);
     cct.int16Ty = Type::getInt16Ty(ctx);
     cct.int32Ty = Type::getInt32Ty(ctx);
@@ -218,7 +220,7 @@ bool Contech::doInitialization(Module &M)
     cct.getBufPosFunction = getFunction(M, "__ctGetBufferPos", "ip");
     cct.storeBasicBlockFunction = getFunction(M, "__ctStoreBasicBlock", "piipc");
     cct.storeBasicBlockCompFunction = getFunction(M, "__ctStoreBasicBlockComplete", "iiipccc");
-    cct.extendPathInfoFunction = getFunction(M, "__ctExtendPathInfo", "ccc");
+    cct.extendPathInfoFunction = getFunction(M, "__ctExtendPathInfo", "ccb");
     cct.storePathInfoFunction = getFunction(M, "__ctStorePathInfo", "vpc");
     cct.storeMemOpFunction = getFunction(M, "__ctStoreMemOp", "vpipcc");
     cct.getBufFunction = getFunction(M, "__ctGetBuffer", "p");
@@ -707,7 +709,7 @@ cleanup:
             //   Then runtime can directly pass the events to the event list
             contechStateFile->write((char*)&evTy, sizeof(unsigned char));
             contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
-            contechStateFile->write((char*)&bi->second->next_id, sizeof(int32_t));
+            contechStateFile->write((char*)&bi->second->next_id, 2*sizeof(int32_t));
             // This is the flags field, which is currently 0 or 1 for containing a call
             unsigned int flags = ((unsigned int)bi->second->containCall) |
                                  ((unsigned int)bi->second->containGlobalAccess << 1);
@@ -1051,7 +1053,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     }
 
     bi->id = bbid;
-    bi->next_id = -1;
+    bi->next_id[0] = -1;
+    bi->next_id[1] = -1;
     bi->first_op = NULL;
     bi->containGlobalAccess = false;
     bi->containAtomic = false;
