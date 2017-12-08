@@ -8,6 +8,8 @@
 
 #include <map>
 #include <vector>
+#include <deque>
+#include <queue>
 
 namespace contech
 {
@@ -194,6 +196,7 @@ namespace contech
             // DEBUG information
             uint64_t sum;
             uint64_t bufSum;
+            
             unsigned int lastBufPos;
             unsigned int lastID;
             unsigned int lastBBID;
@@ -261,6 +264,25 @@ namespace contech
             std::map<uint32_t, std::vector<pinternal_loop_track> > loopTrack;
             std::map<uint32_t, std::map<uint32_t, std::vector<pinternal_loop_track> > > loopBlock;
             
+            // long - return type of ftell()
+            //   resetPoint is where to seek back to
+            //   when a buffer is unblocked, as this is
+            //   the first skipped buffer; however, there
+            //   are buffers between current and this which
+            //   have been processed and should now be skipped...
+            //  So store a map (ctid) to list of buffer events that
+            //   have been skipped.  On unblock, move that list
+            //   into a separate structure, so that when current
+            //   buffer is finished, it processes the first from
+            //   the unblock list.
+            //  If the ctid reblocks, then subsequent buffer events
+            //   from the current list will be reviewed and then put
+            //   back on their skip list.
+            std::map<uint32_t, bool> skipSet;
+            std::map<uint32_t, std::priority_queue<long> > skipList;
+            std::deque<std::pair<uint32_t,long> > unblockList;
+            long maxBufPos;
+            
             pinternal_basic_block_info bb_info_table;
             ct_addr_t* constGVAddr;
             int maxConstGVId;
@@ -280,6 +302,9 @@ namespace contech
             void resetEventLib();
             void readMemOp(pct_memory_op, FILE*);
             uint64_t getSum() {return sum;}
+            void unblockCTID(uint32_t);
+            void blockCTID(FILE*, uint32_t);
+            
     };
     
     

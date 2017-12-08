@@ -160,7 +160,6 @@ void EventList::barrierTicket()
         if (event->event_type == ct_event_barrier)
         {
             printf("%u: on ticket %lu\n", event->contech_id, event->bar.barrierNum);
-
         }
     }
 }
@@ -209,6 +208,7 @@ pct_event EventList::getNextContechEvent()
             // Barriers have ordering numbers too
             if (event->bar.barrierNum == barrierNum)
             {
+                el->unblockCTID(event->contech_id);
                 barrierNum++;
                 eventQueueCurrent->second.pop_front();
                 eventQueueCurrent = queuedEvents.begin();
@@ -243,6 +243,8 @@ pct_event EventList::getNextContechEvent()
         }
         else if (event->sy.ticketNum == ticketNum)
         {
+            el->unblockCTID(event->contech_id);
+            
             // This is the next ticket
             ticketNum++;
             eventQueueCurrent->second.pop_front();
@@ -321,6 +323,7 @@ pct_event EventList::getNextContechEvent()
             if (event->sy.ticketNum > ticketNum)
             {
                 //printf("Delay :%llu %d %d\n", event->sy.ticketNum, event->contech_id, queuedEvents.size());
+                el->blockCTID(file, event->contech_id);
                 
                 queuedEvents[event->contech_id].push_back(event);
                 eventQueueCurrent = queuedEvents.begin();
@@ -344,6 +347,8 @@ pct_event EventList::getNextContechEvent()
         {
             if (event->bar.barrierNum > barrierNum)
             {
+                el->blockCTID(file, event->contech_id);
+                
                 queuedEvents[event->contech_id].push_back(event);
                 eventQueueCurrent = queuedEvents.begin();
                 resetMinTicket = true;

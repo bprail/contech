@@ -27,6 +27,10 @@ EventLib::EventLib()
     lastType = 0;
     next_basic_block_id = -1;
     
+    skipSet.clear();
+    skipList.clear();
+    unblockList.clear();
+    
     cedPos = 0;
     debug_file = NULL;
     
@@ -150,6 +154,10 @@ void EventLib::resetEventLib()
     bufSum = 0;
     constGVAddr = NULL;
     maxConstGVId = 0;
+    
+    skipSet.clear();
+    skipList.clear();
+    unblockList.clear();
 }
 
 void EventLib::readMemOp(pct_memory_op pmo, FILE* fptr)
@@ -743,6 +751,87 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 //fprintf(stderr, "Now in ctid - %d\n", npe->contech_id);
             }
             fread_check(&npe->buf.pos, sizeof(unsigned int), 1, fptr);
+            
+            // If there is unblocked buffers, process them
+            if (unblockList.size() != 0)
+            {
+                sum -= 12;
+                long curPos = ftell(fptr);
+                if (curPos > maxBufPos)
+                {
+                    //fprintf(stderr, "EM - %d - %ld\n", npe->contech_id, curPos);
+                    maxBufPos = curPos;
+                    auto ss = skipSet.find(npe->contech_id);
+                    if (ss != skipSet.end() && ss->second == true)
+                    {
+                        // TODO: if this buffer is skipped, then either
+                        //  1) we need another buffer after this one
+                        //  2) this buffer will be unblocked before it is needed
+                        skipList[npe->contech_id].push(-1 * (curPos - 12));
+                        
+                        fseek(fptr, npe->buf.pos, SEEK_CUR);
+                        free(npe);
+                        
+                        npe = createContechEvent(fptr);
+                        
+                        if (npe != NULL) return npe;
+                        // if npe != NULL, then a recursed call has started reading
+                        //   from an unblockList buffer
+                        
+                        // If npe == NULL, then all buffer start posistions have
+                        //   been queued and processing should use the unblockList
+                    }
+                    else
+                    {
+                        unblockList.push_back(std::make_pair(npe->contech_id, curPos - 12));
+                    }
+                }
+                
+                auto elem = unblockList.front();
+                long l = elem.second;
+                unblockList.pop_front();
+                fseek(fptr, l, SEEK_SET);
+                
+                // Copied from above, reread the buffer event for this position
+                fread_check(&npe->event_type, sizeof(char), 1, fptr);
+                char buf[3];
+                fread_check(buf, sizeof(char), 3, fptr);
+                fread_check(&npe->contech_id, sizeof(unsigned int), 1, fptr);
+                fread_check(&npe->buf.pos, sizeof(unsigned int), 1, fptr);
+                
+                //fprintf(stderr, "RL - %d - %ld\n", npe->contech_id, l);
+            }
+            
+            // If this contech id is to be skipped, then store its position
+            //   and move on to the next.
+            auto ss = skipSet.find(npe->contech_id);
+            if (ss != skipSet.end() && ss->second == true)
+            {
+                long l = ftell(fptr) - 12;
+                
+                sum -= 12; // remove this event from the set of bytes consumed
+                
+                skipList[npe->contech_id].push(-l);
+                //fprintf(stderr, "SL - %d - %ld + %ld\n", npe->contech_id, l, npe->buf.pos);
+                
+                // skip the rest of this buffer
+                fseek(fptr, npe->buf.pos, SEEK_CUR);
+                
+                free(npe);
+                return createContechEvent(fptr);
+            }
+            
+            if (npe->contech_id == 0)
+            {
+                //fprintf(stderr, "BUF(0) - %ld\n", ftell(fptr) - 12);
+            }
+            
+            long curPos = ftell(fptr);
+            if (curPos > maxBufPos)
+            {
+                maxBufPos = curPos;
+            }
+            
             if (bufSum == 0)
             {
                 // Everything we've read so far, except this event (12B)
@@ -1123,4 +1212,59 @@ void EventLib::displayContechEventStats()
 #ifdef SCAN_TRACE
     fprintf(stderr, "ZERO: %llu\t NEG1: %llu\tBYTES: %llu\n", zeroBytes, negOneBytes, bufSum);
 #endif
+}
+
+void EventLib::blockCTID(FILE* fptr, uint32_t ctid)
+{
+    if (skipSet[ctid] == false)
+    {
+        for (auto it = unblockList.begin(), et = unblockList.end(); it != et; )
+        {
+            // If this is the very last element in the unblock list, then
+            //   retain it.  It will be skipped when the current buffer
+            //   finishes and the unblock conditional will handle queuing
+            //   a new block.  Otherwise, when this block finishes, the
+            //   processing may go sequentially rather than find a new block.
+            if (unblockList.size() == 1) break;
+            if (it->first == ctid)
+            {
+                fprintf(stderr, "DL - %u - %ld\n", ctid, it->second);
+                skipList[ctid].push(-1 *it->second);
+                it = unblockList.erase(it);
+                
+                // Erase can invalidate the end iterator, so we have to request it again
+                et = unblockList.end();
+            }
+            else 
+            {
+                ++it;
+            }
+        }
+        /*if (unblockList.size() == 0)
+        {
+            fseek(fptr, maxBufPos - 12, SEEK_SET);
+        }*/
+    }
+    
+    //fprintf(stderr, "BL - %u - %d\n", ctid, skipSet[ctid]);
+    skipSet[ctid] = true;
+}
+
+void EventLib::unblockCTID(uint32_t ctid)
+{
+    //fprintf(stderr, "UL - %u - %d\n", ctid, skipSet[ctid]);
+    skipSet[ctid] = false;
+    auto sl = skipList.find(ctid);
+    if (sl == skipList.end() ||
+        sl->second.size() == 0) return;
+    //for (auto it = sl->second.begin(), et = sl->second.end(); it != et; ++it)
+    while (sl->second.size() > 0)
+    {
+        //long l = *it;
+        long l = sl->second.top();
+        sl->second.pop();
+        unblockList.push_back(std::make_pair(ctid, -l));
+        //fprintf(stderr, "UN - %ld\n", l);
+    }
+    //sl->second.clear();
 }
