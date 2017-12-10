@@ -706,7 +706,7 @@ namespace llvm {
 
                 // Add Store insts here
                 Value* gepArgs[2] = {ConstantInt::get(cct->int32Ty, 0), ConstantInt::get(cct->int32Ty, 0)};
-                Instruction* ppid = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
+                Instruction* ppid = GetElementPtrInst::Create(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ParentIdPtr", ci);
                 MarkInstAsContechInst(ppid);
 
                 debugLog("getThreadNumFunction @" << __LINE__);
@@ -717,7 +717,7 @@ namespace llvm {
                 MarkInstAsContechInst(stPPID);
 
                 gepArgs[1] = ConstantInt::get(cct->int32Ty, 1);
-                Instruction* parg = ctPass->createGEPI(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
+                Instruction* parg = GetElementPtrInst::Create(NULL, nArg, ArrayRef<Value*>(gepArgs, 2), "ArgPtr", ci);
                 MarkInstAsContechInst(parg);
 
                 Instruction* stPARG = new StoreInst(ci->getArgOperand(1), parg, ci);

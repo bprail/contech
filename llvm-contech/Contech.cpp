@@ -695,6 +695,7 @@ cleanup:
         //   First, put a new basic block count at the start of the existing data
         *(unsigned int*) buffer = bb_count;
         contechStateFile->write(buffer, length);
+        delete[] buffer;
     }
     //contechStateFile->seekp(0, ios_base::end);
 
@@ -778,7 +779,9 @@ cleanup:
                 t = tn;
             }
             wcount++;
-            //free(bi->second);
+            // Cannot delete bi->second here, as the ID may be referenced by a later
+            //   block when computing loop info
+            //delete bi->second;
         }
     }
     //errs() << "Wrote: " << wcount << " basic blocks\n";
@@ -892,9 +895,14 @@ bool Contech::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
             {
                 if (BranchInst *bi = dyn_cast<BranchInst>(&*I))
                 {
-                    // Contech did not insert this branch, but is should claim it, so the instruction
+                    // Contech did not insert this branch, but it should claim it, so the instruction
                     //   is not later removed.
-                    if (bi->isUnconditional()) {*st = 4; MarkInstAsContechInst(B.getTerminator()); return false;}
+                    if (bi->isUnconditional()) 
+                    {
+                        *st = 4;
+                        MarkInstAsContechInst(B.getTerminator()); 
+                        return false;
+                    }
                 }
                 else if (/* ReturnInst *ri = */ dyn_cast<ReturnInst>(&*I))
                 {
@@ -1511,17 +1519,11 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     //  into the CFG structure, so that targets can be matched up
     //  once all basic blocks have been parsed
     cfgInfoMap.insert(pair<BasicBlock*, llvm_basic_block*>(&B, bi));
-    if (elideBasicBlockId)
-    {
-        
-    }
-
+    
     debugLog("Return from BBID: " << bbid);
 
     return true;
 }
 
-
 char Contech::ID = 0;
 static RegisterPass<Contech> X("Contech", "Contech Pass", false, false);
-
