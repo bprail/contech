@@ -50,16 +50,11 @@ __thread pcontech_join_stack __ctJoinStack = NULL;
 __thread pcontech_cilk_sync __ctCilkLastFrame = NULL;
 
 #ifdef CT_OVERHEAD_TRACK
-// __thread ct_tsc_t __ctTotalThreadOverhead = 0;
-// __thread unsigned int __ctTotalThreadBuffersQueued = 0;
-// __thread ct_tsc_t __ctLastQueueBuffer = 0;
-// __thread ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
  ct_tsc_t __ctTotalThreadOverhead = 0;
  ct_tsc_t __ctTotalThreadQueue = 0;
  unsigned int __ctTotalThreadBuffersQueued = 0;
  __thread ct_tsc_t __ctLastQueueBuffer = 0;
  ct_tsc_t __ctTotalTimeBetweenQueueBuffers = 0;
-//__thread uint64_t __ctCurrentOverheadStart = 0;
 #endif
 
 unsigned long long __ctGlobalOrderNumber __attribute__ ((aligned (64))) = 0;
@@ -109,13 +104,13 @@ ct_tsc_t __ctGetCurrentTick()
 unsigned int __ctAllocateCTid()
 {
     // Return old number and increment
-    unsigned int r = __sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
+    unsigned int r = __atomic_fetch_add(&__ctThreadGlobalNumber, 1, __ATOMIC_CONSUME);
     return r;
 }
 
 uint64_t __ctAllocateTicket()
 {
-    return __sync_fetch_and_add(&__ctGlobalOrderNumber, 1);
+    return __atomic_fetch_add(&__ctGlobalOrderNumber, 1, __ATOMIC_CONSUME);
 }
 
 void __ctAllocateLocalBuffer()
@@ -241,7 +236,8 @@ void __ctCleanupThread(void* v)
     #ifdef CT_OVERHEAD_TRACK
     ct_tsc_t start = rdtsc();
     #endif
-    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    
+    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
     if (__ctIsROIEnabled == true && __ctIsROIActive == false)
     {
         __ctAllocateLocalBuffer();
@@ -282,7 +278,7 @@ int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
     
     if (ret != 0) 
     {
-        __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+        __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
         free(ptc);
         goto create_exit;
     }
@@ -560,13 +556,15 @@ microbuf_exit:
     
 #ifdef CT_OVERHEAD_TRACK
     end = rdtsc();
-    __sync_fetch_and_add(&__ctTotalThreadOverhead, (end - start));
-    __sync_fetch_and_add(&__ctTotalThreadQueue, (qend - qstart));
-    int d = __sync_fetch_and_add(&__ctTotalThreadBuffersQueued, 1);
+    __atomic_fetch_add(&__ctTotalThreadOverhead, end - start), __ATOMIC_SEQ_CST);
+    __atomic_fetch_add(&__ctTotalThreadQueue, (qend - qstart), __ATOMIC_SEQ_CST);
+    int d = __atomic_fetch_add(&__ctTotalThreadBuffersQueued, 1, __ATOMIC_SEQ_CST);
     
     if (__ctLastQueueBuffer != 0)
     {
-        __sync_fetch_and_add(&__ctTotalTimeBetweenQueueBuffers, (start - __ctLastQueueBuffer));
+        __atomic_fetch_add(&__ctTotalTimeBetweenQueueBuffers, 
+                           (start - __ctLastQueueBuffer), 
+                           __ATOMIC_SEQ_CST);
     }
     __ctLastQueueBuffer = end;
 #endif 
@@ -857,7 +855,7 @@ void __ctStoreBarrier(bool enter, void* a, ct_tsc_t start)
     if (__ctThreadLocalBuffer == NULL) return;
     #endif
 
-    unsigned long long ordNum = __sync_fetch_and_add(&__ctGlobalBarrierNumber, 1);
+    unsigned long long ordNum = __atomic_fetch_add(&__ctGlobalBarrierNumber, 1, __ATOMIC_SEQ_CST);
     ct_tsc_t end_t = rdtsc();
     unsigned int p = __ctThreadLocalBuffer->pos;
     
@@ -886,8 +884,7 @@ void __ctStoreThreadJoinInternal(bool ie, unsigned int id, ct_tsc_t start)
     ct_tsc_t end_t = rdtsc();
     unsigned int p = __ctThreadLocalBuffer->pos;
     
-    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_join/*<<24*/;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
+    *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_task_join;
     *((char*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = ie;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)]) = start;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)+ sizeof(char)+ sizeof(ct_tsc_t)]) = end_t;
@@ -907,7 +904,6 @@ void __ctStoreDelay(ct_tsc_t start_t)
     ct_tsc_t t = rdtsc();
 
     *((ct_event_id*)&__ctThreadLocalBuffer->data[p]) = ct_event_delay;
-    //*((unsigned int*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = __ctThreadLocalNumber;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int)]) = start_t;
     *((ct_tsc_t*)&__ctThreadLocalBuffer->data[p + sizeof(unsigned int) + sizeof(ct_tsc_t)]) = t;
     
@@ -1049,8 +1045,6 @@ void __ctOMPThreadCreate(unsigned int parent)
 {
     unsigned int threadId = __ctAllocateCTid();
 
-    
-    
     // First close out any current buffer, if one exists
     if (__ctThreadLocalBuffer != NULL &&
         __ctThreadLocalBuffer != (pct_serial_buffer)&initBuffer)
@@ -1154,7 +1148,7 @@ void __ctOMPTaskJoin()
     __ctQueueBuffer(true);
     unsigned int taskId = __ctThreadLocalNumber;
     
-    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
     
     __ctThreadLocalNumber = threadId;
     __ctThreadLocalBuffer->id = threadId;
@@ -1185,7 +1179,7 @@ void __ctOMPThreadJoin(unsigned int parent)
     __ctQueueBuffer(true);
     
     assert(__ctThreadLocalNumber != parent);
-    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
     
     __ctThreadLocalNumber = parent;
     __ctThreadLocalBuffer->id = parent;
@@ -1283,7 +1277,7 @@ void __ctOMPStoreInOutDeps(void* task, size_t offset, int32_t numDeps, int32_t i
     if (inDep == 0)
     {
         __ctStoreThreadJoinInternal(true, parentId, rdtsc());
-        __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+        __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
         __ctQueueBuffer(true);
         __ctThreadLocalNumber = threadId;
         __ctThreadLocalBuffer->id = threadId; //Is this required?
@@ -1496,7 +1490,7 @@ void __ctRestoreCilkFrame(pcontech_cilk_sync pccs)
             __ctQueueBuffer(true);
             __ctThreadLocalNumber = pccs->parentId;
             __ctThreadLocalBuffer->id = __ctThreadLocalNumber;
-            __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+            __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
             
             //__ctRecordCilkSync(pccs); // HACK
         }

@@ -1,0 +1,8 @@
+EasyProf is a light-weight profiling tool built on top of Contech.
+It's intended to profile OpenMPI applications and give insights to 
+programmers about how they could further optimize their parallel code. 
+However, due to limitations of current version of Contech, our 
+implementations works better with other parallel computing 
+frameworks (OpenMP, pthreads, etc.)
+
+- alphalzh

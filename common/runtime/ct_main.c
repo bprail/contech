@@ -59,7 +59,8 @@ void __ctCleanupThreadMain(void* v)
     // Queue the buffer
     __ctQueueBuffer(false);
     // Increment the exit count
-    __sync_fetch_and_add(&__ctThreadExitNumber, 1);
+    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
+
 #if DEBUG
     printf("%d =?= %d\n", __ctThreadGlobalNumber, __ctThreadExitNumber);
 #endif
@@ -131,7 +132,7 @@ int main(int argc, char** argv)
 #endif
 
         // Set aside 0 for main thread
-        __ctThreadLocalNumber = __sync_fetch_and_add(&__ctThreadGlobalNumber, 1);
+        __ctThreadLocalNumber = __atomic_fetch_add(&__ctThreadGlobalNumber, 1, __ATOMIC_SEQ_CST);
         
         // Prealloc
         {
@@ -167,7 +168,6 @@ int main(int argc, char** argv)
     //   Use ROI code to reset if there is a ROI present
     __ctAllocateLocalBuffer();
     
-
     {
         struct timeb tp;
         ftime(&tp);

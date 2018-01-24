@@ -266,8 +266,6 @@ namespace llvm {
         unsigned int getSimpleLog(unsigned int);
         unsigned int getCriticalPathLen(BasicBlock& B);
         int getLineNum(Instruction* I);
-        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, BasicBlock* B);
-        GetElementPtrInst* createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I);
         Function* createMicroTaskWrapStruct(Function* ompMicroTask, Type* arg, Module &M);
         Function* createMicroTaskWrap(Function* ompMicroTask, Module &M);
         Function* createMicroDependTaskWrap(Function* ompMicroTask, Module &M, size_t taskOffset, size_t numDep);

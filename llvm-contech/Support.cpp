@@ -5,7 +5,6 @@
 #error LLVM Version 3.8 or greater required
 #else
 #if LLVM_VERSION_MINOR>=8
-#define NDEBUG
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -1223,7 +1222,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     // getElemPtr 0, 0 -> arg 0 of type*
 
     Value* args[2] = {ConstantInt::get(cct.int32Ty, 0), ConstantInt::get(cct.int32Ty, 0)};
-    Instruction* ppid = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
+    Instruction* ppid = GetElementPtrInst::Create(NULL, addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
     MarkInstAsContechInst(ppid);
 
     Instruction* pid = new LoadInst(ppid, "ParentId", soloBlock);
@@ -1231,7 +1230,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
 
     // getElemPtr 0, 1 -> arg 1 of type*
     args[1] = ConstantInt::get(cct.int32Ty, 1);
-    Instruction* parg = createGEPI(NULL, addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
+    Instruction* parg = GetElementPtrInst::Create(NULL, addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
     MarkInstAsContechInst(parg);
 
     Instruction* argP = new LoadInst(parg, "Arg", soloBlock);
@@ -1430,20 +1429,6 @@ Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
     }
 
     return v;
-}
-
-GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, BasicBlock* B)
-{
-    #if LLVM_VERSION_MINOR<6
-    return GetElementPtrInst::Create(v, ar, tw, B);
-    #else
-    return GetElementPtrInst::Create(t, v, ar, tw, B);
-    #endif
-}
-
-GetElementPtrInst* Contech::createGEPI(Type* t, Value* v, ArrayRef<Value*> ar, const Twine& tw, Instruction* I)
-{
-    return GetElementPtrInst::Create(t, v, ar, tw, I);
 }
 
 int Contech::getLineNum(Instruction* I)
