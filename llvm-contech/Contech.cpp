@@ -10,11 +10,11 @@
 #define DEBUG_TYPE "Contech"
 
 #include "llvm/Config/llvm-config.h"
+
 #if LLVM_VERSION_MAJOR==2
 #error LLVM Version 3.8 or greater required
 #else
 #if LLVM_VERSION_MINOR>=8
-#define NDEBUG
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
