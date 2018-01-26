@@ -45,8 +45,6 @@ namespace contech {
             deque <EventList*> traces;
             deque <EventList*>::iterator currentTrace;
             uint64_t totalSpace;
-            
-            //pct_event getNextContechEvent(EventList*);
     
         public:
             EventQ();
