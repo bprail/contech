@@ -73,9 +73,21 @@ int EventLib::unpack(uint8_t *buf, char const fmt[], ...)
 
     bp = buf;
     va_start(args, fmt);
-    for (p = fmt; *p != '\0'; p++) {
-
-        switch (*p) 
+    for (p = fmt; *p != '\0'; p++) 
+    {
+        char ty = *p;
+        if (ty == 's') /* size_t */
+        {
+            switch (sizeof(size_t))
+            {
+                case (sizeof(uint16_t)): ty = 's'; break;
+                case (sizeof(uint32_t)): ty = 'l'; break;
+                case (sizeof(uint64_t)): ty = 't'; break;
+                default: ty = 'l'; break;
+            }
+        }
+        
+        switch (ty) 
         {
             case 'b': /* bool */
             case 'c': /* char */
@@ -852,16 +864,28 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         
         case (ct_event_mpi_transfer):
         {
-            //mpixf
-            fread_check(&npe->mpixf.isSend, sizeof(char), 1, fptr);
-            fread_check(&npe->mpixf.isBlocking, sizeof(char), 1, fptr);
-            fread_check(&npe->mpixf.comm_rank, sizeof(int), 1, fptr);
-            fread_check(&npe->mpixf.tag, sizeof(int), 1, fptr);
-            fread_check(&npe->mpixf.buf_ptr, sizeof(ct_addr_t), 1, fptr);
-            fread_check(&npe->mpixf.buf_size, sizeof(size_t), 1, fptr);
-            fread_check(&npe->mpixf.start_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->mpixf.end_time, sizeof(ct_tsc_t), 1, fptr);
-            fread_check(&npe->mpixf.req_ptr, sizeof(ct_addr_t), 1, fptr);
+            const size_t mpi_size = sizeof(npe->mpixf.isSend) +
+                                    sizeof(npe->mpixf.isBlocking) +
+                                    sizeof(npe->mpixf.comm_rank) +
+                                    sizeof(npe->mpixf.tag) +
+                                    sizeof(npe->mpixf.buf_ptr) +
+                                    sizeof(npe->mpixf.buf_size) +
+                                    sizeof(npe->mpixf.start_time) +
+                                    sizeof(npe->mpixf.end_time) +
+                                    sizeof(npe->mpixf.req_ptr);
+            uint8_t buf[mpi_size];
+            int bytesConsume = 0;
+            fread_check(buf, sizeof(uint8_t), mpi_size, fptr);
+            bytesConsume = unpack(buf, "cclltsttt", &npe->mpixf.isSend, 
+                                                    &npe->mpixf.isBlocking, 
+                                                    &npe->mpixf.comm_rank, 
+                                                    &npe->mpixf.tag,
+                                                    &npe->mpixf.buf_ptr, 
+                                                    &npe->mpixf.buf_size, 
+                                                    &npe->mpixf.start_time, 
+                                                    &npe->mpixf.end_time, 
+                                                    &npe->mpixf.req_ptr);
+            assert(bytesConsume == mpi_size);
         }
         break;
         
@@ -876,7 +900,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             uint8_t buf[mpi_size];
             int bytesConsume = 0;
             fread_check(buf, sizeof(uint8_t), mpi_size, fptr);
-            bytesConsume = unpack(buf, "", &npe->mpiao.isToAll,
+            bytesConsume = unpack(buf, "cltstt", &npe->mpiao.isToAll,
                                            &npe->mpiao.one_comm_rank,
                                            &npe->mpiao.buf_ptr,
                                            &npe->mpiao.buf_size,
