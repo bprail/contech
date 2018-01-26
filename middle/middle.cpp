@@ -185,6 +185,7 @@ reset_middle:
             case ct_event_bulk_memory_op:
             case ct_event_mpi_transfer:
             case ct_event_mpi_wait:
+            case ct_event_mpi_allone:
             case ct_event_roi:
                 break;
             default:
@@ -194,7 +195,8 @@ reset_middle:
 
         // New context ids should only appear on task create events
         // Seeing an invalid context id is a good sign that the trace is corrupt
-        if (event->event_type != ct_event_task_create && !context.count((currentRank << 24) | event->contech_id))
+        if (event->event_type != ct_event_task_create && 
+            !context.count((currentRank << 24) | event->contech_id))
         {
             cerr << "ERROR: Saw an event " << event->event_type <<" from a new context " << event->contech_id << " before seeing a create event for that context." << endl;
             cerr << "Either the trace is corrupt or the trace file is missing a create event for the new context. " << endl;
