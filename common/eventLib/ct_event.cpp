@@ -763,6 +763,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 free(npe);
                 sum -= 12;
                 
+                long earliestPos = LONG_MAX;
                 for (auto it = skipList.begin(), et = skipList.end(); it != et; ++it)
                 {
                     ss = skipSet.find(it->first);
@@ -774,7 +775,15 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         continue;
                     }
                     long newPos = it->second.front();
-                    fseek(fptr, newPos, SEEK_SET);
+                    if (newPos < earliestPos)
+                    {
+                        earliestPos = newPos;
+                    }
+                }
+                
+                if (earliestPos < LONG_MAX)
+                {
+                    fseek(fptr, earliestPos, SEEK_SET);
                     
                     return createContechEvent(fptr);
                 }
