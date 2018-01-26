@@ -279,14 +279,14 @@ namespace contech
             //   from the current list will be reviewed and then put
             //   back on their skip list.
             std::map<uint32_t, bool> skipSet;
-            std::map<uint32_t, std::priority_queue<long> > skipList;
-            std::deque<std::pair<uint32_t,long> > unblockList;
+            std::map<uint32_t, std::deque<long> > skipList;
             long maxBufPos;
             
             pinternal_basic_block_info bb_info_table;
             ct_addr_t* constGVAddr;
             int maxConstGVId;
             
+            void initBufList(FILE*);
             int unpack(uint8_t *buf, char const fmt[], ...);
             void dumpAndTerminate(FILE *fptr);
             void fread_check(void* x, size_t y, size_t z, FILE* a);
