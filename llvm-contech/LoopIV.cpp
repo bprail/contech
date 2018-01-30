@@ -472,7 +472,7 @@ namespace llvm{
         llb.canElide = true;
         llb.stepIV = IVToIncMap[dyn_cast<Instruction>(baseAddr)];
         
-        errs() << "HIT " << *gepAddr << "\t" << llb.stepIV << "\n";
+        //errs() << "HIT " << *gepAddr << "\t" << llb.stepIV << "\n";
         
         return gepAddr;
     }
@@ -622,12 +622,6 @@ namespace llvm{
         
         unsigned iterCount = SE->getSmallConstantTripCount(L);
         if (iterCount != 0 && iterCount < 4) return ;
-        
-        /*if (!SE->hasLoopInvariantBackedgeTakenCount(L)) 
-        {
-            errs() << "BACK -- " << **(L->block_begin()) << "\n";
-            return;
-        }*/
         
         llvm_loopiv_block tempLoopMemoryOps;
         
@@ -780,51 +774,18 @@ namespace llvm{
     {
         if (!F.isDeclaration()) 
         {
-          LoopMemoryOps.clear();
-          cnt_GetElementPtrInst = 0;
-          cnt_elided = 0;
-          
-          LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
-          SE = ctThis->getAnalysisSCEV(F);
-          for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
-          {
-            Loop *L = *i;
+            LoopMemoryOps.clear();
+            cnt_GetElementPtrInst = 0;
+            cnt_elided = 0;
+              
+            LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
+            SE = ctThis->getAnalysisSCEV(F);
+            for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
+            {
+                Loop *L = *i;
             
-            // Iterate on subloops of Loop L
-            iterateOnLoop(L);
-            
-    #if 0
-            outs() << "----------- Print summary for the loop --------------\n";
-            
-            outs() << "LRR: F[" << F.getName() <<
-            "] Loop %" << (*(L->block_begin()))->getName() << " (" <<
-            L->getNumBlocks() << " block(s))\n";
-
-            outs() << "LINEAR INDUCTION VARIABLES:\n";
-            for(auto iv = PossibleIVs.begin(); iv != PossibleIVs.end(); ++iv) {
-                outs() << **iv << "\t***inc is : " << IVToIncMap[*iv] << "\n";
-            }
-            
-            outs() << "NON-LINEAR INDUCTION VARIABLES:\n";
-            for(auto iv = NonLinearIvs.begin(); iv != NonLinearIvs.end(); ++iv) {
-                outs() << **iv << "\n";
-            }
-            
-            outs() << "POSSIBLE DERIVED LINEAR INDUCTION VARIABLES:\n";
-            for(auto iv = DerivedLinearIvs.begin(); iv != DerivedLinearIvs.end(); ++iv) {
-                outs() << **iv << "\n";
-            }
-
-            outs() << "POSSIBLE DERIVED NON-LINEAR INDUCTION VARIABLES:\n";
-            for(auto iv = DerivedNonlinearIvs.begin(); iv != DerivedNonlinearIvs.end(); ++iv) {
-                outs() << **iv << "\n";
-            }
-
-            outs() << "cnt_GetElementPtrInst\t" << cnt_GetElementPtrInst << "\n";
-            outs() << "cnt_elided\t" << cnt_elided << "\n";
-
-            outs() << "-----------------------------------------------------\n\n\n";
-    #endif        
+                // Iterate on subloops of Loop L
+                iterateOnLoop(L);       
             }
         }
         return false;
