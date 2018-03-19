@@ -569,13 +569,17 @@ bool Contech::runOnModule(Module &M)
         {
             pllvm_loop_track llt = it->second;
             uint32_t bbid = cfgInfoMap[it->first]->id;
+            //errs() << "L: " << bbid << " " << *(it->first) << "\n";
             Instruction* iPt = it->first->getTerminator();
             Constant* cbbid = ConstantInt::get(cct.int32Ty, bbid);
             Constant* cstep = ConstantInt::get(cct.int32Ty, llt->stepIV);
             Value* startValue = NULL;
             Constant* stepID = NULL;
             
-            startValue = castSupport(cct.int64Ty, llt->startIV, iPt);
+            if (llt->startIV != NULL)
+                startValue = castSupport(cct.int64Ty, llt->startIV, iPt);
+            else
+                startValue = ConstantInt::get(cct.int64Ty, 0);
             stepID = ConstantInt::get(cct.int32Ty, cfgInfoMap[llt->stepBlock]->id);
             
             cfgInfoMap[it->first]->stepIV = llt->stepIV;
@@ -617,6 +621,7 @@ bool Contech::runOnModule(Module &M)
                 
                 if (i == 0)
                 {
+                    //errs() << "Entry - " << bbid << "\n";
                     Value* argsEntry[] = {cbbid, cstep, stepID, startValue, opPos, voidAddr};
                     debugLog("storeLoopEntryFunction @" << __LINE__);
                     Instruction* loopEntry = CallInst::Create(cct.storeLoopEntryFunction, ArrayRef<Value*>(argsEntry, 6), "", iPt);
@@ -642,6 +647,8 @@ bool Contech::runOnModule(Module &M)
                     if (*skip == *eit) {isDupBlock = true; break;}
                 }
                 if (isDupBlock == true) continue;
+                
+                //errs() << "Exit - " << cfgInfoMap[*eit]->id << "\t" << i << "\n";
                 
                 Value* argsExit[] = {cbbid};
                 //
