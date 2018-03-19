@@ -171,6 +171,46 @@ namespace llvm {
     }
     
     template<typename T>
+    int ComputeFunctionName(T* ci, const char** fn, char** fdn, int* status)
+    {
+        Function *f = ci->getCalledFunction();
+        
+        // call is indirect
+        // TODO: add dynamic check on function called
+        if (f == NULL)
+        {
+            // See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
+            Value* v = ci->getCalledValue();
+            f = dyn_cast<Function>(v->stripPointerCasts());
+            if (f == NULL)
+            {
+                return -1;
+            }
+        }
+
+        const char* fmn = f->getName().data();
+        *fdn = abi::__cxa_demangle(fmn, 0, 0, status);
+        *fn = *fdn;
+        if (status != 0)
+        {
+            *fn = fmn;
+        }
+
+        if (0 == __ctStrCmp(*fn, "__ct"))
+        {
+            // A call to our instrumentation does not need instrumenting nor
+            //   does it count as a separate function call.
+            if (status == 0)
+            {
+                free(*fdn);
+            }
+            return -2;
+        }
+        
+        return 0;
+    }
+    
+    template<typename T>
     BasicBlock::iterator InstrumentFunctionCall(T* ci,
                                                  bool &hasUninstCall,
                                                  bool &containQueueBuf,
@@ -182,53 +222,29 @@ namespace llvm {
                                                  Contech* ctPass,
                                                  Module &M)
     {
-        Function *f = ci->getCalledFunction();
+        const char* fn = NULL;
+        char* fdn = NULL;
+        int status = 0;
+        int ret = 0;
+        
         hasUninstCall = false;
-
-        // call is indirect
-        // TODO: add dynamic check on function called
-        if (f == NULL)
+        if ((ret = ComputeFunctionName(ci, &fn, &fdn, &status)) != 0)
         {
-            // See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
-            Value* v = ci->getCalledValue();
-            f = dyn_cast<Function>(v->stripPointerCasts());
-            if (f == NULL)
+            if (ret == -1)
             {
                 bi->containCall = true;
-                hasUninstCall = true;
-                return I;
             }
+            
+            hasUninstCall = true;
+            return I;
         }
-
-        int status;
-        const char* fmn = f->getName().data();
-        char* fdn = abi::__cxa_demangle(fmn, 0, 0, &status);
-        const char* fn = fdn;
-        if (status != 0)
-        {
-            fn = fmn;
-        }
+        
         if (ci->doesNotReturn())
         {
             iPt = ci;
         }
-
-        if (0 != __ctStrCmp(fn, "__ct"))
-        {
-            bi->callFnName.assign(fn);
-        }
-        else
-        {
-            // A call to our instrumentation does not need instrumenting nor
-            //   does it count as a separate function call.
-            hasUninstCall = true;
-            if (status == 0)
-            {
-                free(fdn);
-            }
-            return I;
-        }
         
+        bi->callFnName.assign(fn);
         bi->containCall = true;
         CONTECH_FUNCTION_TYPE funTy = ctPass->classifyFunctionName(fn);
         //errs() << funTy << "\n";
