@@ -218,6 +218,7 @@ pct_event EventList::getNextContechEvent()
             }
             else
             {
+                el->blockCTID(file, event->contech_id);
                 ++eventQueueCurrent;
                 if (eventQueueCurrent == queuedEvents.end())
                 {
@@ -236,6 +237,7 @@ pct_event EventList::getNextContechEvent()
         }
         else if (event->event_type != ct_event_sync)
         {
+            assert((el->getBlockCTID(event->contech_id)) == false);
             eventQueueCurrent->second.pop_front();
             assert(currentQueuedCount > 0);
             currentQueuedCount--;
@@ -243,6 +245,7 @@ pct_event EventList::getNextContechEvent()
         }
         else if (event->sy.ticketNum == ticketNum)
         {
+            //printf("Ticket:%llu %d, %u\n", event->sy.ticketNum, queuedEvents.size(), event->contech_id);
             el->unblockCTID(event->contech_id);
             
             // This is the next ticket
@@ -257,6 +260,14 @@ pct_event EventList::getNextContechEvent()
         {
             // No valid events at this queue position
             ++eventQueueCurrent;
+            
+            // This contech had valid events in queue, but is now blocked on a ticket
+            /*if (!el->getBlockCTID(event->contech_id))
+            {
+                fprintf(stderr, "CTID: %u UNBLOCK.\n", event->contech_id);
+                fprintf(stderr, "Event: %d %ld > %ld\n", event->event_type, event->sy.ticketNum, ticketNum);
+            }*/
+            el->blockCTID(file, event->contech_id);
             
             // Is this the lowest ticket we've seen so far
             if (event->sy.ticketNum < currMinTicket) currMinTicket = event->sy.ticketNum;
@@ -339,6 +350,7 @@ pct_event EventList::getNextContechEvent()
             }
             else {
                 //printf("Ticket:%llu %d, %u\n", event->sy.ticketNum, queuedEvents.size(), event->contech_id);
+                assert((el->getBlockCTID(event->contech_id)) == false);
                 ticketNum ++;
             }
             break;
@@ -358,6 +370,7 @@ pct_event EventList::getNextContechEvent()
             }
             else
             {
+                assert((el->getBlockCTID(event->contech_id)) == false);
                 barrierNum++;
             }
         }
@@ -374,6 +387,7 @@ pct_event EventList::getNextContechEvent()
                 }
                 else
                 {
+                    el->blockCTID(file, event->contech_id);
                     waitingEvents[event->contech_id].push_back(event);
                     event = getNextContechEvent();
                 }
@@ -393,6 +407,8 @@ pct_event EventList::getNextContechEvent()
             break;
     }
 
+    assert((el->getBlockCTID(event->contech_id)) == false);
+    
     return event;
 }
 
@@ -411,6 +427,7 @@ void EventList::readyEvents(unsigned int context)
         if (currentQueuedCount > maxQueuedCount) maxQueuedCount = currentQueuedCount;
         queuedEvents[context] = deq->second;
         waitingEvents.erase(deq);
+        el->unblockCTID(context);
         
         // As the queues may go from empty to non-empty, the iterator needs to be initialized here
         eventQueueCurrent = queuedEvents.begin();
