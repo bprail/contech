@@ -42,9 +42,40 @@ void setROIEnd(TaskId t)
 void backgroundQueueTask(Task* t)
 {
     unsigned int qSize = 0;
-    assert(t->getEndTime() >= t->getStartTime());
-    ct_tsc_t tcyc = t->getEndTime() - t->getStartTime();
     task_type ty = t->getType();
+    
+    if (t->getEndTime() < t->getStartTime())
+    {
+        fprintf(stderr, "(END)%ld < (START)%ld\n", t->getEndTime(), t->getStartTime());
+        if (ty != task_type_basic_blocks)
+        {
+            cerr << *t << "\n";
+        }
+        else
+        {
+            fprintf(stderr, "BBTY: %s\n", t->getTaskId().toString().c_str());
+            
+            fprintf(stderr, "PRED: ");
+            auto p = t->getPredecessorTasks();
+            for (auto it = p.begin(), et = p.end(); it != et; ++it)
+            {
+                fprintf(stderr, "%s\t", (*it).toString().c_str());
+            }
+            fprintf(stderr, "\n");
+            
+            fprintf(stderr, "SUCC: ");
+            auto s = t->getSuccessorTasks();
+            for (auto it = s.begin(), et = s.end(); it != et; ++it)
+            {
+                fprintf(stderr, "%s\t", (*it).toString().c_str());
+            }
+            fprintf(stderr, "\n");
+        }
+        
+        assert(t->getEndTime() >= t->getStartTime());
+    }
+    
+    ct_tsc_t tcyc = t->getEndTime() - t->getStartTime();
     
     pthread_mutex_lock(&taskQueueLock);
     qSize = taskQueue->size();
