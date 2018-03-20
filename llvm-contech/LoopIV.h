@@ -27,28 +27,29 @@ using namespace llvm;
 using namespace std;
 
 namespace llvm {
-	typedef vector<Instruction *> SmallInstructionVector;
-	typedef vector<llvm_loopiv_block*> LlvmLoopIVBlockVector;
+    typedef vector<Instruction *> SmallInstructionVector;
+    typedef vector<llvm_loopiv_block*> LlvmLoopIVBlockVector;
 
-	class LoopIV {
+    class LoopIV {
 
-	public:
- 		LoopIV(Contech* _ctThis)  {
+    public:
+        LoopIV(Contech* _ctThis)  {
             ctThis = _ctThis;
         }
-		void collectPossibleIVs(Loop *L);
-		void collectDerivedIVs(Loop *L, SmallInstructionVector IVs, SmallInstructionVector *DerivedIvs);
-		virtual bool runOnFunction (Function &F);
-		LlvmLoopIVBlockVector getLoopMemoryOps();
+        void collectPossibleIVs(Loop *L);
+        void collectDerivedIVs(Loop *L, SmallInstructionVector IVs, SmallInstructionVector *DerivedIvs);
+        virtual bool runOnFunction (Function &F);
+        LlvmLoopIVBlockVector getLoopMemoryOps();
 
-	private:
+    private:
         Contech* ctThis;
-		bool isLoopControlIV(Loop *L, Instruction *IV);
+        bool isLoopControlIV(Loop *L, Instruction *IV);
         void iterateOnLoop(Loop *L);
-		const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
-		Value* collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived, Loop*, std::vector<Value*>&);
+        bool verifyLoopCTInvariant(Loop*);
+        const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
+        Value* collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived, Loop*, std::vector<Value*>&);
         Value* inferredMemoryOps(GetElementPtrInst* gepAddr, bool is_derived, Loop* L, llvm_loopiv_block &llb);
         Value* isAddOrPHIConstant(Value*, bool);
-	};
+    };
 }
 #endif 

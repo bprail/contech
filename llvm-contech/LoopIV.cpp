@@ -1,8 +1,10 @@
-// 15-745 Project
-// Group:
-////////////////////////////////////////////////////////////////////////////////
+//
+// Detects memory operations in loops where the address calculation for the operation
+//   is a function of the loop's induction variable.
+//
 
 #include "LoopIV.h"
+#include "Contech.h"
 
 using namespace llvm;
 using namespace std;
@@ -36,6 +38,66 @@ namespace llvm{
     int cnt_elided = 0;
     int cnt_future_elided = 0;
 
+    bool LoopIV::verifyLoopCTInvariant(Loop* L)
+    {
+        for(Loop::block_iterator bb = L->block_begin(); bb != L->block_end(); ++bb) 
+        {
+            BasicBlock* b = (*bb);
+            Instruction* prev = NULL;
+            for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+            {
+                Function* f = NULL;
+                const char* fn = NULL;
+                char* fdn = NULL;
+                int status = 0;
+                int ret = 0;
+                
+                if (CallInst *ci = dyn_cast<CallInst>(&*I))
+                {
+                    ret = ComputeFunctionName(ci, &fn, &fdn, &status);
+                }
+                else if (InvokeInst *ii = dyn_cast<InvokeInst>(&*I))
+                {
+                    ret = ComputeFunctionName(ii, &fn, &fdn, &status);
+                }
+                else
+                {
+                    continue;
+                }
+                
+                if (ret != 0)
+                {
+                    continue;
+                }
+                
+                CONTECH_FUNCTION_TYPE funTy = ctThis->classifyFunctionName(fn);
+                
+                if (status == 0)
+                {
+                    free(fdn);
+                }
+                
+                switch (funTy)
+                {
+                    case (OMP_CALL):
+                    case (OMP_FORK):
+                    case (OMP_FOR_ITER):
+                    case (OMP_TASK_CALL):
+                    case (OMP_END):
+                    case (CILK_FRAME_CREATE):
+                    case (CILK_FRAME_DESTROY):
+                        return false;
+                    
+                    default:
+                        break;
+                }
+            }
+            
+        }
+        
+        return true;
+    }
+    
     // Check if it is a compare-like instruction whose user is a branch
     bool LoopIV::isLoopControlIV(Loop *L, Instruction *IV) 
     {
@@ -619,6 +681,8 @@ namespace llvm{
         {
             iterateOnLoop(*subL);
         }
+        
+        if (!verifyLoopCTInvariant(L)) return;
         
         unsigned iterCount = SE->getSmallConstantTripCount(L);
         if (iterCount != 0 && iterCount < 4) return ;
