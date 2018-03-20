@@ -132,7 +132,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
-        if (cfgInfoMap[bb]->containCall) {errs() << "CBC - contain call\n"; continue;}
+        if (cfgInfoMap[bb]->containCall) {/*errs() << "CBC - contain call\n";*/ continue;}
         
         // Verify that the position value is still valid to use in subsequent blocks
         //   Move past the Contech generated instruction.
@@ -143,7 +143,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             if ((&*bbit)->getMetadata(cct.ContechMDID) &&
                 dyn_cast<CallInst>(&*bbit) != NULL) {noInst = false; break;}
         }
-        if (!noInst) {errs() << "CBC - inst CT\n"; continue;}
+        if (!noInst) {/*errs() << "CBC - inst CT\n";*/ continue;}
         blockPosCall[bb] = bbPos;
         int count = 1;
         for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
@@ -1384,6 +1384,8 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
 
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
+    errs() << "F: " << *sourceValue << "\n";
+    errs() << "At: " << *insertBefore << "\n";
     if (castType == sourceValue->getType()) return sourceValue;
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
     debugLog("CastInst @" << __LINE__);
@@ -1601,6 +1603,13 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
     bool createEntry = false;
+    
+    if (llb->stepIV == 0)
+    {
+        errs() << "Step 0: " << *memOp << "\n";
+        errs() << " in " << *bbid << "\n";
+    }
+    
     if (ilte == loopInfoTrack.end())
     {
         llt = new llvm_loop_track;
@@ -1612,6 +1621,16 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         llt->exitBlocks = llb->exitBlocks;
         loopInfoTrack[bbid] = llt;
         createEntry = true;
+    }
+    else if (ilte->second->stepIV == 0)
+    {
+        ilte->second->stepIV = llb->stepIV;
+        ilte->second->startIV = llb->startIV;
+        ilte->second->stepBlock = llb->stepBlock;
+        ilte->second->memIV = llb->memIV;
+        ilte->second->exitBlocks = llb->exitBlocks;
+        
+        llt = ilte->second;
     }
     else
     {
@@ -1627,9 +1646,15 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     if (gepAddr == NULL)
     {
         CastInst* ci = dyn_cast<CastInst>(addr);
-        if (ci == NULL) return;
-        if (ci->isLosslessCast() == false) return;
-        if (ci->getSrcTy()->isPointerTy() == false) return;
+        if (ci == NULL ||
+            ci->isLosslessCast() == false ||
+            ci->getSrcTy()->isPointerTy() == false)
+        {
+            // This should only happen when the memop is a loop invariant
+            *memOpPos = llt->baseAddr.size();
+            llt->baseAddr.push_back(addr);
+            return;
+        }
         
         //errs() << "CAST: " << *ci << "\n";
         //errs() << *ci->getOperand(0) << "\n";
@@ -1641,7 +1666,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         baseAddr = gepAddr->getPointerOperand();
         
         int64_t offset = 0;
-        bool isIVLast = false;
+        bool depIV = false;
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
@@ -1725,11 +1750,14 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             //   This order applies the factor to the IV
             *loopIVSize = updateOffsetEx(itG, multFactor, &multFactor);
             offset += updateOffsetEx(itG, tOffset, &multFactor);
-            
-            isIVLast = true;
+            depIV = true;
         }
         
         *memOpDelta = offset;
+        if (depIV == false)
+        {
+            *loopIVSize = 0;
+        }
     }
     
     if (baseAddr == NULL)
@@ -1764,7 +1792,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             }
             
             // N.B. This code is duplicated from above.
-            //   If the memop depends on the IV address, then it was
+            //   If the memop depends on the IV address, then 
             //   the step was a GEPI with a constant.
             PHINode* pn = dyn_cast<PHINode>(llb->memIV);
             if (pn != NULL)
