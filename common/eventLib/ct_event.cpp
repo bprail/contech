@@ -230,6 +230,34 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         if (0 == (t = ct_read(&npe->event_type, sizeof(char), fptr)))
         {
             free(npe);
+            
+            // Go back and check for unblocked buffers
+            long earliestPos = LONG_MAX;
+            for (auto it = skipList.begin(), et = skipList.end(); it != et; ++it)
+            {
+                auto ss = skipSet.find(it->first);
+                if (ss != skipSet.end() && ss->second == true) continue;
+                if (it->second.size() == 0)
+                {
+                    //it = skipList.erase(it);
+                    //--it;
+                    continue;
+                }
+                long newPos = it->second.front();
+                if (newPos < earliestPos)
+                {
+                    earliestPos = newPos;
+                }
+            }
+            
+            if (earliestPos < LONG_MAX)
+            {
+                fseek(fptr, earliestPos, SEEK_SET);
+                //fprintf(stderr, "Skipping to: %ld\n", earliestPos);
+                
+                return createContechEvent(fptr);
+            }
+            
             return NULL;
         }
         
@@ -766,9 +794,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             // If the next buffer is valid, keep reading sequentially
             auto ss = skipSet.find(npe->contech_id);
             if ((ss == skipSet.end() || ss->second == false) &&
+                skipList[npe->contech_id].size() > 0 &&
                 ((ftell(fptr) - 12) == skipList[npe->contech_id].front()))
             {
                 skipList[npe->contech_id].pop_front();
+                //fprintf(stderr, "CONT: %ld (%u)\n", ftell(fptr) - 12, npe->contech_id);
             }
             else
             {
@@ -776,12 +806,14 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 sum -= 12;
                 
                 long earliestPos = LONG_MAX;
+                int zeroCount = 0;
                 for (auto it = skipList.begin(), et = skipList.end(); it != et; ++it)
                 {
                     ss = skipSet.find(it->first);
                     if (ss != skipSet.end() && ss->second == true) continue;
                     if (it->second.size() == 0)
                     {
+                        zeroCount++;
                         //it = skipList.erase(it);
                         //--it;
                         continue;
@@ -796,11 +828,24 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 if (earliestPos < LONG_MAX)
                 {
                     fseek(fptr, earliestPos, SEEK_SET);
+                    //fprintf(stderr, "Skipping to: %ld\n", earliestPos);
                     
                     return createContechEvent(fptr);
                 }
                 
-                assert(0 && "All remaining CTs buffers are blocked in event list");
+                // IF the zero count is the number of entries, then every context
+                //   has finished processing successfully.  We've reached this state
+                //   when the last buffer read was not the last buffer in the file.
+                //   The exit case for the last buffer in the file is at the start
+                //   of this function.
+                if (zeroCount == skipList.size())
+                {
+                    return NULL;
+                }
+                else
+                {
+                    assert(0 && "All remaining CTs buffers are blocked in event list");
+                }
             }
             
             if (npe->contech_id == 0)
@@ -1132,7 +1177,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
     else
     {
         ced[cedPos].data0 = npe->mem.isAllocate;
-        ced[cedPos].data1 = 0;
+        ced[cedPos].data1 = npe->sy.ticketNum;
     }
 
     if (sum > bufSum && bufSum > 0) 
@@ -1201,6 +1246,14 @@ void EventLib::displayContechEventStats()
 #endif
 }
 
+void EventLib::debugSkipStatus()
+{
+    for (auto it = skipList.begin(), et = skipList.end(); it != et; ++it)
+    {
+        fprintf(stderr, "CTID: %d\tBlock: %d\tPos: %ld\n", it->first, skipSet[it->first], it->second.front());
+    }
+}
+
 void EventLib::initBufList(FILE* fptr)
 {
     uint64_t resetSum = sum;
@@ -1239,4 +1292,9 @@ void EventLib::blockCTID(FILE* fptr, uint32_t ctid)
 void EventLib::unblockCTID(uint32_t ctid)
 {
     skipSet[ctid] = false;
+}
+
+bool EventLib::getBlockCTID(uint32_t ctid)
+{
+    return skipSet[ctid];
 }

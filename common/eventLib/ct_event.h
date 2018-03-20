@@ -299,11 +299,13 @@ namespace contech
             void displayContechEventDebugInfo();
             void displayContechEventDiagInfo();
             void displayContechEventStats();
+            void debugSkipStatus();
             void resetEventLib();
             void readMemOp(pct_memory_op, FILE*);
             uint64_t getSum() {return sum;}
             void unblockCTID(uint32_t);
             void blockCTID(FILE*, uint32_t);
+            bool getBlockCTID(uint32_t);
             
     };
     
