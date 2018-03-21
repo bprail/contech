@@ -124,6 +124,11 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
     map<BasicBlock*, Instruction*> blockPosCall;
     map<BasicBlock*, int> blockChainCount;
     
+    // For each block in the function,
+    //   If the block does not have an arbitrary function call,
+    //   nor a non-basic block instrumentation call (incl checking size), then 
+    //   its buffer / position are valid in its successors.
+    //   
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
         BasicBlock* bb = &*it;
@@ -132,7 +137,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
-        if (cfgInfoMap[bb]->containCall) {errs() << "CBC - contain call\n"; continue;}
+        if (cfgInfoMap[bb]->containCall) {/*errs() << "CBC - contain call\n";*/ continue;}
         
         // Verify that the position value is still valid to use in subsequent blocks
         //   Move past the Contech generated instruction.
@@ -143,7 +148,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             if ((&*bbit)->getMetadata(cct.ContechMDID) &&
                 dyn_cast<CallInst>(&*bbit) != NULL) {noInst = false; break;}
         }
-        if (!noInst) {errs() << "CBC - inst CT\n"; continue;}
+        if (!noInst) {/*errs() << "CBC - inst CT\n";*/ continue;}
         blockPosCall[bb] = bbPos;
         int count = 1;
         for (auto sbbit = succ_begin(bb), sbbet = succ_end(bb); sbbit != sbbet; ++sbbit)
@@ -154,11 +159,17 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         blockChainCount[bb] = count;
     }
         
+    //  
+    // For each block in the function,
+    //   Check every one of its predecessors, can all predecessors provide
+    //   valid buffer / position values?  If so, then chain them together.
+    //
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
         BasicBlock* bb = &*it;
         map<BasicBlock*, Instruction*> chainQueue;
         
+        // Counting whether its predecessor(s) can pass valid buffer / position
         int chainCount = 0, count = 0;
         for (auto predit = pred_begin(bb), predet = pred_end(bb); predit != predet; ++predit)
         {
@@ -172,6 +183,8 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             chainCount++;
         }
         
+        // If the counts do not match, then a predecessor cannot chain.
+        //   Or the counts match, but no predecessor can chain.
         if (count != chainCount) continue;
         if (chainCount == 0) continue;
         
@@ -179,14 +192,21 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         int bb_val = blockHash(bb);
         auto costInfo = costPerBlock.find(bb_val);
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
+        
+        // If there is one predecessor, then pass the values directly,
+        //   otherwise, create PHI nodes to receive the different paths.
         if (chainQueue.size() == 1)
         {
             // No PHI required
             auto elem = chainQueue.begin();
             
+            
             dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(elem->second);
             dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(elem->second->getOperand(2));
             
+            // Mark the predecessor's position as used.  After all paths are chained
+            //  then the basic block complete routine can skip writing the updated
+            //  position to memory and instead pass the revised value instead.
             blockChainCount[elem->first] -= 1;
             if (blockChainCount[elem->first] == 1)
             {
@@ -200,7 +220,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             PHINode* phiBuf = PHINode::Create(cct.voidPtrTy, chainQueue.size(), "", istPt);
             PHINode* phiPos = PHINode::Create(cct.int32Ty, chainQueue.size(), "", istPt);
             
-            //for (auto chit = chainQueue.begin(), chet = chainQueue.end(); chit != chet; ++chit)
+            // For each predecessor, chain its buffer / position to the current block.
             for (auto predit = pred_begin(bb), predet = pred_end(bb); predit != predet; ++predit)
             {
                 auto chit = chainQueue.find(*predit);
@@ -210,6 +230,9 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                 phiBuf->addIncoming(predPos->getOperand(2), pred);
                 phiPos->addIncoming(predPos, pred);
                 
+                // Mark the predecessor's position as used.  After all paths are chained
+                //  then the basic block complete routine can skip writing the updated
+                //  position to memory and instead pass the revised value instead.
                 blockChainCount[pred] -= 1;
                 if (blockChainCount[pred] == 1)
                 {
@@ -223,6 +246,15 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         }
     }
     
+    //
+    // The following loop tries to find blocks that require reduced path
+    //  information, via the branch direction.  This requires the predecessor
+    //  to chain to all its successors.  The successors can then record whether
+    //  it is the true or false path.
+    //  N.B. It would be possible to compact multiple direction values together
+    //    except the architecture cannot easily combine them.  Better instead
+    //    to switch to path identifiers.
+    //
     bool hasChanged = false;
     do {
         hasChanged = false;
@@ -337,13 +369,13 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                         switch ((&*inst)->getNumOperands())
                         {
                             case 5: // storeBasicBlock
-                            (&*inst)->setOperand(3, cOne);
+                                (&*inst)->setOperand(3, cOne);
                             break;
                             case 6: // storeMemOp
-                            (&*inst)->setOperand(3, cOne);
+                                (&*inst)->setOperand(3, cOne);
                             break;
                             case 7: // storeBasicBlockComplete
-                            (&*inst)->setOperand(3, cOne);
+                                (&*inst)->setOperand(3, cOne);
                             break;
                             default:
                             break;
@@ -368,7 +400,7 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                 startPos = *(ub);
                 
                 BranchInst* brInst = dyn_cast<BranchInst>((*pit)->getTerminator());
-                if (brInst == NULL) {continue;} // Should always succed, checked above
+                if (brInst == NULL) {continue;} // Should always succeed, checked above
                 if (brInst->isUnconditional())
                 {
                     // Already assigned
@@ -409,10 +441,10 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                         switch ((&*inst)->getNumOperands())
                         {
                             case 6: // storeMemOp
-                            (&*inst)->setOperand(4, cOne);
+                                (&*inst)->setOperand(4, cOne);
                             break;
                             case 7: // storeBasicBlockComplete
-                            (&*inst)->setOperand(5, cOne);
+                                (&*inst)->setOperand(5, cOne);
                             break;
                             default:
                             break;
@@ -1384,6 +1416,8 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
 
 Value* Contech::castSupport(Type* castType, Value* sourceValue, Instruction* insertBefore)
 {
+    //errs() << "F: " << *sourceValue << "\n";
+    //errs() << "At: " << *insertBefore << "\n";
     if (castType == sourceValue->getType()) return sourceValue;
     auto castOp = CastInst::getCastOpcode (sourceValue, false, castType, false);
     debugLog("CastInst @" << __LINE__);
@@ -1601,6 +1635,13 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     auto ilte = loopInfoTrack.find(bbid);
     llvm_loop_track* llt = NULL;
     bool createEntry = false;
+    
+    if (llb->stepIV == 0)
+    {
+        errs() << "Step 0: " << *memOp << "\n";
+        errs() << " in " << *bbid << "\n";
+    }
+    
     if (ilte == loopInfoTrack.end())
     {
         llt = new llvm_loop_track;
@@ -1612,6 +1653,16 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         llt->exitBlocks = llb->exitBlocks;
         loopInfoTrack[bbid] = llt;
         createEntry = true;
+    }
+    else if (ilte->second->stepIV == 0)
+    {
+        ilte->second->stepIV = llb->stepIV;
+        ilte->second->startIV = llb->startIV;
+        ilte->second->stepBlock = llb->stepBlock;
+        ilte->second->memIV = llb->memIV;
+        ilte->second->exitBlocks = llb->exitBlocks;
+        
+        llt = ilte->second;
     }
     else
     {
@@ -1627,9 +1678,15 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     if (gepAddr == NULL)
     {
         CastInst* ci = dyn_cast<CastInst>(addr);
-        if (ci == NULL) return;
-        if (ci->isLosslessCast() == false) return;
-        if (ci->getSrcTy()->isPointerTy() == false) return;
+        if (ci == NULL ||
+            ci->isLosslessCast() == false ||
+            ci->getSrcTy()->isPointerTy() == false)
+        {
+            // This should only happen when the memop is a loop invariant
+            *memOpPos = llt->baseAddr.size();
+            llt->baseAddr.push_back(addr);
+            return;
+        }
         
         //errs() << "CAST: " << *ci << "\n";
         //errs() << *ci->getOperand(0) << "\n";
@@ -1641,7 +1698,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         baseAddr = gepAddr->getPointerOperand();
         
         int64_t offset = 0;
-        bool isIVLast = false;
+        bool depIV = false;
         for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
         {
             Value* gepI = itG.getOperand();
@@ -1725,11 +1782,14 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             //   This order applies the factor to the IV
             *loopIVSize = updateOffsetEx(itG, multFactor, &multFactor);
             offset += updateOffsetEx(itG, tOffset, &multFactor);
-            
-            isIVLast = true;
+            depIV = true;
         }
         
         *memOpDelta = offset;
+        if (depIV == false)
+        {
+            *loopIVSize = 0;
+        }
     }
     
     if (baseAddr == NULL)
@@ -1764,7 +1824,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             }
             
             // N.B. This code is duplicated from above.
-            //   If the memop depends on the IV address, then it was
+            //   If the memop depends on the IV address, then 
             //   the step was a GEPI with a constant.
             PHINode* pn = dyn_cast<PHINode>(llb->memIV);
             if (pn != NULL)
