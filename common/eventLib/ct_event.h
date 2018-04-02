@@ -11,6 +11,8 @@
 #include <deque>
 #include <queue>
 
+#define MAX_PATH_DEPTH 10
+
 namespace contech
 {
     //
@@ -18,13 +20,19 @@ namespace contech
     //
     typedef struct _ct_basic_block_info
     {
-        uint32_t basic_block_id, fun_name_len, file_name_len, callFun_name_len, num_mem_ops, line_num, num_ops, crit_path_len;
+        uint32_t basic_block_id, fun_name_len, file_name_len, callFun_name_len;
+        uint32_t num_mem_ops, line_num, num_ops, crit_path_len;
         int32_t next_basic_block_id[2];
         uint32_t flags;
         char* file_name;
         char* fun_name;
         char* callFun_name;
     } ct_basic_block_info, *pct_basic_block_info;
+    
+    typedef struct _ct_path_info
+    {
+        uint32_t pathID, startID, depth;
+    } ct_path_info, *pct_path_info;
 
     typedef struct _ct_basic_block
     {
@@ -187,6 +195,7 @@ namespace contech
             ct_roi_event        roi;
             ct_gv_info          gvi;
             ct_loop             loop;
+            ct_path_info        pi;
         };
     } ct_event, *pct_event;
     
@@ -253,6 +262,20 @@ namespace contech
                 pinternal_memory_op_info mem_op_info;
             } internal_basic_block_info, *pinternal_basic_block_info;
             
+            typedef struct _internal_path_info
+            {
+                unsigned int pathDepth;
+                uint32_t startID;
+                uint32_t pathMap[MAX_PATH_DEPTH];
+            } internal_path_info, *pinternal_path_info;
+            
+            typedef struct _internal_path_track
+            {
+                uint32_t pathBits;
+                uint32_t currentPathIndex;
+                pinternal_path_info pathInfo;
+            } internal_path_track, *pinternal_path_track;
+            
             typedef struct _internal_loop_track
             {
                 bool loopStarted;
@@ -283,8 +306,11 @@ namespace contech
             long maxBufPos;
             
             pinternal_basic_block_info bb_info_table;
+            std::map<uint32_t, internal_path_info> path_info_table;
             ct_addr_t* constGVAddr;
             int maxConstGVId;
+            
+            pinternal_path_track currentPath;
             
             void initBufList(FILE*);
             int unpack(uint8_t *buf, char const fmt[], ...);

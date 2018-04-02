@@ -38,6 +38,7 @@ EventLib::EventLib()
     bb_count = 0;
     
     bb_info_table = NULL;
+    currentPath = NULL;
     constGVAddr = NULL;
     maxConstGVId = 0;
 }
@@ -57,6 +58,9 @@ EventLib::~EventLib()
             }
         }
     }
+    
+    if (currentPath != NULL ) delete (currentPath);
+    
     resetEventLib();
 }
 
@@ -166,6 +170,9 @@ void EventLib::resetEventLib()
     constGVAddr = NULL;
     maxConstGVId = 0;
     
+    path_info_table.clear();
+    if (currentPath != NULL) {delete currentPath; currentPath = NULL;}
+    
     skipSet.clear();
     skipList.clear();
 }
@@ -221,6 +228,57 @@ pct_event EventLib::createContechEvent(FILE* fptr)
         npe->contech_id = currentID;
         npe->event_type = ct_event_basic_block;
         npe->bb.basic_block_id = this->next_basic_block_id;
+    }
+    else if (currentPath != NULL)
+    {
+        npe->contech_id = currentID;
+        npe->event_type = ct_event_basic_block;
+        
+        int idx = -1;
+        for (int i = 0; i < currentPath->pathInfo->pathDepth; i++)
+        {
+            if (lastBBID == currentPath->pathInfo->pathMap[i])
+            {
+                idx = i;
+                break;
+            }
+        }
+        
+        if (idx == -1)
+        {
+            delete currentPath;
+            currentPath = NULL;
+            free(npe);
+            return createContechEvent(fptr);
+        }
+        
+        uint32_t branchID = currentPath->pathInfo->pathMap[idx];
+        assert(branchID < bb_count);
+        pinternal_basic_block_info bbi = &bb_info_table[branchID];
+        
+        npe->bb.basic_block_id = bbi->next_basic_block_id[(currentPath->pathBits >> idx) & 0x1];
+        this->next_basic_block_id = npe->bb.basic_block_id;
+        
+        /*uint32_t branchID = currentPath->pathInfo->pathMap[currentPath->currentPathIndex];
+        assert(branchID < bb_count);
+        pinternal_basic_block_info bbi = &bb_info_table[branchID];
+        
+        npe->bb.basic_block_id = bbi->next_basic_block_id[(currentPath->pathBits) & 0x1];
+        this->next_basic_block_id = npe->bb.basic_block_id;
+        currentPath->pathBits >>= 1;
+        currentPath->currentPathIndex++;
+        if (currentPath->currentPathIndex == currentPath->pathInfo->pathDepth)
+        {
+            //printf("L%d, N: %d -> %d\n", lastBBID, npe->bb.basic_block_id, 
+            //                             bb_info_table[npe->bb.basic_block_id].next_basic_block_id[0]);
+            delete currentPath;
+            currentPath = NULL;
+        }
+        else
+        {
+            //printf("CD: %d D: %d\n", currentPath->currentPathIndex, currentPath->pathInfo->pathDepth);
+            //printf("PB: %d\n", currentPath->pathBits);
+        }*/
     }
     else
     {
@@ -279,6 +337,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             npe->event_type != ct_event_loop_short && 
             npe->event_type != ct_event_loop_exit && 
             npe->event_type != ct_event_buffer &&
+            npe->event_type != ct_event_path_info &&
             npe->event_type != ct_event_roi)
         {
             char buf[7];
@@ -308,8 +367,33 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 npe->bb.basic_block_id |= (((unsigned int)bbid_high) << 7);
                 if (npe->bb.basic_block_id >= bb_count)
                 {
-                    fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);
-                    dumpAndTerminate(fptr);
+                    // Search for a matching path.
+                    //   Paths are inserted based on their start IDs and then
+                    //   constitute a range of IDs following that start.
+                    auto pathEntry = path_info_table.lower_bound(npe->bb.basic_block_id);
+                    if (pathEntry != path_info_table.end())
+                    {
+                        uint32_t pathID = npe->bb.basic_block_id;
+                        if (pathEntry->first > pathID)
+                        {
+                            // Lower bound returns the entry after.
+                            --pathEntry;
+                        }
+                        npe->bb.basic_block_id = pathEntry->second.startID;
+                        
+                        assert(pathEntry->second.startID != -1);
+                        
+                        currentPath = new internal_path_track;
+                        
+                        currentPath->pathBits = pathID - pathEntry->first;
+                        currentPath->currentPathIndex = 0;
+                        currentPath->pathInfo = &pathEntry->second;
+                    }
+                    else
+                    {
+                        fprintf(stderr, "ERROR: BBid(%d) exceeds maximum in bb_info (%d)\n", npe->bb.basic_block_id, bb_count);
+                        dumpAndTerminate(fptr);
+                    }
                 }
                 
                 npe->bb.len = bb_info_table[npe->bb.basic_block_id].len;
@@ -339,13 +423,16 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             {
                 if (bb_info_table[id].next_basic_block_id[1] != -1)
                 {
-                    char dir = 0;
+                    // With direction bits removed, two directions must be part of a path
+                    next_basic_block_id = -1;
+                    assert(currentPath != NULL);
+                    /*char dir = 0;
                     fread_check(&dir, sizeof(char), 1, fptr);
                     //fprintf(stderr, "DIR - %x - (%u %u)\n", dir, bb_info_table[id].next_basic_block_id[0], bb_info_table[id].next_basic_block_id[1]);
                     if (dir & 1)
                     {
                         this->next_basic_block_id = bb_info_table[id].next_basic_block_id[1];
-                    }
+                    }*/
                 }
             }
             if (npe->bb.len > 0)
@@ -674,6 +761,40 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             
             bb_info_table[id].count = 0;
             bb_info_table[id].totalBytes = 0;
+        }
+        break;
+        
+        case (ct_event_path_info):
+        {
+            const int path_size = sizeof(npe->pi.pathID) +
+                                  sizeof(npe->pi.startID) +
+                                  sizeof(npe->pi.depth);
+            uint8_t buf[path_size];
+            int bytesConsume = 0;
+            
+            fread_check(buf, sizeof(uint8_t), path_size, fptr);   
+            bytesConsume = unpack(buf, "lll", &npe->pi.pathID, &npe->pi.startID, &npe->pi.depth);
+            assert(bytesConsume == path_size);
+            
+            {
+                internal_path_info ipi;
+                ipi.startID = npe->pi.startID;
+                ipi.pathDepth = npe->pi.depth;
+                
+                assert(ipi.pathDepth > 0 && ipi.pathDepth <= MAX_PATH_DEPTH);
+                
+                fread_check(ipi.pathMap, sizeof(uint32_t), ipi.pathDepth, fptr);
+                
+                
+                path_info_table[npe->pi.pathID] = ipi;
+                ipi.startID = -1;
+                if (path_info_table.find(npe->pi.pathID + (1 << ipi.pathDepth)) == path_info_table.end())
+                {
+                    path_info_table[npe->pi.pathID + (1 << ipi.pathDepth)] = ipi; // dummy entry
+                }
+                printf("R: %u D: %u\n", npe->pi.pathID, npe->pi.pathID + (1 << ipi.pathDepth));
+                printf("RID: %u\n", path_info_table[npe->pi.pathID].startID);
+            }
         }
         break;
         
