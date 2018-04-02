@@ -70,6 +70,11 @@ namespace llvm {
         unsigned int fileNameSize;
     } llvm_basic_block, *pllvm_basic_block;
 
+    typedef struct _llvm_path_info {
+        unsigned int id, pathDepth;
+        std::vector<BasicBlock*> condBranchBlocks;
+    } llvm_path_info, *pllvm_path_info;
+    
     typedef struct _llvm_inst_block {
         bool containQueueCall;
         bool hasCheck;
@@ -176,6 +181,7 @@ namespace llvm {
         Constant* checkBufferLargeFunction;
         Constant* getBufPosFunction;
         Constant* getBufFunction;
+        Constant* getBufPtrFunction;
         Constant* writeElideGVEventsFunction;
         Constant* storeGVEventFunction;
         Constant* storeLoopEntryFunction;
@@ -239,6 +245,7 @@ namespace llvm {
         std::map<Value*, int> loopMemOps;
         std::map<BasicBlock*, llvm_loop_track*> loopInfoTrack;
         std::map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
+        std::map<BasicBlock*, llvm_path_info> pathInfoMap;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
@@ -249,7 +256,8 @@ namespace llvm {
         
         Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
-        void chainBufferCalls(Function*, std::map<int, llvm_inst_block>&);
+        void setElideInBlock(BasicBlock*, Instruction*, bool);
+        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);
         
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);

@@ -224,6 +224,7 @@ bool Contech::doInitialization(Module &M)
     cct.storePathInfoFunction = getFunction(M, "__ctStorePathInfo", "vpc");
     cct.storeMemOpFunction = getFunction(M, "__ctStoreMemOp", "vpipcc");
     cct.getBufFunction = getFunction(M, "__ctGetBuffer", "p");
+    cct.getBufPtrFunction = getFunction(M, "__ctGetBufferPtr", "pip");
     cct.cilkInitFunction = getFunction(M, "__ctInitCilkSync", "p");
     cct.allocateBufferFunction = getFunction(M, "__ctAllocateLocalBuffer", "v");
     cct.ompPushParentFunction = getFunction(M, "__ctOMPPushParent", "v");
@@ -365,7 +366,10 @@ bool Contech::runOnModule(Module &M)
     icontechStateFile->close();
     delete icontechStateFile;
 
-    for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) {
+    map<int, llvm_inst_block> fullCost;
+    vector<Function*> instFuncs;
+    for (Module::iterator F = M.begin(), FE = M.end(); F != FE; ++F) 
+    {
         int status;
         const char* fmn = F->getName().data();
         char* fn = abi::__cxa_demangle(fmn, 0, 0, &status);
@@ -673,7 +677,8 @@ bool Contech::runOnModule(Module &M)
         }
         loopInfoTrack.clear();
         
-        chainBufferCalls(&*F, costPerBlock);
+        fullCost.insert(costPerBlock.begin(), costPerBlock.end());
+        instFuncs.push_back(&*F);
         
         // If fmn is fn, then it was allocated by the demangle routine and we are required to free
         if (fmn == fn)
@@ -686,6 +691,14 @@ bool Contech::runOnModule(Module &M)
         {
             F->setName(Twine("ct_orig_main"));
         }
+    }
+
+    int pathID = bb_count;
+    // Delay the chainBufferCalls until all BasicBlocks are processed
+    //   This way all path IDs follow the BBIDs.
+    for (auto it = instFuncs.begin(), et = instFuncs.end(); it != et; ++it) 
+    {
+        pathID = chainBufferCalls(*it, fullCost, pathID);
     }
 
 cleanup:
@@ -789,6 +802,30 @@ cleanup:
             // Cannot delete bi->second here, as the ID may be referenced by a later
             //   block when computing loop info
             //delete bi->second;
+        }
+        
+        evTy = ct_event_path_info;
+        for (auto it = pathInfoMap.begin(), et = pathInfoMap.end(); it != et; ++it)
+        {
+            contechStateFile->write((char*)&evTy, sizeof(unsigned char));
+            
+            // PATHID, STARTID, DEPTH, IDs of Cond
+            //   CONDID[0] is startID, also it->first is block*
+            contechStateFile->write((char*) &it->second.id, sizeof(uint32_t));
+            
+            uint32_t startID = cfgInfoMap[it->first]->id;
+            contechStateFile->write((char*)&startID, sizeof(uint32_t));
+            
+            contechStateFile->write((char*) &it->second.pathDepth, sizeof(uint32_t));
+            
+            errs () << "PATHID: " << it->second.id << "\t";
+            errs () << startID << "\t" << it->second.pathDepth << "\n";
+            
+            for (int i = 0; i < it->second.pathDepth; i++)
+            {
+                uint32_t branchID = cfgInfoMap[it->second.condBranchBlocks[i]]->id;
+                contechStateFile->write((char*)&branchID, sizeof(uint32_t));
+            }
         }
     }
     //errs() << "Wrote: " << wcount << " basic blocks\n";
@@ -1060,7 +1097,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     
     //
     // Large blocks cannot have their IDs elided.
-    // TODO: permament value or different approach to checks
+    // TODO: permanent value or different approach to checks
     //
     if (memOpCount < 160) 
     {
