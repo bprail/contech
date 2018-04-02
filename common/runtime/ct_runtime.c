@@ -237,7 +237,6 @@ void __ctCleanupThread(void* v)
     ct_tsc_t start = rdtsc();
     #endif
     
-    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
     if (__ctIsROIEnabled == true && __ctIsROIActive == false)
     {
         __ctAllocateLocalBuffer();
@@ -245,6 +244,7 @@ void __ctCleanupThread(void* v)
     __ctStoreThreadJoinInternal(true, parent_ctid, rdtsc());
     __ctQueueBuffer(false);
     __ctThreadLocalBuffer = (pct_serial_buffer)&initBuffer;
+    __atomic_fetch_add(&__ctThreadExitNumber, 1, __ATOMIC_SEQ_CST);
 }
 
 int __ctThreadCreateActual(pthread_t * thread, const pthread_attr_t * attr,
@@ -641,6 +641,12 @@ unsigned int __ctGetBufferPos(pct_serial_buffer t)
 void __ctSetBufferPos(unsigned int pos)
 {
     __ctThreadLocalBuffer->pos = pos;
+}
+
+__attribute__((always_inline)) char* __ctGetBufferPtr(unsigned int pos, pct_serial_buffer t)
+{
+    char* r = &t->data[pos];
+    return r;
 }
 
 // (contech_id, basic block id, num of ops)
