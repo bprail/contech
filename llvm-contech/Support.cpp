@@ -141,6 +141,33 @@ void Contech::setElideInBlock(BasicBlock* bb, Instruction* stop, bool skipStoreB
     }
 }
 
+void Contech::visitVertex(
+    BasicBlock* v, 
+    vector<BasicBlock*>& topologicalOrdering,
+    map<BasicBlock*, unsigned char>& visited,
+    map<BasicBlock*, bool> isPathTerminator)
+{
+    if (visited[v] == 2) return;
+    if (visited[v] == 1) 
+    {
+        errs() << "NOT A DAG - THERE WAS A CYCLE.";
+        return;
+    }
+    // Enter vertex v.
+    visited[v] = 1;
+    if (!isPathTerminator[v]) {
+        // Visit all the children of vertex v if it's not a terminating vertex.
+        for (auto succ = succ_begin(v), end = succ_end(v); succ != end; ++succ) 
+        {
+            BasicBlock* w = *succ;
+            visitVertex(w, topologicalOrdering, visited, isPathTerminator);
+        }
+    }
+    // Exit vertex v.
+    visited[v] = 2;
+    topologicalOrdering.push_back(v);
+}
+
 //
 //  ChainBufferCalls
 //    This routine achieves a long standing dream of reusing some of the common
@@ -148,7 +175,8 @@ void Contech::setElideInBlock(BasicBlock* bb, Instruction* stop, bool skipStoreB
 //    The idea is to search all instrumentation and find cases where it can be
 //    chained together, thus skipping the redundant calls and thereby saving operations.
 //
-int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock, int bbid)
+int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock, int bbid,
+    int* numComponents, int* numTooBig, int* numSwitch, int* numNoElse)
 {
     hash<BasicBlock*> blockHash{};
     map<BasicBlock*, Instruction*> blockPosCall;
@@ -301,13 +329,91 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(phiPos);
         }
     }
-    
-    
+
+    // We are going to compute, for each starting vertex, v, the value to add to
+    //   each edge in the chain starting at v.
+    map<BasicBlock*, map<pair<BasicBlock*, BasicBlock*>, int>> edgeValues;
+
+    // Additionally, we want to keep track of the number of potential paths in
+    //   the chain startinga at v. We use this since we restrict the number of
+    //   bits used to represent the path.
+    map<BasicBlock*, int> numPossiblePaths;
+
+    for (auto it = isStartChain.begin(), et = isStartChain.end(); 
+        it != et; 
+        ++it)
+    {
+        // Each component "chain" begins with a "start" block. Ignore the non-
+        //   start blocks.
+        if (!it->second) continue;
+     
+        // Collect the topological ordering of the basic blocks in each chain.   
+        vector<BasicBlock*> topologicalOrdering;
+        map<BasicBlock*, unsigned char> visited;
+        auto start = it->first;
+
+        visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
+
+        errs() << "-------------------------------------------------------\n" <<
+            "# blocks in chain: " << topologicalOrdering.size() << "\n";
+
+        // Count the number of paths out of each vertex, and assign values to
+        //   the edges such that the sum of the edges in the path uniquely and
+        //   minimally defines the path.
+        map<BasicBlock*, int> numPaths;
+        map<pair<BasicBlock*, BasicBlock*>, int> edgeValue;
+
+        for (int i = 0; i < topologicalOrdering.size(); i++)
+        {
+            auto v = topologicalOrdering[i];
+
+            if (pathTerminatorBlocks[v])
+            {
+                // Vertex was a leaf; the number of paths is 1, since at this
+                //   point the path is known, so there is only 1 possible path.
+                numPaths[v] = 1;
+            }
+            else 
+            {
+                numPaths[v] = 0;
+
+                // For each edge, v -> w, assign a value to v -> w corresponding
+                //   to the possible number of paths accumulated so far, and add
+                //   to numPaths[v] the number of paths possible after taking 
+                //   v -> w.
+                for (auto succ = succ_begin(v), end = succ_end(v); 
+                    succ != end; 
+                    ++succ) 
+                {
+                    auto w = *succ;
+                    edgeValue[make_pair(v, w)] = numPaths[v];
+
+                    numPaths[v] += numPaths[w];
+                }
+            }
+        }
+
+        // Save the edge values and number of possible paths out of the start.
+        edgeValues[start] = edgeValue;
+        numPossiblePaths[start] = numPaths[start];
+
+        errs() << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n" <<
+            "Found path starting at " << cfgInfoMap[start]->id << " with " <<
+            numPaths[start] << " possible paths\n";
+    }
+
+    *numComponents = 0;
+    *numTooBig = 0;
+    *numSwitch = 0;
+    *numNoElse = 0;
+
     // From the starts and terminators, we can construct the paths
     //   Then apply them here.
     for (auto it = isStartChain.begin(), et = isStartChain.end(); it != et; ++it)
     {
-        if (it->second == false) continue;
+
+        if (!it->second) continue;
+        (*numComponents)++;
 
         vector<BasicBlock*> condBranchBlocks;
 
@@ -322,7 +428,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         set<BasicBlock*> parentSet;
         deque<BasicBlock*> visitQueue;
         visitQueue.push_back(startPath);
-        
+
         bool mergePath = false;
         do {
             BasicBlock* visitBlock = visitQueue.front();
@@ -333,42 +439,10 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             TerminatorInst* ti = visitBlock->getTerminator();
             visit[visitBlock] = true;
             
-            //
-            // Record if this block has a conditional branch
-            //   Initially, number of paths is 2^|conditional on path|
-            //   
-            if (BranchInst* bi = dyn_cast<BranchInst>(ti))
-            {
-                if (bi->isUnconditional() == false)
-                {
-                    if (bi->getNumSuccessors() == 2 && pathTerminatorBlocks[visitBlock] == false)
-                    {
-                        condBranchBlocks.push_back(visitBlock);
-                    }
-                    else
-                    {
-                        mergePath = true;
-                    }
-                }
-            }
-            else
-            {
-                mergePath = true;
-                // TODO: If the branch is a switch, as in dedup, ferret and x264
-                //   the switch may only have two paths, and could still be encoded.
-            }
-            
             // Given a single start block, every block then should be reachable.
             //   And every predecessor needs to be on this path.
             if (isStartChain[visitBlock] == false)
             {
-                // Currently, a block can only have 1 parent with a conditional branch
-                //   Or many parents with unconditional.  But not mixed.
-                //   It is possible to mix, if either:
-                //   - The conditional bits are assigned on an "edge"
-                //   - Or the conditional "0" can be assigned to this block.
-                int condParents = 0;
-                int uncondParents = 0;
                 for (auto predit = pred_begin(visitBlock), predet = pred_end(visitBlock); 
                      predit != predet; ++predit)
                 {
@@ -378,23 +452,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                         mergePath = true;
                         break;
                     }
-                    if (bi->isUnconditional() == true)
-                    {
-                        uncondParents++;
-                    }
-                    else
-                    {
-                        condParents++;
-                    }
                     parentSet.insert(*predit);
-                }
-                
-                if (condParents > 1 ||
-                    (condParents == 1 && uncondParents != 0))
-                {
-                    errs() << "Path Reject on: " << *visitBlock;
-                    mergePath = true;
-                    break;
                 }
             }
             else if (visitBlock != startPath)
@@ -432,22 +490,18 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             continue;
         }
         
-        // If there are more than 1024 conservative paths,
-        //   then skip this path start.
-        if (condBranchBlocks.size() > 10)
+        // If there are more than 1024 conservative paths, then skip this path 
+        //   start.
+        if (numPossiblePaths[startPath] > 1024)
         {
-            errs() << "Starting at " << "\n";
-            errs() << "Generated " << condBranchBlocks.size() << " paths.\n";
+            errs() << "Starting at " << cfgInfoMap[startPath]->id << "\n" <<
+                "generated " << numPossiblePaths[startPath] << " paths.\n";
+            (*numTooBig)++;
             continue;
-        }
-        else if (condBranchBlocks.size() > 0)
-        {
-            errs() << "Paths: " << (1 << condBranchBlocks.size()) << "\n";
         }
         else
         {
-            // No conditional branches, thus no "path"
-            continue;
+            errs() << "Paths: " << numPossiblePaths[startPath] << "\n";
         }
         
         // Now assign the base path number, using the next "bbid"
@@ -471,29 +525,22 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         {
             llvm_path_info lpis;
             lpis.id = bbid;
-            lpis.pathDepth = condBranchBlocks.size();
-            lpis.condBranchBlocks = condBranchBlocks;
+            lpis.pathDepth = condBranchBlocks.size(); // TODO: remove this.
+            lpis.condBranchBlocks = condBranchBlocks; // TODO: remove this.
+            lpis.edgeValues = edgeValues[startPath];
             pathInfoMap[startPath] = lpis;
         }
-        bbid += 1 << (condBranchBlocks.size());
+
+        bbid += numPossiblePaths[startPath];
         
         int pos = 0;
         for (auto sit = succ_begin(startPath), set = succ_end(startPath); sit != set; ++sit)
-        {
-            assert(pos < 2);
-            
+        {            
             if (addSet.find(*sit) == addSet.end())
             {
                 addSet[*sit] = pos;
                 visitQueue.push_back(*sit);
             }
-            else
-            {
-                // This assert will fail if pos is non-zero.
-                assert (addSet[*sit] == (pos));
-            }
-            cfgInfoMap[startPath]->next_id[pos] = cfgInfoMap[*sit]->id;
-            
             pos++;
         }
         
@@ -666,7 +713,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                     else
                     {
                         // Is it possible that differing routes could reach this block?
-                        assert(addSet[succ] == 0);
+                        // assert(addSet[succ] == 0);
                     }
                 }
                 else
@@ -676,25 +723,15 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                     {
                         if (condBranchBlocks[i] == bb) break;
                     }
-                    assert(i < condBranchBlocks.size());
                     
                     int pos = 0;
                     for (auto sit = succ_begin(bb), set = succ_end(bb); sit != set; ++sit)
                     {
-                        assert(pos < 2);
-                        
                         if (addSet.find(*sit) == addSet.end())
                         {
                             addSet[*sit] = pos << i;
                             visitQueue.push_back(*sit);
                         }
-                        else
-                        {
-                            // This assert will fail if pos is non-zero.
-                            assert (addSet[*sit] == (pos << i));
-                        }
-                        cfgInfoMap[bb]->next_id[pos] = cfgInfoMap[*sit]->id;
-                        
                         pos++;
                     }
                 }
@@ -2208,6 +2245,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     if (baseAddr == NULL)
     {
         errs() << "No base addr found: " << *addr << "\n";
+        return;
         assert(0);
     }
     

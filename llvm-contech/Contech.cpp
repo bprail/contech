@@ -696,10 +696,27 @@ bool Contech::runOnModule(Module &M)
     int pathID = bb_count;
     // Delay the chainBufferCalls until all BasicBlocks are processed
     //   This way all path IDs follow the BBIDs.
+    int totalComponents = 0;
+    int totalRejected = 0;
+    int totalTooBig = 0;
+    int totalSwitch = 0;
+    int totalNoElse = 0;
     for (auto it = instFuncs.begin(), et = instFuncs.end(); it != et; ++it) 
     {
-        pathID = chainBufferCalls(*it, fullCost, pathID);
+        int total, tooBig, swich, noElse = 0;
+        pathID = chainBufferCalls(*it, fullCost, pathID, &total, &tooBig, &swich, &noElse);
+        totalComponents += total;
+        totalTooBig += tooBig;
+        totalSwitch += swich;
+        totalNoElse += noElse;
+        totalRejected += tooBig + swich + noElse;
     }
+    // Print statistics.
+    errs() << "Components:\t" << totalComponents << "\n" <<
+        "Rejected:\t" << totalRejected << "\n" <<
+        "\tToo big: " << totalTooBig << "\n" <<
+        "\tSwitch:  " << totalSwitch << "\n" <<
+        "\tNo Else: " << totalNoElse << "\n";
 
 cleanup:
     ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
@@ -803,6 +820,9 @@ cleanup:
             //   block when computing loop info
             //delete bi->second;
         }
+
+        float totalDepth = 0.0;
+        float totalCount = 0.0;
         
         evTy = ct_event_path_info;
         for (auto it = pathInfoMap.begin(), et = pathInfoMap.end(); it != et; ++it)
@@ -820,6 +840,9 @@ cleanup:
             
             errs () << "PATHID: " << it->second.id << "\t";
             errs () << startID << "\t" << it->second.pathDepth << "\n";
+
+            totalDepth += 1.0 + it->second.pathDepth;
+            totalCount += 1.0;
             
             for (int i = 0; i < it->second.pathDepth; i++)
             {
@@ -827,6 +850,11 @@ cleanup:
                 contechStateFile->write((char*)&branchID, sizeof(uint32_t));
             }
         }
+        if (totalDepth > 0.0)
+        {
+            errs () << "AVERAGE DEPTH: " << (totalDepth / totalCount) << "\n";
+        }
+        
     }
     //errs() << "Wrote: " << wcount << " basic blocks\n";
     cfgInfoMap.clear();
