@@ -477,7 +477,6 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                     visitQueue.push_back(*sbbit);
                 }
             }
-            
         } while (mergePath == false &&
                  !visitQueue.empty());
 
@@ -488,6 +487,36 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             {
                 mergePath = true;
                 break;
+            }
+        }
+
+        auto blocks = chainMembers[startPath];
+
+        // Here we make sure that no block in the chain (besides the start
+        //   block) has predecessors that are terminal blocks. If this were the
+        //   case, We would have entered the chain elsewhere than the start, so
+        //   the path ID will be incorrect. Thus, we reject these paths.
+        for (int i = blocks.size() - 1; i >= 0; i--) 
+        {
+            auto w = blocks[i];
+            if (w != startPath)
+            {
+                for (auto predit = pred_begin(w), predet = pred_end(w); 
+                    predit != predet; 
+                    ++predit)
+                {
+                    auto v = *predit;
+                    if (pathTerminatorBlocks[v]) 
+                    {
+                        // Predecessor to non-start block was a termilal block.
+                        errs() << "Path rejected due to terminal block that " <<
+                            "led to non start block.\n" <<
+                             cfgInfoMap[v]->id << " (terminal) -> " <<
+                             cfgInfoMap[w]->id << "\n";
+                        mergePath = true;
+                        break;
+                    } 
+                }
             }
         }
                  
@@ -544,7 +573,6 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         //   reverse topological order, so when we reverse the iteration, we
         //   ensure that we visit only vertices whose predecessors have been
         //   processed.
-        auto blocks = chainMembers[startPath];
         for (int i = blocks.size() - 1; i >= 0; i--) 
         {
             auto w = blocks[i];
@@ -623,23 +651,8 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                 ++predit)
             {
                 auto v = *predit;
-
-                // TODO: we can remove this check once our definition of
-                //   terminal blocks changes so that terminal blocks cannot lead
-                //   to non-start blocks.
-                Value* predecessorPathId;
-                if (pathTerminatorBlocks[*predit]) 
-                {
-                    // For now just set the path ID to the block ID.
-                    errs() << "WARNING - Predecessor was a terminal block!";
-                    predecessorPathId = ConstantInt::get(
-                        cct.int32Ty, 
-                        cfgInfoMap[w]->id);
-                } 
-                else
-                {
-                    predecessorPathId = pathId[v];
-                }
+                
+                auto predecessorPathId = pathId[v];
 
                 // Create an instruction that adds the edge value to the pathId.
                 Instruction* addToPath = BinaryOperator::Create(
