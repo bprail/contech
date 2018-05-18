@@ -55,7 +55,7 @@ namespace llvm {
 
     typedef struct _llvm_basic_block {
         unsigned int id, len, lineNum, numIROps, critPathLen;
-        int32_t next_id[2];
+        int32_t next_id[2]; // TODO: can we get rid of this?
         bool containCall;
         bool containGlobalAccess;
         bool containAtomic;
@@ -72,7 +72,8 @@ namespace llvm {
 
     typedef struct _llvm_path_info {
         unsigned int id, pathDepth;
-        std::vector<BasicBlock*> condBranchBlocks;
+        std::vector<BasicBlock*> condBranchBlocks; // TODO: remove this.
+        std::map<std::pair<BasicBlock*, BasicBlock*>, int> edgeValues;
     } llvm_path_info, *pllvm_path_info;
     
     typedef struct _llvm_inst_block {
@@ -231,6 +232,12 @@ namespace llvm {
     // Contech - First record every load or store in a program
     //
     class Contech : public ModulePass {
+    private:
+        void visitVertex(
+            BasicBlock*, 
+            std::vector<BasicBlock*>&, 
+            std::map<BasicBlock*, unsigned char>&, 
+            std::map<BasicBlock*, bool>);
     public:
         static char ID; // Pass identification, replacement for typeid
         ConstantsCT cct;
@@ -257,7 +264,7 @@ namespace llvm {
         Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
         void setElideInBlock(BasicBlock*, Instruction*, bool);
-        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);
+        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int, int*, int*, int*, int*);
         
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
