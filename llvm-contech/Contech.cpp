@@ -592,6 +592,7 @@ bool Contech::runOnModule(Module &M)
             
             // Insert a call per elided loop memop
             uint16_t i = 0;
+            errs() << "Loop at " << cfgInfoMap[it->first]->id << " with " << llt->baseAddr.size() << "\n";
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
@@ -696,27 +697,10 @@ bool Contech::runOnModule(Module &M)
     int pathID = bb_count;
     // Delay the chainBufferCalls until all BasicBlocks are processed
     //   This way all path IDs follow the BBIDs.
-    int totalComponents = 0;
-    int totalRejected = 0;
-    int totalTooBig = 0;
-    int totalSwitch = 0;
-    int totalNoElse = 0;
     for (auto it = instFuncs.begin(), et = instFuncs.end(); it != et; ++it) 
     {
-        int total, tooBig, swich, noElse = 0;
-        pathID = chainBufferCalls(*it, fullCost, pathID, &total, &tooBig, &swich, &noElse);
-        totalComponents += total;
-        totalTooBig += tooBig;
-        totalSwitch += swich;
-        totalNoElse += noElse;
-        totalRejected += tooBig + swich + noElse;
+        pathID = chainBufferCalls(*it, fullCost, pathID);
     }
-    // Print statistics.
-    errs() << "Components:\t" << totalComponents << "\n" <<
-        "Rejected:\t" << totalRejected << "\n" <<
-        "\tToo big: " << totalTooBig << "\n" <<
-        "\tSwitch:  " << totalSwitch << "\n" <<
-        "\tNo Else: " << totalNoElse << "\n";
 
 cleanup:
     ofstream* contechStateFile = new ofstream(ContechStateFilename.c_str(), ios_base::out | ios_base::binary);
@@ -747,7 +731,30 @@ cleanup:
             //   Then runtime can directly pass the events to the event list
             contechStateFile->write((char*)&evTy, sizeof(unsigned char));
             contechStateFile->write((char*)&bi->second->id, sizeof(unsigned int));
-            contechStateFile->write((char*)&bi->second->next_id, 2*sizeof(int32_t));
+            int32_t nId = bi->second->next_id;
+            contechStateFile->write((char*)&nId, sizeof(int32_t));
+            
+            if (nId != -1)
+            {
+                // HACK
+                nId = 0;
+                contechStateFile->write((char*)&nId, sizeof(int32_t));
+            }
+            else
+            {
+                size_t tPaths = bi->second->path_ids.size();
+                contechStateFile->write((char*)&tPaths, sizeof(int32_t));
+                if (tPaths > 0)
+                {
+                    for (auto it = bi->second->path_ids.begin(), et = bi->second->path_ids.end();
+                         it != et; ++it)
+                    {
+                        contechStateFile->write((char*)&(*it).first, sizeof(int32_t));
+                        contechStateFile->write((char*)&(*it).second, sizeof(int32_t));
+                    }
+                }
+            }
+            
             // This is the flags field, which is currently 0 or 1 for containing a call
             unsigned int flags = ((unsigned int)bi->second->containCall) |
                                  ((unsigned int)bi->second->containGlobalAccess << 1);
@@ -821,9 +828,6 @@ cleanup:
             //delete bi->second;
         }
 
-        float totalDepth = 0.0;
-        float totalCount = 0.0;
-        
         evTy = ct_event_path_info;
         for (auto it = pathInfoMap.begin(), et = pathInfoMap.end(); it != et; ++it)
         {
@@ -836,25 +840,9 @@ cleanup:
             uint32_t startID = cfgInfoMap[it->first]->id;
             contechStateFile->write((char*)&startID, sizeof(uint32_t));
             
-            contechStateFile->write((char*) &it->second.pathDepth, sizeof(uint32_t));
-            
-            errs () << "PATHID: " << it->second.id << "\t";
-            errs () << startID << "\t" << it->second.pathDepth << "\n";
-
-            totalDepth += 1.0 + it->second.pathDepth;
-            totalCount += 1.0;
-            
-            for (int i = 0; i < it->second.pathDepth; i++)
-            {
-                uint32_t branchID = cfgInfoMap[it->second.condBranchBlocks[i]]->id;
-                contechStateFile->write((char*)&branchID, sizeof(uint32_t));
-            }
-        }
-        if (totalDepth > 0.0)
-        {
-            errs () << "AVERAGE DEPTH: " << (totalDepth / totalCount) << "\n";
-        }
-        
+            int32_t pathCount = it->second.pathDepth;
+            contechStateFile->write((char*)&pathCount, sizeof(int32_t));
+        }        
     }
     //errs() << "Wrote: " << wcount << " basic blocks\n";
     cfgInfoMap.clear();
@@ -1133,8 +1121,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     }
 
     bi->id = bbid;
-    bi->next_id[0] = -1;
-    bi->next_id[1] = -1;
+    bi->next_id = -1;
+    bi->path_ids.clear();
     bi->first_op = NULL;
     bi->containGlobalAccess = false;
     bi->containAtomic = false;

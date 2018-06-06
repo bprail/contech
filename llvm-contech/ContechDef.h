@@ -55,7 +55,8 @@ namespace llvm {
 
     typedef struct _llvm_basic_block {
         unsigned int id, len, lineNum, numIROps, critPathLen;
-        int32_t next_id[2]; // TODO: can we get rid of this?
+        int32_t next_id; // TODO: can we get rid of this?
+        std::vector<std::pair<int32_t, int32_t> > path_ids;
         bool containCall;
         bool containGlobalAccess;
         bool containAtomic;
@@ -264,7 +265,7 @@ namespace llvm {
         Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
         void setElideInBlock(BasicBlock*, Instruction*, bool);
-        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int, int*, int*, int*, int*);
+        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);
         
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);
