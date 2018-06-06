@@ -22,7 +22,7 @@ namespace contech
     {
         uint32_t basic_block_id, fun_name_len, file_name_len, callFun_name_len;
         uint32_t num_mem_ops, line_num, num_ops, crit_path_len;
-        int32_t next_basic_block_id[2];
+        int32_t next_basic_block_id;
         uint32_t flags;
         char* file_name;
         char* fun_name;
@@ -254,7 +254,9 @@ namespace contech
             typedef struct _internal_basic_block_info
             {
                 unsigned int len;
-                int32_t next_basic_block_id[2];
+                int32_t next_basic_block_id;
+                int32_t* next_path_block_id;
+                int32_t* base_path_id;
                 int count;
                 uint32_t totalBytes;
                 int32_t loopStepBlock;
@@ -273,6 +275,7 @@ namespace contech
             {
                 uint32_t pathBits;
                 uint32_t currentPathIndex;
+                uint32_t currentID;
                 pinternal_path_info pathInfo;
             } internal_path_track, *pinternal_path_track;
             
