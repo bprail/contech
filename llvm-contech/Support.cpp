@@ -327,6 +327,9 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             
             dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(phiBuf);
             dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(phiPos);
+            
+            MarkInstAsContechInst(phiBuf);
+            MarkInstAsContechInst(phiPos);
         }
     }
 
@@ -358,8 +361,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
 
         visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
 
-        errs() << "-------------------------------------------------------\n" <<
-            "# blocks in chain: " << topologicalOrdering.size() << "\n";
+        errs() << "# blocks in chain: " << topologicalOrdering.size() << "\n";
 
         // Count the number of paths out of each vertex, and assign values to
         //   the edges such that the sum of the edges in the path uniquely and
@@ -405,8 +407,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         numPossiblePaths[start] = numPaths[start];
         chainMembers[start] = topologicalOrdering;
 
-        errs() << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n" <<
-            "Found path starting at " << cfgInfoMap[start]->id << " with " <<
+        errs() << "Found path starting at " << cfgInfoMap[start]->id << " with " <<
             numPaths[start] << " possible paths\n";
     }
 
@@ -589,6 +590,8 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                     if ((&*inst)->getMetadata(cct.ContechMDID) &&
                         dyn_cast<CallInst>(&*inst) != NULL)
                     {
+                        // N.B. Add four bytes of path position as path is
+                        //   written later thus it cannot overlap.
                         Value* cThree = ConstantInt::get(cct.int32Ty, 3);
                         switch ((&*inst)->getNumOperands())
                         {
@@ -597,11 +600,24 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                                 startBuf = (&*inst)->getOperand(2);
                                 startPos = (&*inst)->getOperand(1);
                                 
+                                // Everything thinks the block ID is three bytes,
+                                //   but path IDs need four, so add one extra.
+                                Value* cOne = ConstantInt::get(cct.int32Ty, 1);
+                                Instruction* posPathAdd = BinaryOperator::Create(
+                                    Instruction::Add,
+                                    startPos,
+                                    cOne,
+                                    "",
+                                    &*inst);
+                                startPos->replaceAllUsesWith(posPathAdd);
+                                posPathAdd->setOperand(0, startPos);
+                                MarkInstAsContechInst(posPathAdd);
+                                
                                 // Remove the store BBID instruction, but shift 
                                 //   the space to reserve for the path ID.
                                 Instruction* posAdd = BinaryOperator::Create(
                                     Instruction::Add,
-                                    startPos,
+                                    posPathAdd,
                                     cThree,
                                     "", 
                                     &*inst);
@@ -642,6 +658,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                 predCount, 
                 "phi_for_" + to_string(cfgInfoMap[w]->id), 
                 w->getFirstNonPHI());
+            MarkInstAsContechInst(phiPathId);
             map<pair<BasicBlock*, BasicBlock*>, Value*> phiBranches;
 
             // Add a branch to the phi node for each incoming edge.
@@ -693,6 +710,22 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                         {
                             case 5:
                             {
+                                // Put a getBufferPtr function in to replace
+                                //   the address calculation from storeBasicBlock.
+                                //   The store's position is changing to the start
+                                //   of the buffer, so its return is invalid.
+                                Value* tStartBuf = (&*inst)->getOperand(2);
+                                Value* tStartPos = (&*inst)->getOperand(1);
+                                
+                                Value* argGP[] = {tStartPos, tStartBuf};
+                                Instruction* getPtr = CallInst::Create(
+                                    cct.getBufPtrFunction, 
+                                    ArrayRef<Value*>(argGP, 2), 
+                                    "", 
+                                    &*inst);
+                                MarkInstAsContechInst(getPtr);
+                                (&*inst)->replaceAllUsesWith(getPtr);
+                                
                                 // Original buffer.
                                 (&*inst)->setOperand(2, startBuf); 
                                 // Original position.
@@ -1881,6 +1914,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
+// REFACTOR: bbid is actually bb entry?
 void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
     int64_t multFactor = 1;
@@ -1894,6 +1928,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         errs() << "Step 0: " << *memOp << "\n";
         errs() << " in " << *bbid << "\n";
     }*/
+    errs() << *memOp << "\t" << llb->memIV << "\t" << *addr << "\n";
     
     if (ilte == loopInfoTrack.end())
     {
@@ -1967,6 +2002,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             Value* nextIV = llb->memIV;
             multFactor = 1;
             
+            errs () << *gepI << "\t" << offset << "\t" << *itG.getIndexedType() << "\n";
+            
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
             {
@@ -2021,6 +2058,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
  
                     //llt->compMap[gepI] = scale;
                     ac.push_back(make_pair(gepI, scale));
+                    errs() << "AS COMP\n";
                     continue;
                 }
             }
@@ -2036,6 +2074,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 nextIVInst->getParent() == llb->stepBlock &&
                 DT->dominates(nextIVInst, memOp))
             {
+                errs() << "INV: " << llb->stepIV << "\n";
                 tOffset += -1 * llb->stepIV;
             }
             
@@ -2046,10 +2085,14 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             depIV = true;
         }
         
+        errs() << offset << "\n";
         *memOpDelta = offset;
+        // Need to distinguish that the op could be inferrred and would need
+        //   a non-zero size, versus the hoisted invariant addresses?
         if (depIV == false)
         {
-            *loopIVSize = 0;
+            errs() << "DEP " << "\t" << *memOp->getType() << "\n";
+            *loopIVSize = 1;
         }
     }
     
