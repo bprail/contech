@@ -449,6 +449,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         currentPath->currentPathIndex = 0;
                         currentPath->currentID = pathEntry->second.startID;
                         currentPath->pathInfo = &pathEntry->second;
+                        
+                        char extraSpace = 0;
+                        fread_check(&extraSpace, sizeof(char), 1, fptr);
                     }
                     else
                     {
@@ -478,6 +481,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 fprintf(stderr, "BB_COUNT: %d  LEN: %d\n", bb_count, bb_info_table[npe->bb.basic_block_id].len);
                 dumpAndTerminate();
             }*/
+            
             id = npe->bb.basic_block_id;
             this->next_basic_block_id = bb_info_table[id].next_basic_block_id;
             if (npe->bb.len > 0)
@@ -501,6 +505,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 }
                 else
                 {
+                    if (id == 183)
+                    {
+                        fprintf(stderr, "IN case: %p\n", this);
+                    }
+                    
                     for (int i = 0; i < npe->bb.len; i++)
                     {
                         npe->bb.mem_op_array[i].data = 0;
@@ -609,7 +618,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                                             clt->clb.startValue, 
                                                                             offset, 
                                                                             npe->bb.mem_op_array[i].addr);
-                                assert(0);
+                                dumpAndTerminate(fptr);
                             }*/
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
@@ -1220,6 +1229,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             uint8_t bufS[loop_start_size];
             fread_check(bufS, sizeof(uint8_t), loop_start_size, fptr);
             bytesConsume = unpack(bufS, "t", &npe->loop.clb.startValue);
+                                                 
+            if (npe->loop.preLoopId == 182)
+            {
+                fprintf(stderr, "BASE: %lx\n", npe->loop.clb.startValue);
+            }
                                                  
             npe->loop.clm.memOpId = 0;
             npe->loop.clb.step = bb_info_table[npe->loop.preLoopId].loopStepValue;
