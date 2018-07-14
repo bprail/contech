@@ -55,7 +55,8 @@ namespace llvm {
 
     typedef struct _llvm_basic_block {
         unsigned int id, len, lineNum, numIROps, critPathLen;
-        int32_t next_id[2];
+        int32_t next_id; // TODO: can we get rid of this?
+        std::vector<std::pair<int32_t, int32_t> > path_ids;
         bool containCall;
         bool containGlobalAccess;
         bool containAtomic;
@@ -70,6 +71,12 @@ namespace llvm {
         unsigned int fileNameSize;
     } llvm_basic_block, *pllvm_basic_block;
 
+    typedef struct _llvm_path_info {
+        unsigned int id, pathDepth;
+        std::vector<BasicBlock*> condBranchBlocks; // TODO: remove this.
+        std::map<std::pair<BasicBlock*, BasicBlock*>, int> edgeValues;
+    } llvm_path_info, *pllvm_path_info;
+    
     typedef struct _llvm_inst_block {
         bool containQueueCall;
         bool hasCheck;
@@ -176,6 +183,7 @@ namespace llvm {
         Constant* checkBufferLargeFunction;
         Constant* getBufPosFunction;
         Constant* getBufFunction;
+        Constant* getBufPtrFunction;
         Constant* writeElideGVEventsFunction;
         Constant* storeGVEventFunction;
         Constant* storeLoopEntryFunction;
@@ -225,6 +233,12 @@ namespace llvm {
     // Contech - First record every load or store in a program
     //
     class Contech : public ModulePass {
+    private:
+        void visitVertex(
+            BasicBlock*, 
+            std::vector<BasicBlock*>&, 
+            std::map<BasicBlock*, unsigned char>&, 
+            std::map<BasicBlock*, bool>);
     public:
         static char ID; // Pass identification, replacement for typeid
         ConstantsCT cct;
@@ -239,6 +253,7 @@ namespace llvm {
         std::map<Value*, int> loopMemOps;
         std::map<BasicBlock*, llvm_loop_track*> loopInfoTrack;
         std::map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
+        std::map<BasicBlock*, llvm_path_info> pathInfoMap;
 
         Contech() : ModulePass(ID) {
             lastAssignedElidedGVId = -1;
@@ -249,7 +264,8 @@ namespace llvm {
         
         Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
-        void chainBufferCalls(Function*, std::map<int, llvm_inst_block>&);
+        void setElideInBlock(BasicBlock*, Instruction*, bool);
+        int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);
         
         virtual bool internalRunOnBasicBlock(BasicBlock &B, Module &M, int bbid, const char* fnName, 
                                              std::map<int, llvm_inst_block>& costOfBlock, int& num_checks, int& origin_check);

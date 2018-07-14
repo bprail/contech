@@ -703,35 +703,46 @@ namespace llvm{
             for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
             {
                 GetElementPtrInst *gepAddr = NULL;
+                Value* basePtr = NULL;
 
                 if (LoadInst *li = dyn_cast<LoadInst>(&*I))    
                 {
-                    gepAddr = dyn_cast<GetElementPtrInst>(li->getPointerOperand());
+                    basePtr = li->getPointerOperand();
                     cnt_GetElementPtrInst++;
-                    
-                    if (gepAddr == NULL)
-                    {
-                        Value* v = ctThis->castWalk(li->getPointerOperand());
-                        if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
-                    }
                 }
                 else if (StoreInst *si = dyn_cast<StoreInst>(&*I)) 
                 {
-                    gepAddr = dyn_cast<GetElementPtrInst>(si->getPointerOperand());
+                    basePtr = si->getPointerOperand();
                     cnt_GetElementPtrInst++;
-                    
-                    if (gepAddr == NULL)
-                    {
-                        Value* v = ctThis->castWalk(si->getPointerOperand());
-                        if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
-                    }
                 }
                 else 
                 {
                     continue;
                 }
                 
-                if (gepAddr == NULL) continue;
+                gepAddr = dyn_cast<GetElementPtrInst>(basePtr);
+                if (gepAddr == NULL)
+                {
+                    Value* v = ctThis->castWalk(basePtr);
+                    if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
+                }
+                
+                if (gepAddr == NULL)
+                {
+                    if (!L->isLoopInvariant(basePtr)) continue;
+                    
+                    tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.canElide = true;
+                    tempLoopMemoryOps.stepIV = 0;
+                    tempLoopMemoryOps.stepBlock = b;
+                    tempLoopMemoryOps.startIV = NULL;
+                    
+                    llvm_loopiv_block* t = new llvm_loopiv_block;
+                    *t = tempLoopMemoryOps;
+                    LoopMemoryOps.push_back(t);
+                    
+                    continue;
+                }
                 
                 Value* memIV = NULL;
                 if (std::find(PossibleIVs.begin(), PossibleIVs.end(), gepAddr->getPointerOperand()) != PossibleIVs.end())
@@ -857,9 +868,6 @@ namespace llvm{
 
     LlvmLoopIVBlockVector LoopIV:: getLoopMemoryOps() 
     {
-        outs() << "cnt_GetElementPtrInst\t" << cnt_GetElementPtrInst << "\n";
-        outs() << "cnt_elided\t" << cnt_elided << "\n";
-        outs() << "future_elided\t" << cnt_future_elided << "\n";
         return LoopMemoryOps;
     }
 }

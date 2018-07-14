@@ -111,18 +111,80 @@ unsigned int Contech::getCriticalPathLen(BasicBlock& B)
     return maxDepth;
 }
 
+void Contech::setElideInBlock(BasicBlock* bb, Instruction* stop, bool skipStoreBB = false)
+{
+    for (auto inst = bb->begin(); inst != bb->end(); ++inst)
+    {
+        if ((&*inst)->getMetadata(cct.ContechMDID) &&
+            dyn_cast<CallInst>(&*inst) != NULL)
+        {
+            Value* cOne = ConstantInt::get(cct.int8Ty, 1);
+            switch ((&*inst)->getNumOperands())
+            {
+                case 5: // storeBasicBlock
+                    if (!skipStoreBB) {(&*inst)->setOperand(3, cOne);}
+                break;
+                case 6: // storeMemOp
+                    if (!skipStoreBB){(&*inst)->setOperand(3, cOne);}
+                    else {(&*inst)->setOperand(4, cOne);}
+                break;
+                case 7: // storeBasicBlockComplete
+                    if (!skipStoreBB){(&*inst)->setOperand(3, cOne);}
+                    else {(&*inst)->setOperand(5, cOne);}
+                break;
+                default:
+                break;
+            }
+            //errs () << *inst << "\n";
+        }
+        if (&*inst == stop) break;
+    }
+}
+
+void Contech::visitVertex(
+    BasicBlock* v, 
+    vector<BasicBlock*>& topologicalOrdering,
+    map<BasicBlock*, unsigned char>& visited,
+    map<BasicBlock*, bool> isPathTerminator)
+{
+    if (visited[v] == 2) return;
+    if (visited[v] == 1) 
+    {
+        errs() << "NOT A DAG - THERE WAS A CYCLE.";
+        return;
+    }
+    // Enter vertex v.
+    visited[v] = 1;
+    if (!isPathTerminator[v]) 
+    {
+        // Visit all the children of vertex v if it's not a terminating vertex.
+        for (auto succ = succ_begin(v), end = succ_end(v); succ != end; ++succ) 
+        {
+            BasicBlock* w = *succ;
+            visitVertex(w, topologicalOrdering, visited, isPathTerminator);
+        }
+    }
+    // Exit vertex v.
+    visited[v] = 2;
+    topologicalOrdering.push_back(v);
+}
+
 //
 //  ChainBufferCalls
 //    This routine achieves a long standing dream of reusing some of the common
-//    operations between basic blocks, such as requsting the buffer or its position.
+//    operations between basic blocks, such as requesting the buffer or its position.
 //    The idea is to search all instrumentation and find cases where it can be
 //    chained together, thus skipping the redundant calls and thereby saving operations.
 //
-void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock)
+int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock, int bbid)
 {
     hash<BasicBlock*> blockHash{};
     map<BasicBlock*, Instruction*> blockPosCall;
     map<BasicBlock*, int> blockChainCount;
+    map<BasicBlock*, bool> pathTerminatorBlocks;
+    map<BasicBlock*, bool> isStartChain;
+
+    errs() << "BASE ID: " << bbid << "\n";
     
     // For each block in the function,
     //   If the block does not have an arbitrary function call,
@@ -134,6 +196,11 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         BasicBlock* bb = &*it;
         int bb_val = blockHash(bb);
         auto costInfo = costPerBlock.find(bb_val);
+        
+        if (costInfo == costPerBlock.end())
+        {
+            errs() << "Not found: " << *bb << "\n";
+        }
         
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
@@ -188,6 +255,14 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
         if (count != chainCount) continue;
         if (chainCount == 0) continue;
         
+        // If an entry is found, then that entry must be false, 
+        //   thus if end, then true
+        if (pathTerminatorBlocks.find(bb) == pathTerminatorBlocks.end())
+        {
+            pathTerminatorBlocks[bb] = true;
+        }
+        isStartChain[bb] = false;
+        
         // At this point, all predecessors of bb can chain to it.
         int bb_val = blockHash(bb);
         auto costInfo = costPerBlock.find(bb_val);
@@ -200,7 +275,6 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             // No PHI required
             auto elem = chainQueue.begin();
             
-            
             dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(elem->second);
             dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(elem->second->getOperand(2));
             
@@ -212,6 +286,11 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
             {
                 Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
                 elem->second->setOperand(4, skipStore);
+                pathTerminatorBlocks[elem->first] = false;
+                if (isStartChain.find(elem->first) == isStartChain.end())
+                {
+                    isStartChain[elem->first] = true;
+                }
             }
         }
         else
@@ -238,225 +317,432 @@ void Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBl
                 {
                     Value* skipStore = ConstantInt::get(cct.int8Ty, 1);
                     predPos->setOperand(4, skipStore);
+                    pathTerminatorBlocks[pred] = false;
+                    if (isStartChain.find(pred) == isStartChain.end())
+                    {
+                        isStartChain[pred] = true;
+                    }
                 }
             }
             
             dyn_cast<Instruction>(bbPos->getOperand(2))->replaceAllUsesWith(phiBuf);
             dyn_cast<Instruction>(bbPos->getOperand(1))->replaceAllUsesWith(phiPos);
+            
+            MarkInstAsContechInst(phiBuf);
+            MarkInstAsContechInst(phiPos);
         }
     }
-    
-    //
-    // The following loop tries to find blocks that require reduced path
-    //  information, via the branch direction.  This requires the predecessor
-    //  to chain to all its successors.  The successors can then record whether
-    //  it is the true or false path.
-    //  N.B. It would be possible to compact multiple direction values together
-    //    except the architecture cannot easily combine them.  Better instead
-    //    to switch to path identifiers.
-    //
-    bool hasChanged = false;
-    do {
-        hasChanged = false;
-        
-        for (auto it = blockChainCount.begin(), et = blockChainCount.end(); it != et; ++it)
+
+    // We are going to compute, for each starting vertex, v, the value to add to
+    //   each edge in the chain starting at v.
+    map<BasicBlock*, map<pair<BasicBlock*, BasicBlock*>, int>> edgeValues;
+
+    // Additionally, we want to keep track of the number of potential paths in
+    //   the chain startinga at v. We use this since we restrict the number of
+    //   bits used to represent the path.
+    map<BasicBlock*, int> numPossiblePaths;
+
+    // When we are instrumenting the blocks, we will want to know the blocks in
+    //   each chain.
+    map<BasicBlock*, vector<BasicBlock*>> chainMembers;
+
+    for (auto it = isStartChain.begin(), et = isStartChain.end(); 
+        it != et; 
+        ++it)
+    {
+        // Each component "chain" begins with a "start" block. Ignore the non-
+        //   start blocks.
+        if (!it->second) continue;
+     
+        // Collect the topological ordering of the basic blocks in each chain.   
+        vector<BasicBlock*> topologicalOrdering;
+        map<BasicBlock*, unsigned char> visited;
+        auto start = it->first;
+
+        visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
+
+        errs() << "# blocks in chain: " << topologicalOrdering.size() << "\n";
+
+        // Count the number of paths out of each vertex, and assign values to
+        //   the edges such that the sum of the edges in the path uniquely and
+        //   minimally defines the path.
+        map<BasicBlock*, int> numPaths;
+        map<pair<BasicBlock*, BasicBlock*>, int> edgeValue;
+
+        for (int i = 0; i < topologicalOrdering.size(); i++)
         {
-            int bb_val = blockHash(it->first);
-            if (it->second != 1 ||
-                costPerBlock[bb_val].preElide == true) 
+            auto v = topologicalOrdering[i];
+
+            if (pathTerminatorBlocks[v])
             {
+                // Vertex was a leaf; the number of paths is 1, since at this
+                //   point the path is known, so there is only 1 possible path.
+                numPaths[v] = 1;
+            }
+            else 
+            {
+                numPaths[v] = 0;
+
+                // For each edge, v -> w, assign a value to v -> w corresponding
+                //   to the possible number of paths accumulated so far, and add
+                //   to numPaths[v] the number of paths possible after taking 
+                //   v -> w.
+                for (auto succ = succ_begin(v), end = succ_end(v); 
+                    succ != end; 
+                    ++succ) 
+                {
+                    auto w = *succ;
+                    edgeValue[make_pair(v, w)] = numPaths[v];
+                    
+                    cfgInfoMap[v]->path_ids.push_back(make_pair(cfgInfoMap[w]->id, numPaths[v]));
+
+                    numPaths[v] += numPaths[w];
+                }
+                cfgInfoMap[v]->path_ids.push_back(make_pair(-1, numPaths[v]));
+            }
+        }
+
+        // Save the edge values and number of possible paths out of the start.
+        edgeValues[start] = edgeValue;
+        numPossiblePaths[start] = numPaths[start];
+        chainMembers[start] = topologicalOrdering;
+
+        errs() << "Found path starting at " << cfgInfoMap[start]->id << " with " <<
+            numPaths[start] << " possible paths\n";
+    }
+
+    // From the starts and terminators, we can construct the paths
+    //   Then apply them here.
+    for (auto it = isStartChain.begin(), et = isStartChain.end(); it != et; ++it)
+    {
+
+        if (!it->second) continue;
+
+        //
+        // Initially, assume that the start of a path is singular
+        //   and that paths cannot merge.
+        //
+        BasicBlock* startPath = it->first;
+        
+        // If there are more than 1024 conservative paths, then skip this path 
+        //   start.
+        if (numPossiblePaths[startPath] > 1024)
+        {
+            errs() << "Starting at " << cfgInfoMap[startPath]->id << "\n" <<
+                "generated " << numPossiblePaths[startPath] << " paths.\n";
+            continue;
+        }
+        else if (numPossiblePaths[startPath] == 1)
+        {
+            continue;
+        }
+        else
+        {
+            errs() << "Paths: " << numPossiblePaths[startPath] << "\n";
+        }
+        
+        //errs() << "Start: " << *it->first << "\n";
+        
+        vector<BasicBlock*> condBranchBlocks;
+        map<BasicBlock*, bool> visit;
+        set<BasicBlock*> parentSet;
+        deque<BasicBlock*> visitQueue;
+        visitQueue.push_back(startPath);
+
+        bool mergePath = false;
+        do {
+            BasicBlock* visitBlock = visitQueue.front();
+            visitQueue.pop_front();
+            
+            if (visit.find(visitBlock) != visit.end()) continue;
+            
+            TerminatorInst* ti = visitBlock->getTerminator();
+            visit[visitBlock] = true;
+            
+            // Given a single start block, every block then should be reachable.
+            //   And every predecessor needs to be on this path.
+            if (isStartChain[visitBlock] == false)
+            {
+                for (auto predit = pred_begin(visitBlock), predet = pred_end(visitBlock); 
+                     predit != predet; ++predit)
+                {
+                    BranchInst* bi = dyn_cast<BranchInst>((*predit)->getTerminator());
+                    if (bi == NULL)
+                    {
+                        mergePath = true;
+                        break;
+                    }
+                    parentSet.insert(*predit);
+                }
+            }
+            else if (visitBlock != startPath)
+            {
+                mergePath = true;
+                break;
+            }
+            
+            // Now add the successors, if not at the end.
+            if (pathTerminatorBlocks[visitBlock] == false)
+            {
+                for (auto sbbit = succ_begin(visitBlock), sbbet = succ_end(visitBlock); 
+                     sbbit != sbbet; ++sbbit)
+                {
+                    if (visit.find(*sbbit) != visit.end()) continue;
+                    visitQueue.push_back(*sbbit);
+                }
+            }
+        } while (mergePath == false &&
+                 !visitQueue.empty());
+
+        // If a parent is not visited, then it is a start that is not part of the path.
+        for (auto it = parentSet.begin(), et = parentSet.end(); it != et; ++it)
+        {
+            if (visit.find(*it) == visit.end())
+            {
+                mergePath = true;
+                break;
+            }
+        }
+
+        auto blocks = chainMembers[startPath];
+
+        // Here we make sure that no block in the chain (besides the start
+        //   block) has predecessors that are terminal blocks. If this were the
+        //   case, We would have entered the chain elsewhere than the start, so
+        //   the path ID will be incorrect. Thus, we reject these paths.
+        for (int i = blocks.size() - 1; i >= 0; i--) 
+        {
+            auto w = blocks[i];
+            if (w != startPath)
+            {
+                for (auto predit = pred_begin(w), predet = pred_end(w); 
+                    predit != predet; 
+                    ++predit)
+                {
+                    auto v = *predit;
+                    if (pathTerminatorBlocks[v]) 
+                    {
+                        // Predecessor to non-start block was a termilal block.
+                        errs() << "Path rejected due to terminal block that " <<
+                            "led to non start block.\n" <<
+                             cfgInfoMap[v]->id << " (terminal) -> " <<
+                             cfgInfoMap[w]->id << "\n";
+                        mergePath = true;
+                        break;
+                    } 
+                }
+            }
+        }
+                 
+        if (mergePath == true) 
+        {
+            continue;
+        }
+        
+        // Record the path ID and edge values within the path. Each branch adds 
+        //   the value of the edge taken to the path ID, uniquely and minimally
+        //   identifying the path taken.
+        {
+            llvm_path_info lpis;
+            lpis.id = bbid;
+            lpis.pathDepth = numPossiblePaths[startPath];//condBranchBlocks.size(); // TODO: remove this.
+            lpis.condBranchBlocks = condBranchBlocks; // TODO: remove this.
+            lpis.edgeValues = edgeValues[startPath];
+            pathInfoMap[startPath] = lpis;
+        }
+
+        // Keep track of the path ID at each block.
+        map<BasicBlock*, Value*> pathId;
+        
+        // Now assign the base path number, using the next "bbid"
+        // TODO: base path ID
+        pathId[startPath] = ConstantInt::get(cct.int32Ty, bbid); 
+
+        bbid += numPossiblePaths[startPath];
+
+        // We keep track of the start buffer and position to be written to at
+        //   the end of the path. These will be initialized in the first
+        //   iteration of the following loop, which always visits the start
+        //   block first as is comes first in topological order.
+        Value* startBuf = NULL;
+        Value* startPos;
+
+        // For each block in the chain, if the block is the start, set the path
+        //   ID to the block ID, otherwise, create a phi node that adds the edge
+        //   value of the incoming edge. The blocks in the chain are given in
+        //   reverse topological order, so when we reverse the iteration, we
+        //   ensure that we visit only vertices whose predecessors have been
+        //   processed.
+        for (int i = blocks.size() - 1; i >= 0; i--) 
+        {
+            auto w = blocks[i];
+
+            if (w == startPath)
+            {
+                // The start path has to get treated differently. There is no
+                //   phi instruction for the first block as it has no 
+                //   predecessors, and we must keep track of the block ID, and
+                //   the buffer.
+                for (auto inst = startPath->begin(); 
+                    inst != startPath->end(); 
+                    ++inst)
+                {
+                    if ((&*inst)->getMetadata(cct.ContechMDID) &&
+                        dyn_cast<CallInst>(&*inst) != NULL)
+                    {
+                        // N.B. Add four bytes of path position as path is
+                        //   written later thus it cannot overlap.
+                        Value* cThree = ConstantInt::get(cct.int32Ty, 3);
+                        switch ((&*inst)->getNumOperands())
+                        {
+                            case 5:
+                            {
+                                startBuf = (&*inst)->getOperand(2);
+                                startPos = (&*inst)->getOperand(1);
+                                
+                                // Everything thinks the block ID is three bytes,
+                                //   but path IDs need four, so add one extra.
+                                Value* cOne = ConstantInt::get(cct.int32Ty, 1);
+                                Instruction* posPathAdd = BinaryOperator::Create(
+                                    Instruction::Add,
+                                    startPos,
+                                    cOne,
+                                    "",
+                                    &*inst);
+                                startPos->replaceAllUsesWith(posPathAdd);
+                                posPathAdd->setOperand(0, startPos);
+                                MarkInstAsContechInst(posPathAdd);
+                                
+                                // Remove the store BBID instruction, but shift 
+                                //   the space to reserve for the path ID.
+                                Instruction* posAdd = BinaryOperator::Create(
+                                    Instruction::Add,
+                                    posPathAdd,
+                                    cThree,
+                                    "", 
+                                    &*inst);
+                                MarkInstAsContechInst(posAdd);
+                                
+                                Value* argGP[] = {posAdd, startBuf};
+                                Instruction* getPtr = CallInst::Create(
+                                    cct.getBufPtrFunction, 
+                                    ArrayRef<Value*>(argGP, 2), 
+                                    "", 
+                                    &*inst);
+                                MarkInstAsContechInst(getPtr);
+                                (&*inst)->replaceAllUsesWith(getPtr);
+                                (&*inst)->eraseFromParent();
+                            }
+                            break;
+                        }
+                    }
+                    if (startBuf != NULL) break;
+                }
                 continue;
             }
-            
-            deque<BasicBlock*> predTest;
-            set<BasicBlock*> predList;
-            deque<BasicBlock*> succTest;
-            set<BasicBlock*> succList;
-            
-            predTest.push_back(it->first);
-            bool enqueue, success;
-            
-            do {
-                enqueue = false;
-                success = true;
-                
-                for (auto pit = predTest.begin(), pet = predTest.end(); pit != pet; ++pit)
-                {
-                    bb_val = blockHash(*pit);
-                    if (costPerBlock[bb_val].preElide == true ||
-                        blockChainCount[*pit] != 1)
-                    {
-                        success = false;
-                        break;
-                    }
-                    BranchInst* brI = dyn_cast<BranchInst>((*pit)->getTerminator());
-                    if (brI == NULL ||
-                        brI->isUnconditional() == true)
-                    {
-                        success = false;
-                        break;
-                    }
-                    
-                    predList.insert(*pit);
-                    for (auto sbbit = succ_begin(*pit), sbbet = succ_end(*pit); sbbit != sbbet; ++sbbit)
-                    {
-                        if (succList.find(*sbbit) != succList.end()) continue;
-                        if (*sbbit == *pit)
-                        {
-                            success = false;
-                            break;
-                        }
-                        succTest.push_back(*sbbit);
-                        enqueue = true;
-                    }
-                }
-                predTest.clear();
-                
-                if (success == false) break;
-                
-                for (auto sit = succTest.begin(), set = succTest.end(); sit != set; ++sit)
-                {
-                    bb_val = blockHash(*sit);
-                    if (costPerBlock[bb_val].hasElide == true)
-                    {
-                        success = false;
-                        break;
-                    }
-                    
-                    for (auto pbbit = pred_begin(*sit), pbbet = pred_end(*sit); pbbit != pbbet; ++pbbit)
-                    {
-                        if (predList.find(*pbbit) != predList.end()) continue;
-                        predTest.push_back(*pbbit);
-                        enqueue = true;
-                    }
-                    succList.insert(*sit);
-                }
-                succTest.clear();
-                if (success == false) break;
-                
-            } while (enqueue == true);
-            
-            if (success == false) continue;
-            map<BasicBlock*, PHINode*> succPHIInfo;
-            map<BasicBlock*, PHINode*> succPHIStart;
-            for (auto sit = succList.begin(), set = succList.end(); sit != set; ++sit)
-            {
-                int bb_val = blockHash(*sit);
-                auto costInfo = costPerBlock.find(bb_val);
-                auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
-                ++iPt;
-                
-                PHINode* phi = PHINode::Create(cct.int8Ty, 0, "", (*sit)->getFirstNonPHI());
-                succPHIInfo[*sit] = phi;
-                PHINode* phiSt = PHINode::Create(cct.voidPtrTy, 0, "", (*sit)->getFirstNonPHI());
-                succPHIStart[*sit] = phiSt;
-                Value* argsSPI[] = {phiSt, phi};
-                CallInst* storePathInfo = CallInst::Create(cct.storePathInfoFunction, 
-                                                           ArrayRef<Value*>(argsSPI, 2), 
-                                                           "",  convertIterToInst(iPt));
-                MarkInstAsContechInst(storePathInfo);
 
-                storePathInfo->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-                                                           
-                // TODO: Update stores in block for elide
-                Instruction* posValue = dyn_cast<Instruction>(costInfo->second.posValue);
-                for (auto inst = (*sit)->begin(); inst != (*sit)->end(); ++inst)
+            // Get the number of predecessors.
+            // TODO: there must be an easier way of doing this....
+            int predCount = 0;
+            for (auto predit = pred_begin(w), predet = pred_end(w); 
+                predit != predet; 
+                ++predit)
+            {
+                predCount++;
+            }
+
+            // Create a phi node for keeping track of the path ID via each
+            //   incoming edge.
+            PHINode* phiPathId = PHINode::Create(
+                cct.int32Ty, 
+                predCount, 
+                "phi_for_" + to_string(cfgInfoMap[w]->id), 
+                w->getFirstNonPHI());
+            MarkInstAsContechInst(phiPathId);
+            map<pair<BasicBlock*, BasicBlock*>, Value*> phiBranches;
+
+            // Add a branch to the phi node for each incoming edge.
+            for (auto predit = pred_begin(w), predet = pred_end(w); 
+                predit != predet; 
+                ++predit)
+            {
+                auto v = *predit;
+                
+                auto predecessorPathId = pathId[v];
+
+                // Create an instruction that adds the edge value to the pathId.
+                Instruction* addToPath = BinaryOperator::Create(
+                    Instruction::Add, 
+                    predecessorPathId,
+                    ConstantInt::get(
+                        cct.int32Ty, 
+                        edgeValues[startPath][make_pair(v, w)]),
+                    "add_to_path_" + to_string(cfgInfoMap[v]->id) + 
+                        "_" + to_string(cfgInfoMap[w]->id), 
+                    v->getFirstNonPHI());
+
+                MarkInstAsContechInst(addToPath);
+
+                phiPathId->addIncoming(addToPath, v);
+            }
+            
+            // Set the path ID for this block.
+            pathId[w] = phiPathId;
+
+            // Mark this block as having its ID elided.
+            auto costInfo = costPerBlock.find(blockHash(w));
+            Instruction* posValue = dyn_cast<Instruction>(
+                costInfo->second.posValue);
+            setElideInBlock(w, posValue);
+
+            // If this block is the end of a path, store the path ID to the 
+            //   original block's buffer position.
+            if (pathTerminatorBlocks[w])
+            {
+                // Write pPath into original path location
+                for (auto inst = w->begin(); inst != w->end(); ++inst)
                 {
+                    Value* cZero = ConstantInt::get(cct.int8Ty, 0);
                     if ((&*inst)->getMetadata(cct.ContechMDID) &&
                         dyn_cast<CallInst>(&*inst) != NULL)
                     {
-                        Value* cOne = ConstantInt::get(cct.int8Ty, 1);
                         switch ((&*inst)->getNumOperands())
                         {
-                            case 5: // storeBasicBlock
-                                (&*inst)->setOperand(3, cOne);
-                            break;
-                            case 6: // storeMemOp
-                                (&*inst)->setOperand(3, cOne);
-                            break;
-                            case 7: // storeBasicBlockComplete
-                                (&*inst)->setOperand(3, cOne);
-                            break;
-                            default:
-                            break;
-                        }
-                        //errs () << *inst << "\n";
-                    }
-                    if (&*inst == posValue) break;
-                }
-            }
-            
-            for (auto pit = predList.begin(), pet = predList.end(); pit!= pet; ++pit)
-            {
-                Value* startPos;
-                Value* pathInfo = ConstantInt::get(cct.int8Ty, 0);
-                int bb_val = blockHash(*pit);
-                auto costInfo = costPerBlock.find(bb_val);
-                auto iPt = convertInstToIter(dyn_cast<Instruction>(costInfo->second.posValue));
-                ++iPt;
-                auto ub = dyn_cast<Instruction>(costInfo->second.posValue)->getOperand(1)->user_begin();
-                while ((*ub)->getType() != cct.voidPtrTy ||
-                       (dyn_cast<Instruction>(*ub))->getParent() != *pit) ++ub;
-                startPos = *(ub);
-                
-                BranchInst* brInst = dyn_cast<BranchInst>((*pit)->getTerminator());
-                if (brInst == NULL) {continue;} // Should always succeed, checked above
-                if (brInst->isUnconditional())
-                {
-                    // Already assigned
-                }
-                else
-                {
-                    Value* cond = brInst->getCondition();
-                    Value* argsEPI[] = {pathInfo, cond};
-                    /*CallInst* callEPI = CallInst::Create(cct.extendPathInfoFunction, 
-                                                ArrayRef<Value*>(argsEPI, 2), "",  brInst);*/
-                    Value* castCond = castSupport(cct.int8Ty, cond, brInst);
-                    //MarkInstAsContechInst(callEPI);
-
-                    //callEPI->getCalledFunction()->addFnAttr( ALWAYS_INLINE);
-                    pathInfo = castCond;
-                }
-                
-                int pos = 0;
-                for (auto sit = succ_begin(*pit), set = succ_end(*pit); sit != set; ++sit)
-                {
-                    succPHIInfo[*sit]->addIncoming(pathInfo, *pit);
-                    succPHIStart[*sit]->addIncoming(startPos, *pit);
-                    assert(pos < 2);
-                    cfgInfoMap[*pit]->next_id[1-pos] = cfgInfoMap[*sit]->id;
-                    pos++;
-                }
-                
-                blockChainCount.erase(*pit);
-                hasChanged = true;
-                
-                Instruction* posValue = dyn_cast<Instruction>(costInfo->second.posValue);
-                for (auto inst = (*pit)->begin(); inst != (*pit)->end(); ++inst)
-                {
-                    if ((&*inst)->getMetadata(cct.ContechMDID) &&
-                        dyn_cast<CallInst>(&*inst) != NULL)
-                    {
-                        Value* cOne = ConstantInt::get(cct.int8Ty, 1);
-                        switch ((&*inst)->getNumOperands())
-                        {
-                            case 6: // storeMemOp
-                                (&*inst)->setOperand(4, cOne);
-                            break;
-                            case 7: // storeBasicBlockComplete
-                                (&*inst)->setOperand(5, cOne);
-                            break;
-                            default:
+                            case 5:
+                            {
+                                // Put a getBufferPtr function in to replace
+                                //   the address calculation from storeBasicBlock.
+                                //   The store's position is changing to the start
+                                //   of the buffer, so its return is invalid.
+                                Value* tStartBuf = (&*inst)->getOperand(2);
+                                Value* tStartPos = (&*inst)->getOperand(1);
+                                
+                                Value* argGP[] = {tStartPos, tStartBuf};
+                                Instruction* getPtr = CallInst::Create(
+                                    cct.getBufPtrFunction, 
+                                    ArrayRef<Value*>(argGP, 2), 
+                                    "", 
+                                    &*inst);
+                                MarkInstAsContechInst(getPtr);
+                                (&*inst)->replaceAllUsesWith(getPtr);
+                                
+                                // Original buffer.
+                                (&*inst)->setOperand(2, startBuf); 
+                                // Original position.
+                                (&*inst)->setOperand(1, startPos); 
+                                // The path ID.
+                                (&*inst)->setOperand(0, phiPathId); 
+                                // Do not elide this ID.
+                                (&*inst)->setOperand(3, cZero); 
+                            }
                             break;
                         }
-                        //errs () << (&*inst)->getNumOperands() << "\t" << *inst << "\n";
                     }
-                    if (&*inst == posValue) break;
                 }
             }
-            break;
         }
-    } while (hasChanged);
+    }
+    return bbid;
 }
 
 //
@@ -697,7 +983,7 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
         pred = *pit;
 #endif
         auto bbInfo = cfgInfoMap.find(pred);
-        bbInfo->second->next_id[0] = (int32_t)bbid;
+        bbInfo->second->next_id = (int32_t)bbid;
         
         int bb_val = blockHash(pred);
         costOfBlock[bb_val].preElide = true;
@@ -1628,6 +1914,7 @@ unordered_map<Loop*, int> Contech::collectLoopEntry(Function* fblock,
     return move(loopEntry);
 }
 
+// REFACTOR: bbid is actually bb entry?
 void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instruction* memOp, Value* addr, unsigned short* memOpPos, int64_t* memOpDelta, int* loopIVSize)
 {
     int64_t multFactor = 1;
@@ -1636,11 +1923,12 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
     llvm_loop_track* llt = NULL;
     bool createEntry = false;
     
-    if (llb->stepIV == 0)
+    /*if (llb->stepIV == 0)
     {
         errs() << "Step 0: " << *memOp << "\n";
         errs() << " in " << *bbid << "\n";
-    }
+    }*/
+    errs() << *memOp << "\t" << llb->memIV << "\t" << *addr << "\n";
     
     if (ilte == loopInfoTrack.end())
     {
@@ -1688,9 +1976,17 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             return;
         }
         
-        //errs() << "CAST: " << *ci << "\n";
-        //errs() << *ci->getOperand(0) << "\n";
+        // errs() << "CAST: " << *ci << "\n";
+        // errs() << *ci->getOperand(0) << "\n";
         gepAddr = dyn_cast<GetElementPtrInst>(ci->getOperand(0));
+        
+        if (gepAddr == NULL &&
+            ci->getSrcTy()->isPointerTy() == true)
+        {
+            *memOpPos = llt->baseAddr.size();
+            llt->baseAddr.push_back(addr);
+            return;
+        }
     }
     
     if (gepAddr != NULL)
@@ -1705,6 +2001,8 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             Instruction* nCI = dyn_cast<Instruction>(gepI);
             Value* nextIV = llb->memIV;
             multFactor = 1;
+            
+            errs () << *gepI << "\t" << offset << "\t" << *itG.getIndexedType() << "\n";
             
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
@@ -1760,6 +2058,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
  
                     //llt->compMap[gepI] = scale;
                     ac.push_back(make_pair(gepI, scale));
+                    errs() << "AS COMP\n";
                     continue;
                 }
             }
@@ -1775,6 +2074,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 nextIVInst->getParent() == llb->stepBlock &&
                 DT->dominates(nextIVInst, memOp))
             {
+                errs() << "INV: " << llb->stepIV << "\n";
                 tOffset += -1 * llb->stepIV;
             }
             
@@ -1785,16 +2085,21 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             depIV = true;
         }
         
+        errs() << offset << "\n";
         *memOpDelta = offset;
+        // Need to distinguish that the op could be inferrred and would need
+        //   a non-zero size, versus the hoisted invariant addresses?
         if (depIV == false)
         {
-            *loopIVSize = 0;
+            errs() << "DEP " << "\t" << *memOp->getType() << "\n";
+            *loopIVSize = 1;
         }
     }
     
     if (baseAddr == NULL)
     {
         errs() << "No base addr found: " << *addr << "\n";
+        return;
         assert(0);
     }
     
