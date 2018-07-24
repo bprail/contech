@@ -11,8 +11,6 @@ using namespace std;
 
 
 #include "llvm/ADT/SmallSet.h"
-static cl::opt<unsigned> MaxInc("max-reroll-increment1", cl::init(2048), 
-                                cl::Hidden, cl::desc("The maximum increment for loop rerolling"));
 
 namespace llvm{
     bool isCompareUsedByBranch(Instruction *I) {
