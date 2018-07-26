@@ -564,9 +564,7 @@ bool Contech::runOnModule(Module &M)
             num_checks++;
         }
         
-        errs() << F->getName().str() << "," << num_checks 
-               << "," << origin_checks << "\n" ;
-
+        //errs() << F->getName().str() << "," << num_checks << "," << origin_checks << "\n" ;
         
         // Apply Loop entry / exits
         for (auto it = loopInfoTrack.begin(), et = loopInfoTrack.end(); it != et; ++it)
@@ -592,7 +590,7 @@ bool Contech::runOnModule(Module &M)
             
             // Insert a call per elided loop memop
             uint16_t i = 0;
-            errs() << "Loop at " << cfgInfoMap[it->first]->id << " with " << llt->baseAddr.size() << "\n";
+            //errs() << "Loop at " << cfgInfoMap[it->first]->id << " with " << llt->baseAddr.size() << "\n";
             for (auto mit = llt->baseAddr.begin(), met = llt->baseAddr.end(); mit != met; ++mit)
             {
                 Constant* opPos = ConstantInt::get(cct.int16Ty, i);
@@ -880,8 +878,8 @@ unsigned int Contech::getSizeofType(Type* t)
         return t->getVectorNumElements() * cct.pthreadSize;
     }
     else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
-    else if (t->isArrayTy()) { errs() << *t << " is array\n";}
-    else if (t->isStructTy()) { errs() << *t << " is struct\n";}
+    else if (t->isArrayTy()) { /*errs() << *t << " is array\n";*/}
+    else if (t->isStructTy()) { /*errs() << *t << " is struct\n";*/}
 
     // DataLayout::getStructLayout(StructType*)->getSizeInBytes()
     StructType* st = dyn_cast<StructType>(t);
