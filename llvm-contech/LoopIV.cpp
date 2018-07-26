@@ -312,7 +312,7 @@ namespace llvm{
                 if (IncSCEV) 
                 {
                     const APInt &AInt = IncSCEV->getValue()->getValue().abs();
-                    if (IncSCEV->getValue()->isZero() || AInt.uge(MaxInc))
+                    if (IncSCEV->getValue()->isZero() || AInt.uge(2048))
                         continue;
                     IVToIncMap[&*I] = IncSCEV->getValue()->getSExtValue();
 
@@ -673,11 +673,11 @@ namespace llvm{
         return cnt_elided;
     }
 
-    void LoopIV::iterateOnLoop(Loop *L)
+    void LoopIV::iterateOnLoop(Loop *L, Loop *parentL)
     {
         for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
         {
-            iterateOnLoop(*subL);
+            iterateOnLoop(*subL, L);
         }
         
         if (!verifyLoopCTInvariant(L)) return;
@@ -725,15 +725,24 @@ namespace llvm{
                     if (v != NULL) gepAddr = dyn_cast<GetElementPtrInst>(v);
                 }
                 
-                if (gepAddr == NULL)
+                if (gepAddr == NULL ||
+                    L->isLoopInvariant(gepAddr))
                 {
                     if (!L->isLoopInvariant(basePtr)) continue;
+                    
+                    // Only capture loop invariants at the highest loop.
+                    if (parentL != NULL)
+                    {
+                        if (gepAddr == NULL && parentL->isLoopInvariant(basePtr)) continue;
+                        if (gepAddr != NULL && parentL->isLoopInvariant(gepAddr)) continue;
+                    }
                     
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = true;
                     tempLoopMemoryOps.stepIV = 0;
                     tempLoopMemoryOps.stepBlock = b;
                     tempLoopMemoryOps.startIV = NULL;
+                    tempLoopMemoryOps.loopInv = true;
                     
                     llvm_loopiv_block* t = new llvm_loopiv_block;
                     *t = tempLoopMemoryOps;
@@ -748,6 +757,7 @@ namespace llvm{
                     memIV = inferredMemoryOps(gepAddr, false, L, tempLoopMemoryOps);
                     if (memIV == NULL) continue;
                     tempLoopMemoryOps.memOp = &*I;
+                    tempLoopMemoryOps.loopInv = false;
                     llvm_loopiv_block* t = new llvm_loopiv_block;
                     *t = tempLoopMemoryOps;
                     LoopMemoryOps.push_back(t);
@@ -770,6 +780,7 @@ namespace llvm{
                     
                     tempLoopMemoryOps.memOp = &*I;
                     tempLoopMemoryOps.canElide = true;
+                    tempLoopMemoryOps.loopInv = false;
                     tempLoopMemoryOps.stepIV = IVToIncMap[tempLoopMemoryOps.memIV];
                     
                     PHINode* pn = dyn_cast<PHINode>(memIV);
@@ -858,7 +869,7 @@ namespace llvm{
                 Loop *L = *i;
             
                 // Iterate on subloops of Loop L
-                iterateOnLoop(L);       
+                iterateOnLoop(L, NULL);       
             }
         }
         return false;
