@@ -505,11 +505,6 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 }
                 else
                 {
-                    if (id == 183)
-                    {
-                        fprintf(stderr, "IN case: %p\n", this);
-                    }
-                    
                     for (int i = 0; i < npe->bb.len; i++)
                     {
                         npe->bb.mem_op_array[i].data = 0;
