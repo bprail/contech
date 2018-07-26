@@ -184,7 +184,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
     map<BasicBlock*, bool> pathTerminatorBlocks;
     map<BasicBlock*, bool> isStartChain;
 
-    errs() << "BASE ID: " << bbid << "\n";
+    //errs() << "BASE ID: " << bbid << "\n";
     
     // For each block in the function,
     //   If the block does not have an arbitrary function call,
@@ -361,7 +361,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
 
         visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
 
-        errs() << "# blocks in chain: " << topologicalOrdering.size() << "\n";
+        //errs() << "# blocks in chain: " << topologicalOrdering.size() << "\n";
 
         // Count the number of paths out of each vertex, and assign values to
         //   the edges such that the sum of the edges in the path uniquely and
@@ -407,8 +407,8 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         numPossiblePaths[start] = numPaths[start];
         chainMembers[start] = topologicalOrdering;
 
-        errs() << "Found path starting at " << cfgInfoMap[start]->id << " with " <<
-            numPaths[start] << " possible paths\n";
+        // errs() << "Found path starting at " << cfgInfoMap[start]->id << " with " <<
+            // numPaths[start] << " possible paths\n";
     }
 
     // From the starts and terminators, we can construct the paths
@@ -438,7 +438,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         }
         else
         {
-            errs() << "Paths: " << numPossiblePaths[startPath] << "\n";
+            //errs() << "Paths: " << numPossiblePaths[startPath] << "\n";
         }
         
         //errs() << "Start: " << *it->first << "\n";
@@ -970,7 +970,7 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
     
     if (predCount == 0) return false;
     elideBasicBlockId = true;
-    errs() << "BBID: " << bbid << " has ID elided.\n";
+    //errs() << "BBID: " << bbid << " has ID elided.\n";
     
     hash<BasicBlock*> blockHash{};
         
@@ -1391,7 +1391,7 @@ Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t
 
 Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset, vector<Value*> *v)
 {
-    return findSimilarMemoryInstExtT<std::vector<Value*>::iterator>(memI, addr, offset, v->begin(), v->end(), this);
+    return findSimilarMemoryInstExtT<std::vector<Value*>::iterator>(memI, addr, offset, v->begin(), v->end(), this, true);
 }
 
 // OpenMP is calling ompMicroTask with a void* struct
@@ -1808,7 +1808,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         errs() << "Step 0: " << *memOp << "\n";
         errs() << " in " << *bbid << "\n";
     }*/
-    errs() << *memOp << "\t" << llb->memIV << "\t" << *addr << "\n";
+    //errs() << *memOp << "\t" << llb->memIV << "\t" << *addr << "\n";
     
     if (ilte == loopInfoTrack.end())
     {
@@ -1904,7 +1904,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             Value* nextIV = llb->memIV;
             multFactor = 1;
             
-            errs () << *gepI << "\t" << offset << "\t" << *itG.getIndexedType() << "\n";
+            //errs () << *gepI << "\t" << offset << "\t" << *itG.getIndexedType() << "\n";
             
             // If the index of GEP is a Constant, then it can vary between mem ops
             if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
@@ -1960,7 +1960,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
  
                     //llt->compMap[gepI] = scale;
                     ac.push_back(make_pair(gepI, scale));
-                    errs() << "AS COMP\n";
+                    //errs() << "AS COMP\n";
                     continue;
                 }
             }
@@ -1976,7 +1976,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
                 nextIVInst->getParent() == llb->stepBlock &&
                 DT->dominates(nextIVInst, memOp))
             {
-                errs() << "INV: " << llb->stepIV << "\n";
+                //errs() << "INV: " << llb->stepIV << "\n";
                 tOffset += -1 * llb->stepIV;
             }
             
@@ -1993,7 +1993,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         //   a non-zero size, versus the hoisted invariant addresses?
         if (depIV == false)
         {
-            errs() << "DEP " << "\t" << *memOp->getType() << "\n";
+            //errs() << "DEP " << "\t" << *memOp->getType() << "\n";
             *loopIVSize = 1;
         }
     }
