@@ -1383,135 +1383,15 @@ Value* Contech::castWalk(Value* v)
     return v;
 }
 
-//
-// findSimilarMemoryInstEx
-//
-//   A key performance feature, this function will determine whether a given memory operation
-//     is statically offset from another memory operation within that same basic block.  If so,
-//     then the later operation's address can be omitted and computed after execution.
-//   If such a pair is found, then this function will compute the static offset between the two
-//     memory accesses.
-//
 Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset)
 {
-    //unordered_multiset<pair<Value*,int64_t> > addrComponents;
-    multimap<Value*, int64_t> addrComponents;
-    int64_t tOffset = 0, baseOffset = 0;
+    auto p = memI->getParent();
+    return findSimilarMemoryInstExtT<llvm::BasicBlock::iterator>(memI, addr, offset, p->begin(), p->end(), this);
+}
 
-    *offset = 0;
-    addr = castWalk(addr);
-    
-    // Given addr, find the values that it depends on
-    GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
-    
-    while (gepAddr != NULL)
-    {
-        for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
-        {
-            Value* gepI = itG.getOperand();
-            int64_t multFactor = 1;
-            tOffset = 0;
-
-            // If the index of GEP is a Constant, then it can vary between mem ops
-            if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
-            {
-                baseOffset += updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
-                continue;
-            }
-            else
-            {
-                gepI = convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
-                baseOffset += updateOffsetEx(itG, tOffset, &multFactor);
-            }
-
-            addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
-        }
-        addr = gepAddr->getPointerOperand();
-        addr = castWalk(addr);
-        gepAddr = dyn_cast<GetElementPtrInst>(addr);
-    }
-    
-    for (auto it = memI->getParent()->begin(), et = memI->getParent()->end(); it != et; ++it)
-    {
-        GetElementPtrInst* gepAddrT = NULL;
-        // If the search has reached the current memory operation, then no match exists
-        if (memI == dyn_cast<Instruction>(&*it)) break;
-
-        Value* addrT = NULL;
-        if (LoadInst *li = dyn_cast<LoadInst>(&*it))
-        {
-            addrT = li->getPointerOperand();
-        }
-        else if (StoreInst *si = dyn_cast<StoreInst>(&*it))
-        {
-            addrT = si->getPointerOperand();
-        }
-
-        if (addrT == NULL) continue;
-        addrT = castWalk(addrT);
-        gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
-        
-        //unordered_multiset<pair<Value*,int64_t> > addrComponentsT = addrComponents;
-        multimap<Value*, int64_t> addrComponentsT = addrComponents;
-        tOffset = 0;
-        bool unmatchedValue = false;
-        
-        while (gepAddrT != NULL)
-        {
-            addrT = gepAddrT->getPointerOperand();
-            for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; ++itG)
-            {
-                Value* gepI = itG.getOperand();
-                int64_t multFactor = 1;
-
-                // If the index of GEP is a Constant, then it can vary between mem ops
-                if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
-                {
-                    tOffset += updateOffsetEx(itG, gConst->getZExtValue(), &multFactor);
-                    continue;
-                }
-                else
-                {
-                    int64_t sOffset = 0;
-                    gepI = convertValueToConstantEx(gepI, &sOffset, &multFactor, NULL);
-                    tOffset += updateOffsetEx(itG, sOffset, &multFactor);
-                    
-                    auto rg = addrComponentsT.equal_range(gepI);
-                    if (rg.first == addrComponentsT.end())
-                    {
-                        unmatchedValue = true;
-                        goto finish_gep_walk;
-                    }
-                    for (auto it = rg.first; it != rg.second; ++it)
-                    {
-                        if (it->second == multFactor)
-                        {
-                            addrComponentsT.erase(it);
-                            break;
-                        }
-                        else
-                        {
-                            unmatchedValue = true;
-                            goto finish_gep_walk;
-                        }
-                    }
-                }
-            }
-            addrT = castWalk(addrT);
-            //if (addrT == addr) { errs() << "ADDR: " << *addrT << "\t" << *addr<< "\n"; errs() << *gepAddrT << "\n"; break;}
-            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
-        }
-
-finish_gep_walk:        
-        if (unmatchedValue == true) continue;
-        if (addrComponentsT.size() != 0) continue;
-        if (addrT != addr) continue;
-        
-        *offset = baseOffset - tOffset;
-        return &*it;
-    }
-    
-    return NULL;
+Value* Contech::findSimilarMemoryInstExt(Instruction* memI, Value* addr, int64_t* offset, vector<Value*> *v)
+{
+    return findSimilarMemoryInstExtT<std::vector<Value*>::iterator>(memI, addr, offset, v->begin(), v->end(), this);
 }
 
 // OpenMP is calling ompMicroTask with a void* struct
@@ -1987,6 +1867,28 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             llt->baseAddr.push_back(addr);
             return;
         }
+    }
+    
+    if (llb->loopInv == true)
+    {
+        int64_t offset = 0;
+        Value* m = findSimilarMemoryInstExt(memOp, addr, &offset, &llt->baseAddr);
+        
+        if (m == NULL)
+        {
+            *memOpPos = llt->baseAddr.size();
+            llt->baseAddr.push_back(addr);
+        }
+        else
+        {
+            *memOpDelta = offset;
+            for (auto it = llt->baseAddr.begin(), et = llt->baseAddr.end(); it != et; ++it)
+            {
+                if (*it == m) break;
+                *memOpPos = *memOpPos + 1;
+            }
+        }
+        return;
     }
     
     if (gepAddr != NULL)
