@@ -100,6 +100,7 @@ namespace llvm {
         int stepIV;             // IV increment/decrement
         bool canElide;          // can the memory op be elided?
         bool wasElide;          // If the op can only be elided by loop code.
+        bool loopInv;           // Op is loop invariant
     } llvm_loopiv_block, *pllvm_loopiv_block;
     
     typedef struct _llvm_loop_track
@@ -291,6 +292,7 @@ namespace llvm {
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
 
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
+        Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*, std::vector<Value*> *);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);
 
         void getAnalysisUsage(AnalysisUsage &AU) const;
