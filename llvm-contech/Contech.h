@@ -210,6 +210,155 @@ namespace llvm {
         return 0;
     }
     
+    // The following template pattern is taken from:
+    //    https://stackoverflow.com/questions/31596565/template-function-that-matches-only-certain-types
+    template<typename T, typename = std::enable_if<
+                            std::is_base_of<std::vector<llvm::Value*>::iterator,T>::value>>
+    Value* getElem(std::vector<llvm::Value*>::iterator it)
+    {
+        return *it;
+    }
+    
+    template<typename T, typename = std::enable_if<
+                            std::is_base_of<llvm::BasicBlock::iterator, T>::value>>
+    Value* getElem(llvm::BasicBlock::iterator it)
+    {
+        return &*it;
+    }
+    
+    //
+    // findSimilarMemoryInstEx
+    //
+    //   A key performance feature, this function will determine whether a given memory operation
+    //     is statically offset from another memory operation within that same basic block.  If so,
+    //     then the later operation's address can be omitted and computed after execution.
+    //   If such a pair is found, then this function will compute the static offset between the two
+    //     memory accesses.
+    //
+    template<typename T>
+    Value* findSimilarMemoryInstExtT(Instruction* memI, Value* addr, int64_t* offset, T it, T et, Contech* ctPass)
+    {
+        multimap<Value*, int64_t> addrComponents;
+        int64_t tOffset = 0, baseOffset = 0;
+
+        *offset = 0;
+        addr = ctPass->castWalk(addr);
+        
+        // Given addr, find the values that it depends on
+        GetElementPtrInst* gepAddr = dyn_cast<GetElementPtrInst>(addr);
+        
+        while (gepAddr != NULL)
+        {
+            for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG)
+            {
+                Value* gepI = itG.getOperand();
+                int64_t multFactor = 1;
+                tOffset = 0;
+
+                // If the index of GEP is a Constant, then it can vary between mem ops
+                if (ConstantInt* aConst = dyn_cast<ConstantInt>(gepI))
+                {
+                    baseOffset += ctPass->updateOffsetEx(itG, aConst->getZExtValue(), &multFactor);
+                    continue;
+                }
+                else
+                {
+                    gepI = ctPass->convertValueToConstantEx(gepI, &tOffset, &multFactor, NULL);
+                    baseOffset += ctPass->updateOffsetEx(itG, tOffset, &multFactor);
+                }
+
+                addrComponents.insert(std::pair<Value*, int64_t>(gepI, multFactor));
+            }
+            addr = gepAddr->getPointerOperand();
+            addr = ctPass->castWalk(addr);
+            gepAddr = dyn_cast<GetElementPtrInst>(addr);
+        }
+        
+        // it and et are parameters so the loop can work on different arrays
+        for (; it != et; ++it)
+        {
+            GetElementPtrInst* gepAddrT = NULL;
+            Value* curI = getElem<T>(it);
+            
+            // If the search has reached the current memory operation, then no match exists
+            if (memI == dyn_cast<Instruction>(curI)) break;
+
+            Value* addrT = NULL;
+            if (LoadInst *li = dyn_cast<LoadInst>(curI))
+            {
+                addrT = li->getPointerOperand();
+            }
+            else if (StoreInst *si = dyn_cast<StoreInst>(curI))
+            {
+                addrT = si->getPointerOperand();
+            }
+
+            if (addrT == NULL) continue;
+            addrT = ctPass->castWalk(addrT);
+            gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+            
+            multimap<Value*, int64_t> addrComponentsT = addrComponents;
+            tOffset = 0;
+            bool unmatchedValue = false;
+            
+            while (gepAddrT != NULL)
+            {
+                addrT = gepAddrT->getPointerOperand();
+                for (auto itG = gep_type_begin(gepAddrT), etG = gep_type_end(gepAddrT); itG != etG; ++itG)
+                {
+                    Value* gepI = itG.getOperand();
+                    int64_t multFactor = 1;
+
+                    // If the index of GEP is a Constant, then it can vary between mem ops
+                    if (ConstantInt* gConst = dyn_cast<ConstantInt>(gepI))
+                    {
+                        tOffset += ctPass->updateOffsetEx(itG, gConst->getZExtValue(), &multFactor);
+                        continue;
+                    }
+                    else
+                    {
+                        int64_t sOffset = 0;
+                        gepI = ctPass->convertValueToConstantEx(gepI, &sOffset, &multFactor, NULL);
+                        tOffset += ctPass->updateOffsetEx(itG, sOffset, &multFactor);
+                        
+                        auto rg = addrComponentsT.equal_range(gepI);
+                        if (rg.first == addrComponentsT.end())
+                        {
+                            unmatchedValue = true;
+                            goto finish_gep_walk;
+                        }
+                        for (auto it = rg.first; it != rg.second; ++it)
+                        {
+                            if (it->second == multFactor)
+                            {
+                                addrComponentsT.erase(it);
+                                break;
+                            }
+                            else
+                            {
+                                unmatchedValue = true;
+                                goto finish_gep_walk;
+                            }
+                        }
+                    }
+                }
+                addrT = ctPass->castWalk(addrT);
+                //if (addrT == addr) { errs() << "ADDR: " << *addrT << "\t" << *addr<< "\n"; errs() << *gepAddrT << "\n"; break;}
+                gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
+            }
+
+    finish_gep_walk:        
+            if (unmatchedValue == true) continue;
+            if (addrComponentsT.size() != 0) continue;
+            if (addrT != addr) continue;
+            
+            *offset = baseOffset - tOffset;
+            return curI;
+        }
+        
+        return NULL;
+    }
+    
     template<typename T>
     BasicBlock::iterator InstrumentFunctionCall(T* ci,
                                                  bool &hasUninstCall,
