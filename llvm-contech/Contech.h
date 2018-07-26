@@ -236,7 +236,7 @@ namespace llvm {
     //     memory accesses.
     //
     template<typename T>
-    Value* findSimilarMemoryInstExtT(Instruction* memI, Value* addr, int64_t* offset, T it, T et, Contech* ctPass)
+    Value* findSimilarMemoryInstExtT(Instruction* memI, Value* addr, int64_t* offset, T it, T et, Contech* ctPass, bool useValue = false)
     {
         multimap<Value*, int64_t> addrComponents;
         int64_t tOffset = 0, baseOffset = 0;
@@ -293,7 +293,11 @@ namespace llvm {
                 addrT = si->getPointerOperand();
             }
 
-            if (addrT == NULL) continue;
+            if (addrT == NULL) 
+            {
+                if (useValue == false) continue;
+                addrT = curI;
+            }
             addrT = ctPass->castWalk(addrT);
             gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
             
