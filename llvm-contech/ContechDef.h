@@ -49,7 +49,7 @@ namespace llvm {
         int loopIVSize;
         BasicBlock* loopHeaderId;  // which loop header
         
-        //Value* addr;
+        Value* addr;
         struct _llvm_mem_op* next;
     } llvm_mem_op, *pllvm_mem_op;
 

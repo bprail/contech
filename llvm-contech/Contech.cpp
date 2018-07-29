@@ -1351,6 +1351,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 bi->containGlobalAccess = true;
             }
 
+            tMemOp->addr = li;
+            
             unsigned short pos = 0;
             if (bi->first_op == NULL) bi->first_op = tMemOp;
             else
@@ -1417,6 +1419,8 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 bi->containGlobalAccess = true;
             }
 
+            tMemOp->addr = si;
+            
             unsigned short pos = 0;
             if (bi->first_op == NULL) bi->first_op = tMemOp;
             else
