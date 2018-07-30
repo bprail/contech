@@ -902,8 +902,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             }
         }
         
-#if VERIFY_LOOP_ELIDE
-#else
+#ifndef VERIFY_LOOP_ELIDE
         if (tMemOp->isLoopElide == false)
 #endif
         {
