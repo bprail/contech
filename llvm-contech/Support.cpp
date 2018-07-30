@@ -902,7 +902,10 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
             }
         }
         
+#if VERIFY_LOOP_ELIDE
+#else
         if (tMemOp->isLoopElide == false)
+#endif
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
