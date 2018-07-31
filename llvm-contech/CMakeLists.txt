@@ -21,6 +21,7 @@ add_llvm_loadable_module( LLVMContech
   Contech.cpp
   BufferCheckAnalysis.cpp
   LoopIV.cpp
+  Path.cpp
   Support.cpp
   )
 
