@@ -521,14 +521,12 @@ bool Contech::runOnModule(Module &M)
         }
 
         // run the check analysis
-        BufferCheckAnalysis bufferCheckAnalysis{
-            costPerBlock,
-            loopExits,
-            loopBelong,
-            loopEntry,
-            1024
-        };
-        
+        BufferCheckAnalysis bufferCheckAnalysis{costPerBlock,
+                                                loopExits,
+                                                loopBelong,
+                                                loopEntry,
+                                                1024};
+
         // run analysis
         bufferCheckAnalysis.runAnalysis(pF);
         // see the analysis result
@@ -633,7 +631,7 @@ bool Contech::runOnModule(Module &M)
                 else
                 {
                     Value* argsShort[] = {opPos, voidAddr};
-                    debugLog("storeLoopEntryFunction @" << __LINE__);
+                    debugLog("storeLoopShortFunction @" << __LINE__);
                     Instruction* loopEntry = CallInst::Create(cct.storeLoopShortFunction, ArrayRef<Value*>(argsShort, 2), "", iPt);
                     MarkInstAsContechInst(loopEntry);
                 }
@@ -697,7 +695,10 @@ bool Contech::runOnModule(Module &M)
     //   This way all path IDs follow the BBIDs.
     for (auto it = instFuncs.begin(), et = instFuncs.end(); it != et; ++it) 
     {
+        Function* pF = *it;
+        DT = &getAnalysis<DominatorTreeWrapperPass>(*pF).getDomTree();
         pathID = chainBufferCalls(*it, fullCost, pathID);
+        crossBlockCalculation(*it, fullCost);
     }
 
 cleanup:
@@ -782,6 +783,11 @@ cleanup:
                 contechStateFile->write((char*)&bi->second->stepIV, sizeof(int));
             }
             
+            int presvCount = bi->second->crossOpCount;
+            bool funcExit = bi->second->isFuncExit;
+            contechStateFile->write((char*)&presvCount, sizeof(int));
+            contechStateFile->write((char*)&funcExit, sizeof(bool));
+            
             // Number of memory operations
             contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
 
@@ -790,6 +796,7 @@ cleanup:
                 pllvm_mem_op tn = t->next;
                 char memFlags = (t->isDep)?BBI_FLAG_MEM_DUP:0x0;
                 memFlags |= (t->isWrite)?0x1:0x0;
+                memFlags |= (t->isCrossPresv)?BBI_FLAG_MEM_PRESV:0x0;
                 if (t->isDep)
                 {
                     memFlags |= (t->isGlobal)?BBI_FLAG_MEM_GV:0x0;
@@ -810,11 +817,20 @@ cleanup:
                         contechStateFile->write((char*)&t->loopMemOp, sizeof(uint16_t));
                         contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
+                    else if (t->isCrossPresv)
+                    {
+                        contechStateFile->write((char*)&t->crossBlockID, sizeof(uint16_t));
+                        contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
+                    }
                     else
                     {
                         contechStateFile->write((char*)&t->depMemOp, sizeof(uint16_t));
                         contechStateFile->write((char*)&t->depMemOpDelta, sizeof(int64_t));
                     }
+                }
+                else if (t->isCrossPresv)
+                {
+                    contechStateFile->write((char*)&t->crossBlockID, sizeof(uint16_t));
                 }
                 
                 delete (t);
@@ -1126,6 +1142,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bi->containAtomic = false;
     bi->containCall = false;
     bi->isLoopEntry = false;
+    bi->isFuncExit = false;
     bi->lineNum = lineNum;
     bi->numIROps = numIROps;
     bi->fnName.assign(fnName);
@@ -1351,7 +1368,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 bi->containGlobalAccess = true;
             }
 
-            tMemOp->addr = li;
+            tMemOp->addr = li->getPointerOperand();
             
             unsigned short pos = 0;
             if (bi->first_op == NULL) bi->first_op = tMemOp;
@@ -1419,7 +1436,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 bi->containGlobalAccess = true;
             }
 
-            tMemOp->addr = si;
+            tMemOp->addr = si->getPointerOperand();
             
             unsigned short pos = 0;
             if (bi->first_op == NULL) bi->first_op = tMemOp;
@@ -1530,6 +1547,12 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                                                  this,
                                                  M);
             if (huc == false) hasUninstCall = false;
+        }
+        else if (dyn_cast<ReturnInst>(&*I) != NULL ||
+                 dyn_cast<CatchReturnInst>(&*I) != NULL ||
+                 dyn_cast<CleanupReturnInst>(&*I) != NULL)
+        {
+            bi->isFuncExit = true;
         }
     }
 

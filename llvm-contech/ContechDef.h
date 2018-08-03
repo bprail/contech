@@ -38,10 +38,12 @@ namespace llvm {
         bool isGlobal;
         bool isDep;
         bool isLoopElide;
+        bool isCrossPresv; // if isDep, then this is the elide, else this is the presv
         char size;
         union {
             unsigned short depMemOp;
             unsigned short loopMemOp;  // which base address for that header
+            unsigned short crossBlockID;
         };
         
         int64_t depMemOpDelta;
@@ -50,6 +52,7 @@ namespace llvm {
         BasicBlock* loopHeaderId;  // which loop header
         
         Value* addr;
+        Instruction* inst;
         struct _llvm_mem_op* next;
     } llvm_mem_op, *pllvm_mem_op;
 
@@ -61,6 +64,8 @@ namespace llvm {
         bool containGlobalAccess;
         bool containAtomic;
         bool isLoopEntry;
+        bool isFuncExit;
+        int crossOpCount; // N >= 0 if entry and num of ops, -1 o.w.
         int stepIV;
         uint32_t stepBlock;
         pllvm_mem_op first_op;
@@ -291,6 +296,7 @@ namespace llvm {
         Value* findCilkStructInBlock(BasicBlock& B, bool insert);
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
 
+        void crossBlockCalculation(Function* F, std::map<int, llvm_inst_block>& costPerBlock);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*, std::vector<Value*> *);
         _CONTECH_FUNCTION_TYPE classifyFunctionName(const char* fn);

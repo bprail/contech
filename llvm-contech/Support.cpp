@@ -46,6 +46,133 @@ using namespace std;
 extern map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 
 //
+// This is the hack version that just tries to find possible matches and eliding them
+//
+void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& costPerBlock)
+{
+    hash<BasicBlock*> blockHash{};
+    vector<Value*> addrSet;
+    Value* cNOne = ConstantInt::get(cct.int32Ty, -1);
+    map<BasicBlock*, vector<Value*> > opsInBlock;
+    int crossElideCount = 0;
+    
+    for (auto it = F->begin(), et = F->end(); it != et; ++it)
+    {
+        BasicBlock* bb = &*it;
+        
+        auto blockInfo = cfgInfoMap[bb];
+        pllvm_mem_op mem_op = blockInfo->first_op;
+        
+        while (mem_op != NULL)
+        {
+            // Simple deps and globals should already be handled by prior analysis
+            //   Loop invariants could elide ops that follow the loop, and are worth
+            //   analyzing here.
+            if (mem_op->isGlobal == true ||
+                mem_op->isDep == true)
+            {
+                mem_op = mem_op->next;
+                continue;
+            }
+            
+            //
+            // IF the op is already a loop elide, we don't need to find a match,
+            //   but we want to preserve it in case it was a loop invariant op.
+            //
+            bool foundDup = false;
+            if (mem_op->isLoopElide == false)
+            {
+                // For each block that dominates this block,
+                //   check if its vector of ops can duplicate ops in this block.
+                for (auto bit = F->begin(), bet = F->end(); bit != bet && !foundDup; ++bit)
+                {
+                    if (bit == it) break;
+                    
+                    
+                    int64_t offset = 0;
+                    auto opsEntry = opsInBlock.find(&*bit);
+                    if (opsEntry == opsInBlock.end()) continue;
+                    vector<Value*>* domOps = &(opsEntry->second);
+                    if (domOps == NULL || domOps->size() == 0) continue;
+                    if (!DT->dominates(&*(&*bit->begin()), bb)) 
+                    {
+                        continue;
+                    }
+                    
+                    Value* match = findSimilarMemoryInstExt(mem_op->inst, mem_op->addr, &offset, domOps);
+                    
+                    if (match != NULL)
+                    {
+                        // Scan the block for the op, match
+                        //   Then either mark it as the next crossOp or retreive its ID.
+                        pllvm_mem_op matchOp = cfgInfoMap[&*bit]->first_op;
+                        int matchOpID = -1;
+                        while (matchOp != NULL)
+                        {
+                            if (matchOp->addr == match)
+                            {
+                                if (matchOp->isCrossPresv)
+                                    matchOpID = matchOp->crossBlockID;
+                                break;
+                            }
+                            matchOp = matchOp->next;
+                        }
+                        if (matchOp == NULL)
+                        {
+                            errs() << "Fail to match: " << *match << "\n";
+                            errs() << "  in : " << *&*bit << "\n";
+                            assert(matchOp != NULL);
+                        }
+                        
+                        matchOp->isCrossPresv = true;
+                        if (matchOpID == -1)
+                        {
+                            matchOpID = crossElideCount;
+                            crossElideCount++;
+                            matchOp->crossBlockID = matchOpID;
+                        }
+                        
+                        mem_op->crossBlockID = matchOpID;
+                        mem_op->isDep = true;
+                        mem_op->isCrossPresv = true;
+                        mem_op->depMemOpDelta = offset;
+                        mem_op->inst->eraseFromParent();
+                        
+                        int bb_val = blockHash(bb);
+                        auto costInfo = costPerBlock.find(bb_val);
+                        
+                        Instruction* sbbc = dyn_cast<Instruction>(costInfo->second.posValue);
+                        
+                        auto opCount = sbbc->getOperand(0);
+                         
+                        Instruction* posPathAdd = BinaryOperator::Create(Instruction::Add, 
+                                                                         opCount, cNOne, "", sbbc);
+                            
+                        MarkInstAsContechInst(posPathAdd);
+                        sbbc->setOperand(0, posPathAdd);
+                        
+                        foundDup = true;
+                    }
+                }
+            }
+            
+            if (foundDup == false)
+            {
+                addrSet.push_back(mem_op->addr);
+            }
+            
+            mem_op = mem_op->next;
+        }
+        
+        opsInBlock[bb] = addrSet;
+        addrSet.clear();
+        cfgInfoMap[bb]->crossOpCount = -1;
+    }
+    
+    cfgInfoMap[&(F->getEntryBlock())]->crossOpCount = crossElideCount;
+}
+
+//
 // addCheckAfterPhi
 //   Adds a check buffer function call after the last Phi instruction in a basic block
 //   Trying to add the check call as early as possible, but some instructions must come first
@@ -133,6 +260,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     tMemOp->isDep = false;
     tMemOp->isGlobal = false;
     tMemOp->isLoopElide = false;
+    tMemOp->isCrossPresv = false;
     tMemOp->depMemOp = 0;
     tMemOp->depMemOpDelta = 0;
     tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
@@ -244,6 +372,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
 
             assert(smo != NULL);
             smo->getCalledFunction()->addFnAttr( ALWAYS_INLINE );
+            tMemOp->inst = smo;
         }
     }
 
@@ -1009,7 +1138,6 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             depIV = true;
         }
         
-        errs() << offset << "\n";
         *memOpDelta = offset;
         // Need to distinguish that the op could be inferrred and would need
         //   a non-zero size, versus the hoisted invariant addresses?

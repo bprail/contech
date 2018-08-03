@@ -280,6 +280,8 @@ namespace llvm {
             GetElementPtrInst* gepAddrT = NULL;
             Value* curI = getElem<T>(it);
             
+            //errs() << "Test : " << *curI << "\n";
+            
             // If the search has reached the current memory operation, then no match exists
             if (memI == dyn_cast<Instruction>(curI)) break;
 
@@ -298,6 +300,7 @@ namespace llvm {
                 if (useValue == false) continue;
                 addrT = curI;
             }
+            
             addrT = ctPass->castWalk(addrT);
             gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
             
@@ -351,7 +354,8 @@ namespace llvm {
                 gepAddrT = dyn_cast<GetElementPtrInst>(addrT);
             }
 
-    finish_gep_walk:        
+    finish_gep_walk:
+            //errs() << "FIN: " << *addrT << "\t" << *addr << "\n";
             if (unmatchedValue == true) continue;
             if (addrComponentsT.size() != 0) continue;
             if (addrT != addr) continue;
