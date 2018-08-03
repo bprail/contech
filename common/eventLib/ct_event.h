@@ -247,17 +247,20 @@ namespace contech
                     uint16_t baseOp;          // If BBI_FLAG_MEM_DUP
                     uint16_t constGVAddrId;   // if BBI_FLAG_MEM_GV
                     uint16_t loopMemOpId;     // if BBI_FLAG_MEM_LOOP
+                    uint16_t presvBlockId;    // if BBI_FLAG_MEM_PRESV
                 };
                 uint32_t headerLoopId;    // if BBI_FLAG_MEM_LOOP
             } internal_memory_op_info, *pinternal_memory_op_info;
 
             typedef struct _internal_basic_block_info
             {
+                bool isFuncExit;
                 unsigned int len;
                 int32_t next_basic_block_id;
                 int32_t* next_path_block_id;
                 int32_t* base_path_id;
                 int count;
+                int presvOps;
                 uint32_t totalBytes;
                 int32_t loopStepBlock;
                 int32_t loopStepValue;
@@ -289,6 +292,16 @@ namespace contech
             
             std::map<uint32_t, std::vector<pinternal_loop_track> > loopTrack;
             std::map<uint32_t, std::map<uint32_t, std::vector<pinternal_loop_track> > > loopBlock;
+            
+            typedef struct _internal_function_presv_ops
+            {
+                struct _internal_function_presv_ops* next;
+                uint32_t startBlock;  // for debug
+                std::vector<int64_t> presvAddrs;
+            } internal_function_presv_ops, *pinternal_function_presv_ops;
+            
+            // CTID -> struct
+            std::map<uint32_t, pinternal_function_presv_ops> funcPresvStack;
             
             // long - return type of ftell()
             //   resetPoint is where to seek back to

@@ -468,7 +468,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 npe->bb.len = bb_info_table[npe->bb.basic_block_id].len;
             }
             //fscanf(fptr, "%ud", &npe->bb.len);
-
+            
             /*
             // IN testing, the following code verified that the bb info's matched
             //  the expected results
@@ -484,6 +484,29 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             
             id = npe->bb.basic_block_id;
             this->next_basic_block_id = bb_info_table[id].next_basic_block_id;
+            
+            bool isExit = bb_info_table[id].isFuncExit;
+            int presvCount = bb_info_table[id].presvOps;
+            pinternal_function_presv_ops ifpo = NULL;
+            if (presvCount >= 0)
+            {
+                ifpo = new internal_function_presv_ops;
+                ifpo->presvAddrs.resize(presvCount);
+                ifpo->startBlock = id;
+                ifpo->next = funcPresvStack[currentID];
+                funcPresvStack[currentID] = ifpo;
+            }
+            else
+            {
+                ifpo = funcPresvStack[currentID];
+            }
+            
+            if (ifpo == NULL)
+            {
+                fprintf(stderr, "Failure to find IFPO for BBID %d of CTID %d\n", id, currentID);
+                dumpAndTerminate(fptr);
+            }
+            
             if (npe->bb.len > 0)
             {
                 npe->bb.mem_op_array = (pct_memory_op) malloc(npe->bb.len * sizeof(ct_memory_op));
@@ -511,31 +534,62 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                         
                         if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_DUP) == BBI_FLAG_MEM_DUP)
                         {
-                            unsigned short dupOp = bb_info_table[id].mem_op_info[i].baseOp;
-                            int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
-                            npe->bb.mem_op_array[i].addr = (npe->bb.mem_op_array[dupOp].addr) + offset;
+                            if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_PRESV) == BBI_FLAG_MEM_PRESV)
+                            {
+                                unsigned short dupOp = bb_info_table[id].mem_op_info[i].presvBlockId;
+                                int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                                npe->bb.mem_op_array[i].addr = (ifpo->presvAddrs[dupOp]) + offset;
+                                
+                                /*
+                                 * The following code verified that the duplicate memory addresses were being
+                                 * computed correctly.
+                                 *
+                                 * This also requires changing the driver to not omit the operations and
+                                 * also including the duplicate operations in the count.*/
+                                /*ct_memory_op tmo;
+                                tmo.data = 0;
+                                fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                                fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                                
+                                if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                                {
+                                    fprintf(stderr, "%d.%d\n", id, i);
+                                    fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                    fprintf(stderr, "[%d] + %d -> %p\n", dupOp, 
+                                                                         bb_info_table[id].mem_op_info[i].baseOffset, 
+                                                                         npe->bb.mem_op_array[dupOp].addr);
+                                    fprintf(stderr, "ifpo: %p\n", ifpo);
+                                    dumpAndTerminate(fptr);
+                                }*/
+                            }
+                            else
+                            {
+                                unsigned short dupOp = bb_info_table[id].mem_op_info[i].baseOp;
+                                int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                                npe->bb.mem_op_array[i].addr = (npe->bb.mem_op_array[dupOp].addr) + offset;
+                                
+                                /*
+                                 * The following code verified that the duplicate memory addresses were being
+                                 * computed correctly.
+                                 *
+                                 * This also requires changing the driver to not omit the operations and
+                                 * also including the duplicate operations in the count.*/
+                                /*ct_memory_op tmo;
+                                tmo.data = 0;
+                                fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
+                                fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
+                                
+                                if (tmo.addr != npe->bb.mem_op_array[i].addr)
+                                {
+                                    fprintf(stderr, "%d.%d\n", id, i);
+                                    fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
+                                    fprintf(stderr, "[%d] + %d -> %p\n", dupOp, bb_info_table[id].mem_op_info[i].baseOffset, npe->bb.mem_op_array[dupOp].addr);
+                                    assert(0);
+                                }*/
+                            }
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
-                            
-                            /*
-                             * The following code verified that the duplicate memory addresses were being
-                             * computed correctly.
-                             *
-                             * This also requires changing the driver to not omit the operations and
-                             * also including the duplicate operations in the count.*/
-                            /*ct_memory_op tmo;
-                            tmo.data = 0;
-                            fread_check(&tmo.data32[0], sizeof(unsigned int), 1, fptr);
-                            fread_check(&tmo.data32[1], sizeof(unsigned short), 1, fptr);
-                            
-                            if (tmo.addr != npe->bb.mem_op_array[i].addr)
-                            {
-                                fprintf(stderr, "%d.%d\n", id, i);
-                                fprintf(stderr, "%p != %p\n", tmo.addr, npe->bb.mem_op_array[i].addr);
-                                fprintf(stderr, "[%d] + %d -> %p\n", dupOp, bb_info_table[id].mem_op_info[i].baseOffset, npe->bb.mem_op_array[dupOp].addr);
-                                assert(0);
-                            }*/
                         }
                         else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_GV) == BBI_FLAG_MEM_GV)
                         {
@@ -618,6 +672,14 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = size;
+                            
+                            if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_PRESV) == BBI_FLAG_MEM_PRESV)
+                            {
+                                
+                                unsigned short dupOp = bb_info_table[id].mem_op_info[i].presvBlockId;
+                                ifpo->presvAddrs[dupOp] = npe->bb.mem_op_array[i].addr;
+                                //fprintf(stderr, "Loop PRESV - %p in %d at %d\n", npe->bb.mem_op_array[i].addr, id, dupOp);
+                            }
                         }
                         else
                         {
@@ -627,6 +689,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             
                             npe->bb.mem_op_array[i].is_write = bb_info_table[id].mem_op_info[i].memFlags & 0x1;
                             npe->bb.mem_op_array[i].pow_size = bb_info_table[id].mem_op_info[i].size;
+                            
+                            if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_PRESV) == BBI_FLAG_MEM_PRESV)
+                            {
+                                unsigned short dupOp = bb_info_table[id].mem_op_info[i].presvBlockId;
+                                ifpo->presvAddrs[dupOp] = npe->bb.mem_op_array[i].addr;
+                                //fprintf(stderr, "PRESV - %p in %d at %d\n", npe->bb.mem_op_array[i].addr, id, dupOp);
+                            }
                         }
                     }
                 }
@@ -634,6 +703,12 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             else 
             {
                 npe->bb.mem_op_array = NULL;
+            }
+            
+            if (isExit == true)
+            {
+                funcPresvStack[currentID] = ifpo->next;
+                delete ifpo;
             }
             
             auto lb = loopBlock[npe->contech_id].find(npe->bb.basic_block_id);
@@ -779,6 +854,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 //printf("%d has %d of %d\n", id, bb_info_table[id].loopStepBlock, bb_info_table[id].loopStepValue);
             }
             
+            bool isExit = false;
+            fread_check(&bb_info_table[id].presvOps, sizeof(int), 1, fptr);
+            fread_check(&isExit, sizeof(bool), 1, fptr);
+            bb_info_table[id].isFuncExit = isExit;
+            
             fread_check(&len, sizeof(unsigned int), 1, fptr);
             bb_info_table[id].len = len;
             npe->bbi.num_mem_ops = len;
@@ -812,7 +892,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int64_t), 1, fptr);
                             if (bb_info_table[id].mem_op_info[i].headerLoopId >= bb_count)
                             {
-                                fprintf(stderr, "ERROR: Loop INFO for memop %d in block %d wants block %d exceeds number of unique basic blocks (%d)\n", i, id, bb_info_table[id].mem_op_info[i].headerLoopId, bb_count);
+                                fprintf(stderr, "ERROR: Loop INFO for memop %d in block %d wants block %d exceeds number of unique basic blocks (%d)\n", 
+                                                i, id, bb_info_table[id].mem_op_info[i].headerLoopId, bb_count);
                                 dumpAndTerminate(fptr);
                             }
                         }
@@ -821,6 +902,11 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOp, sizeof(unsigned short), 1, fptr);
                             fread_check(&bb_info_table[id].mem_op_info[i].baseOffset, sizeof(int64_t), 1, fptr);
                         }
+                    }
+                    else if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_PRESV) == BBI_FLAG_MEM_PRESV)
+                    {
+                        fread_check(&bb_info_table[id].mem_op_info[i].presvBlockId, sizeof(unsigned short), 1, fptr);
+                        bb_info_table[id].mem_op_info[i].baseOffset = 0;
                     }
                     else
                     {
@@ -862,8 +948,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 {
                     path_info_table[npe->pi.pathID + (ipi.pathDepth)] = ipi; // dummy entry
                 }
-                printf("R: %u D: %u\n", npe->pi.pathID, npe->pi.pathID + (ipi.pathDepth));
-                printf("RID: %u\n", path_info_table[npe->pi.pathID].startID);
+                // printf("R: %u D: %u\n", npe->pi.pathID, npe->pi.pathID + (ipi.pathDepth));
+                // printf("RID: %u\n", path_info_table[npe->pi.pathID].startID);
             }
         }
         break;

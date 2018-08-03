@@ -65,5 +65,6 @@ typedef enum _ct_sync_type ct_sync_type;
 #define BBI_FLAG_MEM_DUP 0x2
 #define BBI_FLAG_MEM_GV 0x4
 #define BBI_FLAG_MEM_LOOP 0x8
+#define BBI_FLAG_MEM_PRESV 0x10
 
 #endif
