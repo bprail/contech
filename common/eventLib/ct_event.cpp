@@ -293,52 +293,6 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                                                                     npe->bb.basic_block_id, 
                                                                     currentPath->currentID);*/
         }
-        
-        /*int idx = -1;
-        for (int i = 0; i < currentPath->pathInfo->pathDepth; i++)
-        {
-            if (lastBBID == currentPath->pathInfo->pathMap[i])
-            {
-                idx = i;
-                break;
-            }
-        }
-        
-        if (idx == -1)
-        {
-            delete currentPath;
-            currentPath = NULL;
-            free(npe);
-            return createContechEvent(fptr);
-        }
-        
-        uint32_t branchID = currentPath->pathInfo->pathMap[idx];
-        assert(branchID < bb_count);
-        pinternal_basic_block_info bbi = &bb_info_table[branchID];
-        
-        npe->bb.basic_block_id = bbi->next_basic_block_id[(currentPath->pathBits >> idx) & 0x1];
-        this->next_basic_block_id = npe->bb.basic_block_id;*/
-        
-        /*uint32_t branchID = currentPath->pathInfo->pathMap[currentPath->currentPathIndex];
-        assert(branchID < bb_count);
-        pinternal_basic_block_info bbi = &bb_info_table[branchID];
-        
-        npe->bb.basic_block_id = bbi->next_basic_block_id[(currentPath->pathBits) & 0x1];
-        this->next_basic_block_id = npe->bb.basic_block_id;
-        currentPath->pathBits >>= 1;
-        currentPath->currentPathIndex++;
-        if (currentPath->currentPathIndex == currentPath->pathInfo->pathDepth)
-        {
-            //printf("L%d, N: %d -> %d\n", lastBBID, npe->bb.basic_block_id, 
-            //                             bb_info_table[npe->bb.basic_block_id].next_basic_block_id[0]);
-            delete currentPath;
-            currentPath = NULL;
-        }
-        else
-        {
-            //printf("CD: %d D: %d\n", currentPath->currentPathIndex, currentPath->pathInfo->pathDepth);
-            //printf("PB: %d\n", currentPath->pathBits);
-        }*/
     }
     else
     {
@@ -467,7 +421,6 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 this->next_basic_block_id = -1;
                 npe->bb.len = bb_info_table[npe->bb.basic_block_id].len;
             }
-            //fscanf(fptr, "%ud", &npe->bb.len);
             
             /*
             // IN testing, the following code verified that the bb info's matched
