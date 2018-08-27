@@ -556,7 +556,7 @@ microbuf_exit:
     
 #ifdef CT_OVERHEAD_TRACK
     end = rdtsc();
-    __atomic_fetch_add(&__ctTotalThreadOverhead, end - start), __ATOMIC_SEQ_CST);
+    __atomic_fetch_add(&__ctTotalThreadOverhead, (end - start), __ATOMIC_SEQ_CST);
     __atomic_fetch_add(&__ctTotalThreadQueue, (qend - qstart), __ATOMIC_SEQ_CST);
     int d = __atomic_fetch_add(&__ctTotalThreadBuffersQueued, 1, __ATOMIC_SEQ_CST);
     
