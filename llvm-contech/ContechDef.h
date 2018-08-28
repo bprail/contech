@@ -27,6 +27,8 @@
 #endif
 //#define SPLIT_DEBUG
 
+//#define DISABLE_MEM
+
 #define __ctStrCmp(x, y) strncmp(x, y, sizeof(y) - 1)
 
 namespace llvm {

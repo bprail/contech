@@ -148,6 +148,11 @@ void Contech::visitVertex(
 //
 int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlock, int bbid)
 {
+//#define DISABLE_PATH
+#ifdef DISABLE_PATH
+    return bbid;
+#endif
+    
     hash<BasicBlock*> blockHash{};
     map<BasicBlock*, Instruction*> blockPosCall;
     map<BasicBlock*, int> blockChainCount;
@@ -723,6 +728,10 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
 //
 bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_inst_block>& costOfBlock)
 {
+#ifdef DISABLE_PATH
+    return false;
+#endif
+    
     bool elideBasicBlockId = false;
     BasicBlock* pred;
     int predCount = 0;

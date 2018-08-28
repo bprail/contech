@@ -469,7 +469,7 @@ bool Contech::runOnModule(Module &M)
             }
         } while (changed);
         
-        // TODO: Invoke LoopIV here
+#ifndef DISABLE_MEM
         LoopIV* liv = new LoopIV(this);
         liv->runOnFunction(*F);
         vector<llvm_loopiv_block*> temp = liv->getLoopMemoryOps();
@@ -486,7 +486,7 @@ bool Contech::runOnModule(Module &M)
         LoopMemoryOps.insert(LoopMemoryOps.end(), 
                              temp.begin(), temp.end());
         delete liv;
-        
+#endif
         
         
         // static analysis

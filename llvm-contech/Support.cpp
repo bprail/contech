@@ -63,6 +63,7 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
         auto blockInfo = cfgInfoMap[bb];
         pllvm_mem_op mem_op = blockInfo->first_op;
         
+#ifndef DISABLE_MEM
         while (mem_op != NULL)
         {
             // Simple deps and globals should already be handled by prior analysis
@@ -163,6 +164,7 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
             
             mem_op = mem_op->next;
         }
+#endif
         
         opsInBlock[bb] = addrSet;
         addrSet.clear();
@@ -207,6 +209,10 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
     GlobalValue* gv = dyn_cast<GlobalValue>(consGV);
     assert(NULL != gv);
 
+#ifdef DISABLE_MEM
+    return -1;
+#endif
+    
     auto id = elidedGlobalValues.find(consGV);
     if (id == elidedGlobalValues.end())
     {

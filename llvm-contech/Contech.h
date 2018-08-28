@@ -241,6 +241,10 @@ namespace llvm {
         multimap<Value*, int64_t> addrComponents;
         int64_t tOffset = 0, baseOffset = 0;
 
+#ifdef DISABLE_MEM
+        return NULL;
+#endif
+        
         *offset = 0;
         addr = ctPass->castWalk(addr);
         
