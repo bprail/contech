@@ -41,6 +41,7 @@ namespace llvm {
         bool isDep;
         bool isLoopElide;
         bool isCrossPresv; // if isDep, then this is the elide, else this is the presv
+        bool isTSC; // If a special op to record the TSC
         char size;
         union {
             unsigned short depMemOp;

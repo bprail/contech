@@ -1197,13 +1197,17 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
         tMemOp->isWrite = true;
         tMemOp->size = 7;
         tMemOp->isDep = false;
+        tMemOp->isGlobal = false;
+        tMemOp->isLoopElide = false;
+        tMemOp->isCrossPresv = false;
+        tMemOp->isTSC = true;
         tMemOp->depMemOp = 0;
         tMemOp->depMemOpDelta = 0;
 
         Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
         Constant* cPath = ConstantInt::get(cct.int8Ty, 0);
-        Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi, cElide, cPath);
-        Value* argsMO[] = {addrI, cPos, sbb};
+        Value* addrI = castSupport(cct.voidPtrTy, stTick, aPhi);
+        Value* argsMO[] = {addrI, cPos, sbb, cElide, cPath};
         debugLog("storeMemOpFunction @" << __LINE__);
         CallInst* smo = CallInst::Create(cct.storeMemOpFunction, ArrayRef<Value*>(argsMO, 5), "", aPhi);
         MarkInstAsContechInst(smo);

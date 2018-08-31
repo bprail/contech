@@ -70,7 +70,8 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
             //   Loop invariants could elide ops that follow the loop, and are worth
             //   analyzing here.
             if (mem_op->isGlobal == true ||
-                mem_op->isDep == true)
+                mem_op->isDep == true ||
+                mem_op->isTSC == true)
             {
                 mem_op = mem_op->next;
                 continue;
@@ -267,6 +268,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     tMemOp->isGlobal = false;
     tMemOp->isLoopElide = false;
     tMemOp->isCrossPresv = false;
+    tMemOp->isTSC = false;
     tMemOp->depMemOp = 0;
     tMemOp->depMemOpDelta = 0;
     tMemOp->size = getSimpleLog(getSizeofType(addr->getType()->getPointerElementType()));
