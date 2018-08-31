@@ -367,7 +367,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
         {
             Constant* cPos = ConstantInt::get(cct.int32Ty, memOpPos);
             Constant* cElide = ConstantInt::get(cct.int8Ty, elide);
-             Constant* cPath = ConstantInt::get(cct.int8Ty, 0);
+            Constant* cPath = ConstantInt::get(cct.int8Ty, 0);
             Instruction* addrI = new BitCastInst(addr, cct.voidPtrTy, Twine("Cast as void"), li);
             MarkInstAsContechInst(addrI);
 
