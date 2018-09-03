@@ -25,6 +25,7 @@ EventLib::EventLib()
     lastID = 0;
     lastBBID = 0;
     lastType = 0;
+    maxBufPos = 0;
     next_basic_block_id = -1;
     
     skipSet.clear();
@@ -438,7 +439,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             id = npe->bb.basic_block_id;
             this->next_basic_block_id = bb_info_table[id].next_basic_block_id;
             
-            bool isExit = bb_info_table[id].isFuncExit;
+            int isExit = bb_info_table[id].isFuncExit;
             int presvCount = bb_info_table[id].presvOps;
             pinternal_function_presv_ops ifpo = NULL;
             if (presvCount >= 0)
@@ -446,6 +447,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 ifpo = new internal_function_presv_ops;
                 ifpo->presvAddrs.resize(presvCount);
                 ifpo->startBlock = id;
+                ifpo->allocCTID = currentID;
                 ifpo->next = funcPresvStack[currentID];
                 funcPresvStack[currentID] = ifpo;
             }
@@ -491,6 +493,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             {
                                 unsigned short dupOp = bb_info_table[id].mem_op_info[i].presvBlockId;
                                 int64_t offset = bb_info_table[id].mem_op_info[i].baseOffset;
+                                //fprintf(stderr, "EXTR - %d in %d at %d from %p\n", i, id, dupOp, ifpo);
                                 npe->bb.mem_op_array[i].addr = (ifpo->presvAddrs[dupOp]) + offset;
                                 
                                 /*
@@ -646,8 +649,8 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                             if ((bb_info_table[id].mem_op_info[i].memFlags & BBI_FLAG_MEM_PRESV) == BBI_FLAG_MEM_PRESV)
                             {
                                 unsigned short dupOp = bb_info_table[id].mem_op_info[i].presvBlockId;
+                                //fprintf(stderr, "PRESV - %p in %d at %d into %p\n", npe->bb.mem_op_array[i].addr, id, dupOp, ifpo);
                                 ifpo->presvAddrs[dupOp] = npe->bb.mem_op_array[i].addr;
-                                //fprintf(stderr, "PRESV - %p in %d at %d\n", npe->bb.mem_op_array[i].addr, id, dupOp);
                             }
                         }
                     }
@@ -658,8 +661,21 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 npe->bb.mem_op_array = NULL;
             }
             
-            if (isExit == true)
+            if (isExit != -1)
             {
+                if (isExit != ifpo->startBlock)
+                {
+                    fprintf(stderr, "BBID %d exits for %d, but has ifpo from %d at %p\n", id, isExit, ifpo->startBlock, ifpo);
+                    dumpAndTerminate(fptr);
+                }
+                
+                if (ifpo->allocCTID != currentID)
+                {
+                    fprintf(stderr, "IFPO CORRUPT in id %d for %d, ifpo %p was CTID %d but CTID is %d\n",
+                                        id, ifpo->startBlock, ifpo, ifpo->allocCTID, currentID);
+                    dumpAndTerminate(fptr);
+                }
+                
                 funcPresvStack[currentID] = ifpo->next;
                 delete ifpo;
             }
@@ -807,9 +823,9 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 //printf("%d has %d of %d\n", id, bb_info_table[id].loopStepBlock, bb_info_table[id].loopStepValue);
             }
             
-            bool isExit = false;
+            int isExit = false;
             fread_check(&bb_info_table[id].presvOps, sizeof(int), 1, fptr);
-            fread_check(&isExit, sizeof(bool), 1, fptr);
+            fread_check(&isExit, sizeof(isExit), 1, fptr);
             bb_info_table[id].isFuncExit = isExit;
             
             fread_check(&len, sizeof(unsigned int), 1, fptr);
@@ -932,6 +948,13 @@ pct_event EventLib::createContechEvent(FILE* fptr)
                 
                 std::map< uint32_t, std::vector<pinternal_loop_track> > ml;
                 loopBlock[npe->contech_id] = ml;
+                
+                pinternal_function_presv_ops ifpo = new internal_function_presv_ops;
+                ifpo->presvAddrs.resize(0);
+                ifpo->startBlock = -1;
+                ifpo->next = NULL;
+                ifpo->allocCTID = currentID;
+                funcPresvStack[currentID] = ifpo;
             }
         }
         break;

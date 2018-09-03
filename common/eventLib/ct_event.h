@@ -254,7 +254,7 @@ namespace contech
 
             typedef struct _internal_basic_block_info
             {
-                bool isFuncExit;
+                int isFuncExit;
                 unsigned int len;
                 int32_t next_basic_block_id;
                 int32_t* next_path_block_id;
@@ -297,6 +297,7 @@ namespace contech
             {
                 struct _internal_function_presv_ops* next;
                 uint32_t startBlock;  // for debug
+                uint32_t allocCTID;   // for debug
                 std::vector<int64_t> presvAddrs;
             } internal_function_presv_ops, *pinternal_function_presv_ops;
             
