@@ -45,6 +45,67 @@ using namespace std;
 
 extern map<BasicBlock*, llvm_basic_block*> cfgInfoMap;
 
+// TODO: Integrate with CTLoopInvariant
+bool Contech::verifyFunctionInvariant(Function* F)
+{
+    for(auto bb = F->begin(); bb != F->end(); ++bb) 
+    {
+        BasicBlock* b = (&*bb);
+        Instruction* prev = NULL;
+        for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
+        {
+            Function* f = NULL;
+            const char* fn = NULL;
+            char* fdn = NULL;
+            int status = 0;
+            int ret = 0;
+            
+            if (CallInst *ci = dyn_cast<CallInst>(&*I))
+            {
+                ret = ComputeFunctionName(ci, &fn, &fdn, &status);
+            }
+            else if (InvokeInst *ii = dyn_cast<InvokeInst>(&*I))
+            {
+                ret = ComputeFunctionName(ii, &fn, &fdn, &status);
+            }
+            else
+            {
+                continue;
+            }
+            
+            if (ret != 0)
+            {
+                continue;
+            }
+            
+            CONTECH_FUNCTION_TYPE funTy = classifyFunctionName(fn);
+            
+            if (status == 0)
+            {
+                free(fdn);
+            }
+            
+            switch (funTy)
+            {
+                case (OMP_CALL):
+                case (OMP_FORK):
+                case (OMP_FOR_ITER):
+                case (OMP_TASK_CALL):
+                case (OMP_END):
+                case (CILK_FRAME_CREATE):
+                case (CILK_FRAME_DESTROY):
+                    return false;
+                
+                default:
+                    break;
+            }
+        }
+        
+    }
+    
+    return true;
+}
+
 //
 // This is the hack version that just tries to find possible matches and eliding them
 //
@@ -55,6 +116,8 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
     Value* cNOne = ConstantInt::get(cct.int32Ty, -1);
     map<BasicBlock*, vector<Value*> > opsInBlock;
     int crossElideCount = 0;
+    bool skipF = verifyFunctionInvariant(F);
+    
     
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
@@ -63,109 +126,113 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
         auto blockInfo = cfgInfoMap[bb];
         pllvm_mem_op mem_op = blockInfo->first_op;
         
-#ifndef DISABLE_MEM
-        while (mem_op != NULL)
+        if (skipF == true)
         {
-            // Simple deps and globals should already be handled by prior analysis
-            //   Loop invariants could elide ops that follow the loop, and are worth
-            //   analyzing here.
-            if (mem_op->isGlobal == true ||
-                mem_op->isDep == true ||
-                mem_op->isTSC == true)
+        
+#ifndef DISABLE_MEM
+            while (mem_op != NULL)
             {
-                mem_op = mem_op->next;
-                continue;
-            }
-            
-            //
-            // IF the op is already a loop elide, we don't need to find a match,
-            //   but we want to preserve it in case it was a loop invariant op.
-            //
-            bool foundDup = false;
-            if (mem_op->isLoopElide == false)
-            {
-                // For each block that dominates this block,
-                //   check if its vector of ops can duplicate ops in this block.
-                for (auto bit = F->begin(), bet = F->end(); bit != bet && !foundDup; ++bit)
+                // Simple deps and globals should already be handled by prior analysis
+                //   Loop invariants could elide ops that follow the loop, and are worth
+                //   analyzing here.
+                if (mem_op->isGlobal == true ||
+                    mem_op->isDep == true ||
+                    mem_op->isTSC == true)
                 {
-                    if (bit == it) break;
-                    
-                    
-                    int64_t offset = 0;
-                    auto opsEntry = opsInBlock.find(&*bit);
-                    if (opsEntry == opsInBlock.end()) continue;
-                    vector<Value*>* domOps = &(opsEntry->second);
-                    if (domOps == NULL || domOps->size() == 0) continue;
-                    if (!DT->dominates(&*(&*bit->begin()), bb)) 
+                    mem_op = mem_op->next;
+                    continue;
+                }
+                
+                //
+                // IF the op is already a loop elide, we don't need to find a match,
+                //   but we want to preserve it in case it was a loop invariant op.
+                //
+                bool foundDup = false;
+                if (mem_op->isLoopElide == false)
+                {
+                    // For each block that dominates this block,
+                    //   check if its vector of ops can duplicate ops in this block.
+                    for (auto bit = F->begin(), bet = F->end(); bit != bet && !foundDup; ++bit)
                     {
-                        continue;
-                    }
-                    
-                    Value* match = findSimilarMemoryInstExt(mem_op->inst, mem_op->addr, &offset, domOps);
-                    
-                    if (match != NULL)
-                    {
-                        // Scan the block for the op, match
-                        //   Then either mark it as the next crossOp or retreive its ID.
-                        pllvm_mem_op matchOp = cfgInfoMap[&*bit]->first_op;
-                        int matchOpID = -1;
-                        while (matchOp != NULL)
+                        if (bit == it) break;
+                        
+                        
+                        int64_t offset = 0;
+                        auto opsEntry = opsInBlock.find(&*bit);
+                        if (opsEntry == opsInBlock.end()) continue;
+                        vector<Value*>* domOps = &(opsEntry->second);
+                        if (domOps == NULL || domOps->size() == 0) continue;
+                        if (!DT->dominates(&*(&*bit->begin()), bb)) 
                         {
-                            if (matchOp->addr == match)
+                            continue;
+                        }
+                        
+                        Value* match = findSimilarMemoryInstExt(mem_op->inst, mem_op->addr, &offset, domOps);
+                        
+                        if (match != NULL)
+                        {
+                            // Scan the block for the op, match
+                            //   Then either mark it as the next crossOp or retreive its ID.
+                            pllvm_mem_op matchOp = cfgInfoMap[&*bit]->first_op;
+                            int matchOpID = -1;
+                            while (matchOp != NULL)
                             {
-                                if (matchOp->isCrossPresv)
-                                    matchOpID = matchOp->crossBlockID;
-                                break;
+                                if (matchOp->addr == match)
+                                {
+                                    if (matchOp->isCrossPresv)
+                                        matchOpID = matchOp->crossBlockID;
+                                    break;
+                                }
+                                matchOp = matchOp->next;
                             }
-                            matchOp = matchOp->next;
-                        }
-                        if (matchOp == NULL)
-                        {
-                            errs() << "Fail to match: " << *match << "\n";
-                            errs() << "  in : " << *&*bit << "\n";
-                            assert(matchOp != NULL);
-                        }
-                        
-                        matchOp->isCrossPresv = true;
-                        if (matchOpID == -1)
-                        {
-                            matchOpID = crossElideCount;
-                            crossElideCount++;
-                            matchOp->crossBlockID = matchOpID;
-                        }
-                        
-                        mem_op->crossBlockID = matchOpID;
-                        mem_op->isDep = true;
-                        mem_op->isCrossPresv = true;
-                        mem_op->depMemOpDelta = offset;
-                        mem_op->inst->eraseFromParent();
-                        
-                        int bb_val = blockHash(bb);
-                        auto costInfo = costPerBlock.find(bb_val);
-                        
-                        Instruction* sbbc = dyn_cast<Instruction>(costInfo->second.posValue);
-                        
-                        auto opCount = sbbc->getOperand(0);
-                         
-                        Instruction* posPathAdd = BinaryOperator::Create(Instruction::Add, 
-                                                                         opCount, cNOne, "", sbbc);
+                            if (matchOp == NULL)
+                            {
+                                errs() << "Fail to match: " << *match << "\n";
+                                errs() << "  in : " << *&*bit << "\n";
+                                assert(matchOp != NULL);
+                            }
                             
-                        MarkInstAsContechInst(posPathAdd);
-                        sbbc->setOperand(0, posPathAdd);
-                        
-                        foundDup = true;
+                            matchOp->isCrossPresv = true;
+                            if (matchOpID == -1)
+                            {
+                                matchOpID = crossElideCount;
+                                crossElideCount++;
+                                matchOp->crossBlockID = matchOpID;
+                            }
+                            
+                            mem_op->crossBlockID = matchOpID;
+                            mem_op->isDep = true;
+                            mem_op->isCrossPresv = true;
+                            mem_op->depMemOpDelta = offset;
+                            mem_op->inst->eraseFromParent();
+                            
+                            int bb_val = blockHash(bb);
+                            auto costInfo = costPerBlock.find(bb_val);
+                            
+                            Instruction* sbbc = dyn_cast<Instruction>(costInfo->second.posValue);
+                            
+                            auto opCount = sbbc->getOperand(0);
+                             
+                            Instruction* posPathAdd = BinaryOperator::Create(Instruction::Add, 
+                                                                             opCount, cNOne, "", sbbc);
+                                
+                            MarkInstAsContechInst(posPathAdd);
+                            sbbc->setOperand(0, posPathAdd);
+                            
+                            foundDup = true;
+                        }
                     }
                 }
+                
+                if (foundDup == false)
+                {
+                    addrSet.push_back(mem_op->addr);
+                }
+                
+                mem_op = mem_op->next;
             }
-            
-            if (foundDup == false)
-            {
-                addrSet.push_back(mem_op->addr);
-            }
-            
-            mem_op = mem_op->next;
-        }
 #endif
+        }
         
         opsInBlock[bb] = addrSet;
         addrSet.clear();

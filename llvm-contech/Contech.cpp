@@ -784,9 +784,14 @@ cleanup:
             }
             
             int presvCount = bi->second->crossOpCount;
-            bool funcExit = bi->second->isFuncExit;
+            BasicBlock* bbEntry = bi->second->isFuncExit;
+            int funcExit = -1;
+            if (bbEntry != NULL)
+            {
+                funcExit = cfgInfoMap[bbEntry]->id;
+            }
             contechStateFile->write((char*)&presvCount, sizeof(int));
-            contechStateFile->write((char*)&funcExit, sizeof(bool));
+            contechStateFile->write((char*)&funcExit, sizeof(int));
             
             // Number of memory operations
             contechStateFile->write((char*)&bi->second->len, sizeof(unsigned int));
@@ -1142,7 +1147,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bi->containAtomic = false;
     bi->containCall = false;
     bi->isLoopEntry = false;
-    bi->isFuncExit = false;
+    bi->isFuncExit = NULL;
     bi->lineNum = lineNum;
     bi->numIROps = numIROps;
     bi->fnName.assign(fnName);
@@ -1557,7 +1562,9 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                  dyn_cast<CatchReturnInst>(&*I) != NULL ||
                  dyn_cast<CleanupReturnInst>(&*I) != NULL)
         {
-            bi->isFuncExit = true;
+            Function* f = B.getParent();
+            BasicBlock* bbEntry = &f->getEntryBlock();
+            bi->isFuncExit = bbEntry;//cfgInfoMap[(bbEntry)]->id;
         }
     }
 

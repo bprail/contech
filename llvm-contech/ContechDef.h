@@ -67,7 +67,7 @@ namespace llvm {
         bool containGlobalAccess;
         bool containAtomic;
         bool isLoopEntry;
-        bool isFuncExit;
+        BasicBlock* isFuncExit; // NULL, not exit, other is id of entry block
         int crossOpCount; // N >= 0 if entry and num of ops, -1 o.w.
         int stepIV;
         uint32_t stepBlock;
@@ -298,6 +298,7 @@ namespace llvm {
         Value* castWalk(Value*);
         Value* findCilkStructInBlock(BasicBlock& B, bool insert);
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
+        bool verifyFunctionInvariant(Function*);
 
         void crossBlockCalculation(Function* F, std::map<int, llvm_inst_block>& costPerBlock);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
