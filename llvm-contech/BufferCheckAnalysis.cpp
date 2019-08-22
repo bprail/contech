@@ -45,6 +45,7 @@ namespace llvm
     // accumulate the state from multiple branches
     int BufferCheckAnalysis::accumulateBranch(vector<int>& srcs)
     {
+		if (srcs.empty() == true) return 0;
         int ret = srcs[0];
         for (int i = 1; i < srcs.size(); ++i) 
         {
