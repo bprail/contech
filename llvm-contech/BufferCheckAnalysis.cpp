@@ -277,8 +277,8 @@ namespace llvm
                 if (pred_bb_states.size() == 0 &&
                     bb_val != entry_val)
                 {
-                    errs() << "BBCHK " << *bb << "\n";
-                    assert(pred_bb_states.size() > 0);
+                    // Some C++ code generates unreachable blocks.
+					continue;
                 }
                 
                 // get the initial current state
