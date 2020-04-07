@@ -4,7 +4,7 @@
 #if LLVM_VERSION_MAJOR==2
 #error LLVM Version 3.8 or greater required
 #else
-#if LLVM_VERSION_MINOR>=8
+#if LLVM_VERSION_MAJOR > 3 || LLVM_VERSION_MINOR>=8
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -179,6 +179,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
+		if (cfgInfoMap.find(bb) == cfgInfoMap.end()) { continue;}
         if (cfgInfoMap[bb]->containCall) {/*errs() << "CBC - contain call\n";*/ continue;}
         
         // Verify that the position value is still valid to use in subsequent blocks
@@ -431,7 +432,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             
             if (visit.find(visitBlock) != visit.end()) continue;
             
-            TerminatorInst* ti = visitBlock->getTerminator();
+            //TerminatorInst* ti = visitBlock->getTerminator();
             visit[visitBlock] = true;
             
             // Given a single start block, every block then should be reachable.
@@ -744,14 +745,14 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
     {
         pred = *pit;
 #endif
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         // No self loops
         if (pred == B) {return false;}
         
         if (dyn_cast<BranchInst>(ti) == NULL) return false;
         if (ti->getNumSuccessors() != 1) {return false;}
-        if (ti->isExceptional()) return false;
+        //if (ti->isExceptional()) return false;
         
         // Furthermore, Contech splits basic blocks for function calls
         //   Any tail duplication must not undo that split.
@@ -853,14 +854,14 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     {
         pred = *pit;
 #endif
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         // No self loops
         if (pred == bbTail) return false;
         
         if (dyn_cast<BranchInst>(ti) == NULL) return false;
         if (ti->getNumSuccessors() != 1) return false;
-        if (ti->isExceptional()) return false;
+        //if (ti->isExceptional()) return false;
         
         // Furthermore, Contech splits basic blocks for function calls
         //   Any tail duplication must not undo that split.
@@ -919,7 +920,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     {
         pred = *pit;
         ++pit;
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         //
         // One predecessor must be left untouched.

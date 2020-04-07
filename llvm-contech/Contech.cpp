@@ -14,7 +14,7 @@
 #if LLVM_VERSION_MAJOR==2
 #error LLVM Version 3.8 or greater required
 #else
-#if LLVM_VERSION_MINOR>=8
+#if LLVM_VERSION_MAJOR > 3 || LLVM_VERSION_MINOR>=8
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -151,7 +151,7 @@ Type* Contech::getTypeFromStr(const char ty)
     }
 }
 
-Constant* Contech::getFunction(Module &M, const char* fname, const char* fmt, bool isVarg)
+Function* Contech::getFunction(Module &M, const char* fname, const char* fmt, bool isVarg)
 {
     size_t argLen = strlen(fmt);
     assert(argLen > 0);
@@ -167,12 +167,12 @@ Constant* Contech::getFunction(Module &M, const char* fname, const char* fmt, bo
         }
         
         FunctionType* funTy = FunctionType::get(retTy, ArrayRef<Type*>(argTy, (argLen - 1)), isVarg);
-        return M.getOrInsertFunction(fname, funTy);
+        return dyn_cast<Function>(M.getOrInsertFunction(fname, funTy).getCallee());
     }
     else
     {
         FunctionType* funVoidVoidTy = FunctionType::get(retTy, isVarg);
-        return M.getOrInsertFunction(fname, funVoidVoidTy);
+        return dyn_cast<Function>(M.getOrInsertFunction(fname, funVoidVoidTy).getCallee());
     }
     
     return NULL;
@@ -296,7 +296,8 @@ bool Contech::doInitialization(Module &M)
                        static_cast<Type *>(funVoidPtrVoidPtrTy)->getPointerTo(),
                        cct.voidPtrTy};
     FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
-    cct.createThreadActualFunction = M.getOrInsertFunction("__ctThreadCreateActual", funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr);
+    cct.createThreadActualFunction = dyn_cast<Function>(M.getOrInsertFunction("__ctThreadCreateActual", 
+																		      funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr).getCallee());
 
     cct.ContechMDID = ctx.getMDKindID("ContechInst");
 
@@ -638,9 +639,55 @@ bool Contech::runOnModule(Module &M)
                 i++;
             }
             
+			#if 0
+			SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> loopExitEdges;
+			llt->baseLoop->getExitEdges(loopExitEdges);
+			for (auto eit = loopExitEdges.begin(), eet = loopExitEdges.end(); eit != eet; ++eit)
+			{
+				// For each exit edge, create a new block to just hold the loop exit call.
+				//   This addresses duplication and the fact that exit blocks are not
+				//   guaranteed to be dominated by the loop.
+				
+				BasicBlock* exitBB = BasicBlock::Create(M.getContext(), "exitblock", &*F, NULL);
+				
+				BasicBlock* insideBlock = (*eit).first;
+				BasicBlock* outsideBlock = (*eit).second;
+				
+				// Update branch from inside
+				Instruction* termInst = insideBlock->getTerminator();
+				BranchInst* bi = dyn_cast<BranchInst>(termInst);
+				for (int i = 0; i < bi->getNumSuccessors(); i++)
+				{
+					if (bi->getSuccessor(i) == outsideBlock)
+					{
+						bi->setSuccessor(i, exitBB);
+					}
+				}
+				
+				// TODO: Use loop nest / inner loops to determine if an edge is exiting one or more blocks
+				// TODO: Can we use the fact that this worked before to hack the fast way of whatever order
+				//   it did is reasonable?
+				
+				// Add branch to outside
+				Instruction* loopBranch = BranchInst::Create(outsideBlock, exitBB);
+				
+				// Update PHIs in outside
+				outsideBlock->replacePhiUsesWith(insideBlock, exitBB);
+				
+				Value* argsExit[] = {cbbid};
+				Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
+                                                         ArrayRef<Value*>(argsExit, 1), 
+                                                         "", 
+                                                         loopBranch);
+                MarkInstAsContechInst(loopExit);
+			}
+			#endif 
+			
+			#if 1
             // Insert one exit call per exit block
             for (auto eit = llt->exitBlocks.begin(), eet = llt->exitBlocks.end(); eit != eet; ++eit)
             {
+				
                 // This is actually set by exit edge, not block, so duplicates may exist.
                 bool isDupBlock = false;
                 for (auto skip = (eit + 1); skip != eet; ++skip)
@@ -651,7 +698,8 @@ bool Contech::runOnModule(Module &M)
                 
                 //errs() << "Exit - " << cfgInfoMap[*eit]->id << "\t" << i << "\n";
                 
-                Value* argsExit[] = {cbbid};
+                
+				
                 //
                 // When inserting at the start of a basic block, instrumentation has to come
                 //   after several types of instructions, and unfortunately, there is no
@@ -662,6 +710,9 @@ bool Contech::runOnModule(Module &M)
                 {
                     ++insertPoint;
                 }
+				
+				
+				Value* argsExit[] = {cbbid};
                 
                 Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
                                                          ArrayRef<Value*>(argsExit, 1), 
@@ -669,6 +720,7 @@ bool Contech::runOnModule(Module &M)
                                                          convertIterToInst(insertPoint));
                 MarkInstAsContechInst(loopExit);
             }
+			#endif
             
             delete llt;
         }
@@ -1241,7 +1293,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 #endif
 
         // In LLVM 3.3+, switch to Monotonic and not Acquire
-        Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SingleThread, bufV);
+        Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SyncScope::SingleThread, bufV);
         MarkInstAsContechInst(fenI);
     }
 
@@ -1269,7 +1321,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 6), "", aPhi);
                 MarkInstAsContechInst(sbbc);
 
-                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SyncScope::SingleThread, aPhi);
                 MarkInstAsContechInst(fenI);
                 iPt = aPhi;
             }
@@ -1279,7 +1331,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 6), "", convertIterToInst(I));
                 MarkInstAsContechInst(sbbc);
 
-                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SyncScope::SingleThread, convertIterToInst(I));
                 MarkInstAsContechInst(fenI);
                 iPt = convertIterToInst(I);
             }

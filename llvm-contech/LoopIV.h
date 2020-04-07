@@ -44,7 +44,7 @@ namespace llvm {
     private:
         Contech* ctThis;
         bool isLoopControlIV(Loop *L, Instruction *IV);
-        void iterateOnLoop(Loop *L, Loop*);
+        void iterateOnLoop(Loop *L, LoopInfo&, Loop*);
         bool verifyLoopCTInvariant(Loop*);
         const SCEVConstant *getIncrmentFactorSCEV(ScalarEvolution *SE, const SCEV *SCEVExpr, Instruction &IV); 
         Value* collectPossibleMemoryOps(GetElementPtrInst* gepAddr, SmallInstructionVector IVs, bool is_derived, Loop*, std::vector<Value*>&);

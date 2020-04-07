@@ -102,6 +102,7 @@ namespace llvm {
         Value* startIV;    //start val of IV
         BasicBlock* stepBlock;
         BasicBlock* headerBlock;
+		Loop* baseLoop;
         // 4 is chosen from the loopUnroll code.
         SmallVector<BasicBlock*, 4> exitBlocks;  //
         std::vector<Value*> addtComponents;
@@ -117,6 +118,7 @@ namespace llvm {
         Value* startIV;
         BasicBlock* stepBlock;
         Instruction* memIV;
+		Loop* baseLoop;
         int stepIV;
         // 4 is chosen from the loopUnroll code.
         SmallVector<BasicBlock*, 4> exitBlocks;
@@ -169,61 +171,61 @@ namespace llvm {
     extern llvm_function_map functionsInstrument[];
 
     typedef struct _ConstantsCT {
-        Constant* storeBasicBlockFunction;
-        Constant* storeBasicBlockCompFunction;
-        Constant* extendPathInfoFunction;
-        Constant* storePathInfoFunction;
-        Constant* storeMemOpFunction;
-        Constant* allocateBufferFunction;
-        Constant* checkBufferFunction;
-        Constant* storeThreadCreateFunction;
-        Constant* storeSyncFunction;
-        Constant* storeMemoryEventFunction;
-        Constant* queueBufferFunction;
-        Constant* storeBarrierFunction;
-        Constant* allocateCTidFunction;
-        Constant* allocateTicketFunction;
-        Constant* getThreadNumFunction;
-        Constant* storeThreadJoinFunction;
-        Constant* storeThreadInfoFunction;
-        Constant* storeBulkMemoryOpFunction;
-        Constant* getCurrentTickFunction;
-        Constant* createThreadActualFunction;
-        Constant* checkBufferLargeFunction;
-        Constant* getBufPosFunction;
-        Constant* getBufFunction;
-        Constant* getBufPtrFunction;
-        Constant* writeElideGVEventsFunction;
-        Constant* storeGVEventFunction;
-        Constant* storeLoopEntryFunction;
-        Constant* storeLoopExitFunction;
-        Constant* storeLoopShortFunction;
+        Function* storeBasicBlockFunction;
+        Function* storeBasicBlockCompFunction;
+        Function* extendPathInfoFunction;
+        Function* storePathInfoFunction;
+        Function* storeMemOpFunction;
+        Function* allocateBufferFunction;
+        Function* checkBufferFunction;
+        Function* storeThreadCreateFunction;
+        Function* storeSyncFunction;
+        Function* storeMemoryEventFunction;
+        Function* queueBufferFunction;
+        Function* storeBarrierFunction;
+        Function* allocateCTidFunction;
+        Function* allocateTicketFunction;
+        Function* getThreadNumFunction;
+        Function* storeThreadJoinFunction;
+        Function* storeThreadInfoFunction;
+        Function* storeBulkMemoryOpFunction;
+        Function* getCurrentTickFunction;
+        Function* createThreadActualFunction;
+        Function* checkBufferLargeFunction;
+        Function* getBufPosFunction;
+        Function* getBufFunction;
+        Function* getBufPtrFunction;
+        Function* writeElideGVEventsFunction;
+        Function* storeGVEventFunction;
+        Function* storeLoopEntryFunction;
+        Function* storeLoopExitFunction;
+        Function* storeLoopShortFunction;
         
-        Constant* storeMPITransferFunction;
-        Constant* storeMPIAllOneFunction;
-        Constant* storeMPIWaitFunction;
+        Function* storeMPITransferFunction;
+        Function* storeMPIAllOneFunction;
+        Function* storeMPIWaitFunction;
 
-        Constant* ompThreadCreateFunction;
-        Constant* ompThreadJoinFunction;
-        Constant* ompTaskCreateFunction;
-        Constant* ompTaskJoinFunction;
-        Constant* ompPushParentFunction;
-        Constant* ompPopParentFunction;
-        Constant* ctPeekParentIdFunction;
-        Constant* ompProcessJoinFunction;
-        Constant* ompGetNestLevelFunction;
+        Function* ompThreadCreateFunction;
+        Function* ompThreadJoinFunction;
+        Function* ompTaskCreateFunction;
+        Function* ompTaskJoinFunction;
+        Function* ompPushParentFunction;
+        Function* ompPopParentFunction;
+        Function* ctPeekParentIdFunction;
+        Function* ompProcessJoinFunction;
+        Function* ompGetNestLevelFunction;
 
-        Constant* ompGetParentFunction;
-        Constant* ompPrepareTaskFunction;
-        Constant* ompStoreInOutDepsFunction;
+        Function* ompGetParentFunction;
+        Function* ompPrepareTaskFunction;
+        Function* ompStoreInOutDepsFunction;
 
-        Constant* cilkInitFunction;
-        Constant* cilkCreateFunction;
-        Constant* cilkSyncFunction;
-        Constant* cilkRestoreFunction;
-        Constant* cilkParentFunction;
+        Function* cilkInitFunction;
+        Function* cilkCreateFunction;
+        Function* cilkSyncFunction;
+        Function* cilkRestoreFunction;
+        Function* cilkParentFunction;
 
-        Constant* pthreadExitFunction;
+        Function* pthreadExitFunction;
 
         Type* int1Ty;
         Type* int8Ty;
@@ -271,7 +273,7 @@ namespace llvm {
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
         
-        Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
+        Function* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
         void setElideInBlock(BasicBlock*, Instruction*, bool);
         int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);

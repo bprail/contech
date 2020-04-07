@@ -6,6 +6,8 @@
 #include "LoopIV.h"
 #include "Contech.h"
 
+#include "llvm/Transforms/Utils/LoopUtils.h"
+
 using namespace llvm;
 using namespace std;
 
@@ -546,9 +548,10 @@ namespace llvm{
         
         if (gepAddr != NULL) 
         {
-            for (auto itG = gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
+            for (auto itG = gepAddr->idx_begin(); itG != gepAddr->idx_end(); ++itG)
+			//gep_type_begin(gepAddr), etG = gep_type_end(gepAddr); itG != etG; ++itG) 
             {
-                Value* gepI = itG.getOperand();
+                Value* gepI = itG->get();
                 Instruction* temp = dyn_cast<Instruction>(gepI);
                 
                 if (dyn_cast<ConstantInt>(gepI)) 
@@ -582,7 +585,7 @@ namespace llvm{
                     {
                         Value* gepID = temp->getOperand(0);
                         
-                        if (StructType *STy = dyn_cast<StructType>(*itG))
+                        if (StructType *STy = dyn_cast<StructType>((*itG)->getType()))
                         {
                             if (L->isLoopInvariant(gepI) == false) return NULL;
                             Value* v = isAddOrPHIConstant(gepI, true);
@@ -673,17 +676,21 @@ namespace llvm{
         return cnt_elided;
     }
 
-    void LoopIV::iterateOnLoop(Loop *L, Loop *parentL)
+    void LoopIV::iterateOnLoop(Loop *L, LoopInfo &LI, Loop *parentL)
     {
         for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
         {
-            iterateOnLoop(*subL, L);
+            iterateOnLoop(*subL, LI, L);
         }
         
         if (!verifyLoopCTInvariant(L)) return;
         
         unsigned iterCount = SE->getSmallConstantTripCount(L);
         if (iterCount != 0 && iterCount < 4) return ;
+		
+		// Temporary fix: if non-dedicated exits, then do not analyze the loop
+		//   This call can still update the CFG even on failure.
+		if (llvm::formDedicatedExitBlocks(L, ctThis->DT, &LI, NULL, false) == false) return ;
         
         llvm_loopiv_block tempLoopMemoryOps;
         
@@ -691,6 +698,7 @@ namespace llvm{
         tempLoopMemoryOps.headerBlock = L->getLoopPredecessor();
         L->getExitBlocks(tempLoopMemoryOps.exitBlocks);
         tempLoopMemoryOps.wasElide = false;
+		tempLoopMemoryOps.baseLoop = L;
 
         collectPossibleIVs(L);
         collectDerivedIVs(L, PossibleIVs, &DerivedLinearIvs);
@@ -869,7 +877,7 @@ namespace llvm{
                 Loop *L = *i;
             
                 // Iterate on subloops of Loop L
-                iterateOnLoop(L, NULL);       
+                iterateOnLoop(L, LI, NULL);
             }
         }
         return false;

@@ -4,7 +4,7 @@
 #if LLVM_VERSION_MAJOR==2
 #error LLVM Version 3.8 or greater required
 #else
-#if LLVM_VERSION_MINOR>=8
+#if LLVM_VERSION_MAJOR > 3 || LLVM_VERSION_MINOR>=8
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -123,6 +123,7 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
     {
         BasicBlock* bb = &*it;
         
+		if (cfgInfoMap.find(bb) == cfgInfoMap.end()) { continue; }
         auto blockInfo = cfgInfoMap[bb];
         pllvm_mem_op mem_op = blockInfo->first_op;
         
@@ -307,8 +308,8 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
         }
          
         Constant* constID = ConstantInt::get(cct.int32Ty, nextId);
-        Function::ArgumentListType& argList = f->getArgumentList();
-        auto it = argList.begin();
+        
+        auto it = f->arg_begin();
         Instruction* addrI = new BitCastInst(consGV, cct.voidPtrTy, Twine("Cast as void"), iPt);
         Value* gvEventArgs[] = {dyn_cast<Value>(it), addrI, constID};
         CallInst* ci = CallInst::Create(cct.storeGVEventFunction, ArrayRef<Value*>(gvEventArgs, 3), "", iPt);
@@ -576,7 +577,7 @@ Value* Contech::convertValueToConstantEx(Value* v, int64_t* offset, int64_t* mul
 int64_t Contech::updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t* multFactor)
 {
     int64_t offset = 0;
-    if (StructType *STy = dyn_cast<StructType>(*gepit))
+    if (StructType *STy = gepit.getStructTypeOrNull())//dyn_cast<StructType>((*gepit)->getType()))
     {
         unsigned ElementIdx = val;
         const StructLayout *SL = currentDataLayout->getStructLayout(STy);
@@ -638,9 +639,10 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
+    //Function::ArgumentListType& argList = extFun->getArgumentList();
+	auto argFirst = extFun->arg_begin();
 
-    Instruction* addrI = new BitCastInst(dyn_cast<Value>(argList.begin()), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
+    Instruction* addrI = new BitCastInst(dyn_cast<Value>(argFirst), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
     MarkInstAsContechInst(addrI);
 
     // getElemPtr 0, 0 -> arg 0 of type*
@@ -707,18 +709,18 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
-    unsigned argListSize = argList.size();
+    // TODO: Get num of arguments for a function, extFun
+    unsigned argListSize = 1;//argList.size();
 
     Value** cArgExt = new Value*[argListSize - 1];
-    auto it = argList.begin();
+    auto it = extFun->arg_begin();
     for (unsigned i = 0; i < argListSize - 1; i ++)
     {
         cArgExt[i] = dyn_cast<Value>(it);
         ++it;
     }
 
-    Value* cArg[] = {dyn_cast<Value>(--(argList.end()))};
+    Value* cArg[] = {dyn_cast<Value>(extFun->getArg(argListSize - 1))};//--(extFun->arg_end()))};
     Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTCF);
 
@@ -763,11 +765,11 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
-    unsigned argListSize = argList.size();
+    // TODO: Get num of arguments for a function, extFun
+    unsigned argListSize = 1;//argList.size();
 
     Value** cArgExt = new Value*[argListSize];
-    auto it = argList.begin();
+    auto it = extFun->arg_begin();
     for (unsigned i = 0; i < argListSize; i ++)
     {
         cArgExt[i] = dyn_cast<Value>(it);
@@ -1045,6 +1047,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
         llt->stepBlock = llb->stepBlock;
         llt->memIV = llb->memIV;
         llt->exitBlocks = llb->exitBlocks;
+		llt->baseLoop = llb->baseLoop;
         loopInfoTrack[bbid] = llt;
         createEntry = true;
     }

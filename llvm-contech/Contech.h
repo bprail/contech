@@ -867,7 +867,7 @@ namespace llvm {
                 // Alloca Type and store pid and arg into alloc'd space
                 Type* strTy[] = {cct->int32Ty, cct->voidPtrTy};
                 Type* t = StructType::create(strTy);
-                Instruction* nArg = new AllocaInst(t, "Wrapper Struct", ci);
+                Instruction* nArg = new AllocaInst(t, 0, "Wrapper Struct", ci);
                 MarkInstAsContechInst(nArg);
 
                 // Add Store insts here
@@ -1124,7 +1124,7 @@ namespace llvm {
                 {
                     Type* argsPrepDep[] = {cct->voidPtrTy, cct->pthreadTy, depList->getType(), cct->int32Ty};
                     FunctionType* funPrepDepsTy = FunctionType::get(cct->voidTy, ArrayRef<Type*>(argsPrepDep, 4), false);
-                    cct->ompPrepareTaskFunction = M.getOrInsertFunction("__ctOMPPrepareTask", funPrepDepsTy);
+                    cct->ompPrepareTaskFunction = dyn_cast<Function>(M.getOrInsertFunction("__ctOMPPrepareTask", funPrepDepsTy).getCallee());
                 }
 
                 CallInst* taskAllocInst = dyn_cast<CallInst>(taskPtr);
@@ -1270,7 +1270,7 @@ namespace llvm {
 
                 // If Contech has formed the basic blocks, then there should be 1 successor
                 assert(sucB != NULL);
-                TerminatorInst* ti = sucB->getTerminator();
+                auto ti = sucB->getTerminator();
                 bool isSyncFrame = false;
                 for (unsigned i = 0; i < ti->getNumSuccessors(); i++)
                 {
