@@ -101,7 +101,7 @@ namespace llvm
         // it should distinguish whether the terminator is a function
         // or is the end of a loop
         // or is a normal branch 
-        Instruction* last = &*bb->end();
+        Instruction* last = bb->getTerminator();
         int bb_val = blockHash(bb);
         
         auto bi = blockInfo.find(bb_val);
