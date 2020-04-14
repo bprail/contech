@@ -318,11 +318,12 @@ _CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
 }
 
 void Contech::getAnalysisUsage(AnalysisUsage& AU) const {		
-    AU.setPreservesAll();		
+    //AU.setPreservesAll();		
     AU.addRequired<ScalarEvolutionWrapperPass>();		
     AU.addRequired<LoopInfoWrapperPass>();		
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
+	AU.addRequired<MemorySSAWrapperPass>();
     //AU.addRequired<LoopInfoWrapperPass>();  //in this order		
 }		
 
@@ -334,6 +335,11 @@ LoopInfo* Contech::getAnalysisLoopInfo(Function& F)
 ScalarEvolution* Contech::getAnalysisSCEV(Function& F)		
 {		
     return &getAnalysis<ScalarEvolutionWrapperPass>(F).getSE();		
+}
+
+MemorySSA* Contech::getAnalysisMSSA(Function& F)
+{
+	return &getAnalysis<MemorySSAWrapperPass>(F).getMSSA();
 }
 
 //

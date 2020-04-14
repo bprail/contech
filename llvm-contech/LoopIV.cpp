@@ -676,21 +676,22 @@ namespace llvm{
         return cnt_elided;
     }
 
-    void LoopIV::iterateOnLoop(Loop *L, LoopInfo &LI, Loop *parentL)
+    void LoopIV::iterateOnLoop(Loop *L, LoopInfo &LI, Loop *parentL, MemorySSAUpdater* MSSAU)
     {
         for (auto subL = L->begin(), subLE = L->end(); subL != subLE; ++subL)
         {
-            iterateOnLoop(*subL, LI, L);
+            iterateOnLoop(*subL, LI, L, MSSAU);
         }
         
         if (!verifyLoopCTInvariant(L)) return;
         
-        unsigned iterCount = SE->getSmallConstantTripCount(L);
-        if (iterCount != 0 && iterCount < 4) return ;
+        //unsigned iterCount = SE->getSmallConstantTripCount(L);
+        //if (iterCount != 0 && iterCount < 4) return ;
 		
 		// Temporary fix: if non-dedicated exits, then do not analyze the loop
 		//   This call can still update the CFG even on failure.
-		if (llvm::formDedicatedExitBlocks(L, ctThis->DT, &LI, NULL, false) == false) return ;
+		if (llvm::formDedicatedExitBlocks(L, ctThis->DT, &LI, NULL /*MSSAU*/, false) == false) return ;
+		
         
         llvm_loopiv_block tempLoopMemoryOps;
         
@@ -872,12 +873,18 @@ namespace llvm{
               
             LoopInfo &LI = *ctThis->getAnalysisLoopInfo(F);
             SE = ctThis->getAnalysisSCEV(F);
+			//MemorySSA* MSSA = ctThis->getAnalysisMSSA(F);
+			
+			// Code to get an MSSA is taken from LICM.cpp in LLVM
+			//std::unique_ptr<MemorySSAUpdater> MSSAU;
+			//MSSAU = make_unique<MemorySSAUpdater>(MSSA);
+			
             for (LoopInfo::iterator i = LI.begin(), e = LI.end(); i!=e; ++i) 
             {
                 Loop *L = *i;
             
                 // Iterate on subloops of Loop L
-                iterateOnLoop(L, LI, NULL);
+                iterateOnLoop(L, LI, NULL, NULL /*MSSAU.get()*/);
             }
         }
         return false;

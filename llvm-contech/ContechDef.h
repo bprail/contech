@@ -18,6 +18,7 @@
 #include "../common/eventLib/ct_event_st.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/MemorySSAUpdater.h"
 
 //#define DEBUG_PRINT_CALLINST
 #ifdef DEBUG_PRINT_CALLINST
@@ -310,6 +311,7 @@ namespace llvm {
         void getAnalysisUsage(AnalysisUsage &AU) const;
         LoopInfo* getAnalysisLoopInfo(Function&);
         ScalarEvolution* getAnalysisSCEV(Function&);
+		MemorySSA* getAnalysisMSSA(Function&);
         void collectLoopExits(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
         Loop* isLoopEntry(BasicBlock* bb, std::unordered_set<Loop*>& lps);
         void collectLoopBelong(Function* fblock, std::map<int, Loop*>& loopmap, LoopInfo*);
