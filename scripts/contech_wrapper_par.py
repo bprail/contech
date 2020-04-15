@@ -257,7 +257,7 @@ def main(isCpp = False, markOnly = False, minimal = False, hammer = False):
 
                 # As the result of link will be instrumented, do not include RUNTIME, etc
                 pcall(["llvm-link", "-v", ofiles, oFromAFiles, "-o", out + ".link.bc"])
-                pcall([OPT, "-loop-simplify", "-load=" + LLVMCONTECH, "-Contech", out + ".link.bc", "-o", out + "_ct.link.bc", "-ContechState", stateFile])
+                pcall([OPT, "-load=" + LLVMCONTECH, "-Contech", out + ".link.bc", "-o", out + "_ct.link.bc", "-ContechState", stateFile])
                 
                 if oFromARaw != "":
                     pcall(["llvm-ar", "crsu", "ct_" + remFlags[0], oFromARaw])

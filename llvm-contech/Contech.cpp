@@ -29,6 +29,7 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/Transforms/Utils/LoopSimplify.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #error LLVM Version 3.8 or greater required
@@ -297,7 +298,7 @@ bool Contech::doInitialization(Module &M)
                        cct.voidPtrTy};
     FunctionType* funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr = FunctionType::get(cct.int32Ty, ArrayRef<Type*>(argsCTA,4), false);
     cct.createThreadActualFunction = dyn_cast<Function>(M.getOrInsertFunction("__ctThreadCreateActual", 
-																		      funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr).getCallee());
+                                                                              funIntPthreadPtrVoidPtrVoidPtrFunVoidPtr).getCallee());
 
     cct.ContechMDID = ctx.getMDKindID("ContechInst");
 
@@ -317,29 +318,25 @@ _CONTECH_FUNCTION_TYPE Contech::classifyFunctionName(const char* fn)
     return NONE;
 }
 
-void Contech::getAnalysisUsage(AnalysisUsage& AU) const {		
-    //AU.setPreservesAll();		
-    AU.addRequired<ScalarEvolutionWrapperPass>();		
-    AU.addRequired<LoopInfoWrapperPass>();		
+void Contech::getAnalysisUsage(AnalysisUsage& AU) const {
+    AU.addRequired<ScalarEvolutionWrapperPass>();
+    AU.addRequired<LoopInfoWrapperPass>();
     AU.addPreserved<LoopInfoWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
-	AU.addRequired<MemorySSAWrapperPass>();
-    //AU.addRequired<LoopInfoWrapperPass>();  //in this order		
-}		
-
-LoopInfo* Contech::getAnalysisLoopInfo(Function& F)		
-{		
-    return &getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();		
-}		
-		
-ScalarEvolution* Contech::getAnalysisSCEV(Function& F)		
-{		
-    return &getAnalysis<ScalarEvolutionWrapperPass>(F).getSE();		
+    
+    // The following approach is taken from several other LLVM provided passes.
+    extern char &LoopSimplifyID;
+    AU.addRequiredID(LoopSimplifyID);
 }
 
-MemorySSA* Contech::getAnalysisMSSA(Function& F)
+LoopInfo* Contech::getAnalysisLoopInfo(Function& F)
 {
-	return &getAnalysis<MemorySSAWrapperPass>(F).getMSSA();
+    return &getAnalysis<LoopInfoWrapperPass>(F).getLoopInfo();
+}
+
+ScalarEvolution* Contech::getAnalysisSCEV(Function& F)
+{
+    return &getAnalysis<ScalarEvolutionWrapperPass>(F).getSE();
 }
 
 //
@@ -434,7 +431,8 @@ bool Contech::runOnModule(Module &M)
         }
         errs() << fmn << "\n";
         
-
+        /*Function* fptr = &*F;
+        getAnalysis<LoopSimplifyPass>(*fptr);*/
 
         // "Normalize" every basic block to have only one function call in it
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) 
@@ -645,55 +643,55 @@ bool Contech::runOnModule(Module &M)
                 i++;
             }
             
-			#if 0
-			SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> loopExitEdges;
-			llt->baseLoop->getExitEdges(loopExitEdges);
-			for (auto eit = loopExitEdges.begin(), eet = loopExitEdges.end(); eit != eet; ++eit)
-			{
-				// For each exit edge, create a new block to just hold the loop exit call.
-				//   This addresses duplication and the fact that exit blocks are not
-				//   guaranteed to be dominated by the loop.
-				
-				BasicBlock* exitBB = BasicBlock::Create(M.getContext(), "exitblock", &*F, NULL);
-				
-				BasicBlock* insideBlock = (*eit).first;
-				BasicBlock* outsideBlock = (*eit).second;
-				
-				// Update branch from inside
-				Instruction* termInst = insideBlock->getTerminator();
-				BranchInst* bi = dyn_cast<BranchInst>(termInst);
-				for (int i = 0; i < bi->getNumSuccessors(); i++)
-				{
-					if (bi->getSuccessor(i) == outsideBlock)
-					{
-						bi->setSuccessor(i, exitBB);
-					}
-				}
-				
-				// TODO: Use loop nest / inner loops to determine if an edge is exiting one or more blocks
-				// TODO: Can we use the fact that this worked before to hack the fast way of whatever order
-				//   it did is reasonable?
-				
-				// Add branch to outside
-				Instruction* loopBranch = BranchInst::Create(outsideBlock, exitBB);
-				
-				// Update PHIs in outside
-				outsideBlock->replacePhiUsesWith(insideBlock, exitBB);
-				
-				Value* argsExit[] = {cbbid};
-				Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
+            #if 0
+            SmallVector<std::pair<BasicBlock *, BasicBlock *>, 4> loopExitEdges;
+            llt->baseLoop->getExitEdges(loopExitEdges);
+            for (auto eit = loopExitEdges.begin(), eet = loopExitEdges.end(); eit != eet; ++eit)
+            {
+                // For each exit edge, create a new block to just hold the loop exit call.
+                //   This addresses duplication and the fact that exit blocks are not
+                //   guaranteed to be dominated by the loop.
+                
+                BasicBlock* exitBB = BasicBlock::Create(M.getContext(), "exitblock", &*F, NULL);
+                
+                BasicBlock* insideBlock = (*eit).first;
+                BasicBlock* outsideBlock = (*eit).second;
+                
+                // Update branch from inside
+                Instruction* termInst = insideBlock->getTerminator();
+                BranchInst* bi = dyn_cast<BranchInst>(termInst);
+                for (int i = 0; i < bi->getNumSuccessors(); i++)
+                {
+                    if (bi->getSuccessor(i) == outsideBlock)
+                    {
+                        bi->setSuccessor(i, exitBB);
+                    }
+                }
+                
+                // TODO: Use loop nest / inner loops to determine if an edge is exiting one or more blocks
+                // TODO: Can we use the fact that this worked before to hack the fast way of whatever order
+                //   it did is reasonable?
+                
+                // Add branch to outside
+                Instruction* loopBranch = BranchInst::Create(outsideBlock, exitBB);
+                
+                // Update PHIs in outside
+                outsideBlock->replacePhiUsesWith(insideBlock, exitBB);
+                
+                Value* argsExit[] = {cbbid};
+                Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
                                                          ArrayRef<Value*>(argsExit, 1), 
                                                          "", 
                                                          loopBranch);
                 MarkInstAsContechInst(loopExit);
-			}
-			#endif 
-			
-			#if 1
+            }
+            #endif 
+            
+            #if 1
             // Insert one exit call per exit block
             for (auto eit = llt->exitBlocks.begin(), eet = llt->exitBlocks.end(); eit != eet; ++eit)
             {
-				
+                
                 // This is actually set by exit edge, not block, so duplicates may exist.
                 bool isDupBlock = false;
                 for (auto skip = (eit + 1); skip != eet; ++skip)
@@ -705,7 +703,7 @@ bool Contech::runOnModule(Module &M)
                 //errs() << "Exit - " << cfgInfoMap[*eit]->id << "\t" << i << "\n";
                 
                 
-				
+                
                 //
                 // When inserting at the start of a basic block, instrumentation has to come
                 //   after several types of instructions, and unfortunately, there is no
@@ -716,9 +714,9 @@ bool Contech::runOnModule(Module &M)
                 {
                     ++insertPoint;
                 }
-				
-				
-				Value* argsExit[] = {cbbid};
+                
+                
+                Value* argsExit[] = {cbbid};
                 
                 Instruction* loopExit = CallInst::Create(cct.storeLoopExitFunction, 
                                                          ArrayRef<Value*>(argsExit, 1), 
@@ -726,7 +724,7 @@ bool Contech::runOnModule(Module &M)
                                                          convertIterToInst(insertPoint));
                 MarkInstAsContechInst(loopExit);
             }
-			#endif
+            #endif
             
             delete llt;
         }
