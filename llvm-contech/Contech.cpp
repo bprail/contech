@@ -30,6 +30,7 @@
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/Transforms/Utils/LoopSimplify.h"
+#include "llvm/Transforms/Utils.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
 #else
 #error LLVM Version 3.8 or greater required
@@ -325,7 +326,7 @@ void Contech::getAnalysisUsage(AnalysisUsage& AU) const {
     AU.addRequired<DominatorTreeWrapperPass>();
     
     // The following approach is taken from several other LLVM provided passes.
-    extern char &LoopSimplifyID;
+    //   LoopSimplifyID is defined in llvm/Transforms/Utils.h
     AU.addRequiredID(LoopSimplifyID);
 }
 
@@ -430,9 +431,6 @@ bool Contech::runOnModule(Module &M)
             continue;
         }
         errs() << fmn << "\n";
-        
-        /*Function* fptr = &*F;
-        getAnalysis<LoopSimplifyPass>(*fptr);*/
 
         // "Normalize" every basic block to have only one function call in it
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) 
