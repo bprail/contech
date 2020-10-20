@@ -1373,6 +1373,7 @@ pct_event EventLib::createContechEvent(FILE* fptr)
             if (clt->preLoopId != npe->loop.preLoopId)
             {
                 printf("In %d, loop %d was instead %d\n", lastBBID, npe->loop.preLoopId, clt->preLoopId);
+				dumpAndTerminate(fptr);
             }
             assert(clt->preLoopId == npe->loop.preLoopId);
             lv->second.pop_back();
