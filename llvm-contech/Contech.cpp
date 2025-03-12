@@ -11,10 +11,6 @@
 
 #include "llvm/Config/llvm-config.h"
 
-#if LLVM_VERSION_MAJOR==2
-#error LLVM Version 3.8 or greater required
-#else
-#if LLVM_VERSION_MINOR>=8
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -30,10 +26,6 @@
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
-#else
-#error LLVM Version 3.8 or greater required
-#endif
-#endif
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -42,7 +34,7 @@
 
 #include "llvm/Analysis/Interval.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/ScalarEvolutionExpander.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
@@ -60,75 +52,82 @@ cl::opt<string> ContechStateFilename("ContechState", cl::desc("File with current
 uint64_t tailCount = 0;
 
 namespace llvm {
-#define STORE_AND_LEN(x) x, sizeof(x)
-#define FUNCTIONS_INSTRUMENT_SIZE 61
+    DebugLoc defLoc;
+#define STORE_AND_LEN(x,y) {x, sizeof(x), y}
+#define FUNCTIONS_INSTRUMENT_SIZE 67
 // NB Order matters in this array.  Put the most specific function names first, then
 //  the more general matches.
     llvm_function_map functionsInstrument[FUNCTIONS_INSTRUMENT_SIZE] = {
                                             // If main has OpenMP regions, the derived functions
                                             //    will begin with main or MAIN__
-                                           {STORE_AND_LEN("main\0"), MAIN},
-                                           {STORE_AND_LEN("MAIN__\0"), MAIN},
-                                           {STORE_AND_LEN("pthread_create"), THREAD_CREATE},
-                                           {STORE_AND_LEN("pthread_join"), THREAD_JOIN},
-                                           {STORE_AND_LEN("parsec_barrier_wait"), BARRIER_WAIT},
-                                           {STORE_AND_LEN("pthread_barrier_wait"), BARRIER_WAIT},
-                                           {STORE_AND_LEN("parsec_barrier"), BARRIER},
-                                           {STORE_AND_LEN("pthread_barrier"), BARRIER},
-                                           {STORE_AND_LEN("malloc"), MALLOC},
-                                           {STORE_AND_LEN("xmalloc"), MALLOC},
-                                           {STORE_AND_LEN("valloc"), MALLOC},
-                                           {STORE_AND_LEN("memalign"), MALLOC2},
-                                           {STORE_AND_LEN("operator new"), MALLOC},
-                                           {STORE_AND_LEN("mmap"), MALLOC2},
-                                           {STORE_AND_LEN("realloc"), REALLOC},
+                                           STORE_AND_LEN("main\0", MAIN),
+                                           STORE_AND_LEN("MAIN__\0", MAIN),
+                                           STORE_AND_LEN("pthread_create", THREAD_CREATE),
+                                           STORE_AND_LEN("pthread_join", THREAD_JOIN),
+                                           STORE_AND_LEN("parsec_barrier_wait", BARRIER_WAIT),
+                                           STORE_AND_LEN("pthread_barrier_wait",  BARRIER_WAIT),
+                                           STORE_AND_LEN("parsec_barrier",  BARRIER),
+                                           STORE_AND_LEN("pthread_barrier",  BARRIER),
+                                           STORE_AND_LEN("malloc",  MALLOC),
+                                           STORE_AND_LEN("xmalloc",  MALLOC),
+                                           STORE_AND_LEN("valloc",  MALLOC),
+                                           STORE_AND_LEN("memalign",  MALLOC2),
+                                           STORE_AND_LEN("operator new",  MALLOC),
+                                           STORE_AND_LEN("mmap",  MALLOC2),
+                                           STORE_AND_LEN("realloc",  REALLOC),
                                            // Splash2.raytrace has a free_rayinfo, so \0 added
-                                           {STORE_AND_LEN("free\0"), FREE},
-                                           {STORE_AND_LEN("operator delete"), FREE},
-                                           {STORE_AND_LEN("munmap"), FREE},
-                                           {STORE_AND_LEN("exit"), EXIT},
-                                           {STORE_AND_LEN("pthread_mutex_lock"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("pthread_mutex_trylock"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("pthread_mutex_unlock"), SYNC_RELEASE},
-                                           {STORE_AND_LEN("pthread_spin_lock"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("pthread_spin_trylock"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("pthread_spin_unlock"), SYNC_RELEASE},
-                                           {STORE_AND_LEN("sem_post"), SYNC_RELEASE},
-                                           {STORE_AND_LEN("sem_wait"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("sem_trywait"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("_mutex_lock_"), SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("_mutex_unlock_"), SYNC_RELEASE},
-                                           {STORE_AND_LEN("pthread_cond_wait"), COND_WAIT},
-                                           {STORE_AND_LEN("pthread_cond_signal"), COND_SIGNAL},
-                                           {STORE_AND_LEN("pthread_cond_broadcast"), COND_SIGNAL},
-                                           {STORE_AND_LEN("GOMP_parallel_start"), OMP_CALL},
-                                           {STORE_AND_LEN("GOMP_parallel_end"), OMP_END},
-                                           {STORE_AND_LEN("GOMP_atomic_start"), GLOBAL_SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("__kmpc_single"), GLOBAL_SYNC_ACQUIRE},
-                                           {STORE_AND_LEN("GOMP_atomic_end"), GLOBAL_SYNC_RELEASE},
-                                           {STORE_AND_LEN("__kmpc_end_single"), GLOBAL_SYNC_RELEASE},
-                                           {STORE_AND_LEN("__kmpc_fork_call"), OMP_FORK},
-                                           {STORE_AND_LEN("__kmpc_dispatch_next"), OMP_FOR_ITER},
-                                           {STORE_AND_LEN("__kmpc_barrier"), OMP_BARRIER},
-                                           {STORE_AND_LEN("__kmpc_cancel_barrier"), OMP_BARRIER},
-                                           {STORE_AND_LEN("GOMP_barrier"), OMP_BARRIER},
-                                           {STORE_AND_LEN("__kmpc_omp_task_with_deps"), OMP_TASK_CALL},
-                                           {STORE_AND_LEN("MPI_Send"), MPI_SEND_BLOCKING},
-                                           {STORE_AND_LEN("mpi_send_"), MPI_SEND_BLOCKING},
-                                           {STORE_AND_LEN("MPI_Recv"), MPI_RECV_BLOCKING},
-                                           {STORE_AND_LEN("mpi_recv_"), MPI_RECV_BLOCKING},
-                                           {STORE_AND_LEN("MPI_Isend"), MPI_SEND_NONBLOCKING},
-                                           {STORE_AND_LEN("mpi_isend_"), MPI_SEND_NONBLOCKING},
-                                           {STORE_AND_LEN("MPI_Irecv"), MPI_RECV_NONBLOCKING},
-                                           {STORE_AND_LEN("mpi_irecv_"), MPI_RECV_NONBLOCKING},
-                                           {STORE_AND_LEN("MPI_Bcast"), MPI_BROADCAST},
-                                           {STORE_AND_LEN("MPI_Barrier"), BARRIER_WAIT},
-                                           {STORE_AND_LEN("mpi_barrier_"), BARRIER_WAIT},
-                                           {STORE_AND_LEN("MPI_Wait"), MPI_TRANSFER_WAIT},
-                                           {STORE_AND_LEN("mpi_wait_"), MPI_TRANSFER_WAIT},
-                                           {STORE_AND_LEN("__cilkrts_leave_frame"), CILK_FRAME_DESTROY},
-                                           {STORE_AND_LEN("llvm.eh.sjlj.setjmp"), CILK_FRAME_CREATE},
-                                           {STORE_AND_LEN("__cilkrts_sync"), CILK_SYNC}};
+                                           STORE_AND_LEN("free\0",  FREE),
+                                           STORE_AND_LEN("operator delete",  FREE),
+                                           STORE_AND_LEN("munmap",  FREE),
+                                           STORE_AND_LEN("exit",  EXIT),
+                                           STORE_AND_LEN("pthread_mutex_init", SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_mutex_lock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_mutex_trylock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_mutex_unlock",  SYNC_RELEASE),
+                                           STORE_AND_LEN("pthread_spin_lock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_spin_trylock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_spin_unlock",  SYNC_RELEASE),
+                                           STORE_AND_LEN("pthread_rwlock_rdlock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_rwlock_tryrdlock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_rwlock_wrlock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_rwlock_trywrlock",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("pthread_rwlock_unlock",  SYNC_RELEASE),
+                                           STORE_AND_LEN("sem_post",  SYNC_RELEASE),
+                                           STORE_AND_LEN("sem_wait",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("sem_trywait",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("_mutex_lock_",  SYNC_ACQUIRE),
+                                           STORE_AND_LEN("_mutex_unlock_",  SYNC_RELEASE),
+                                           STORE_AND_LEN("pthread_cond_wait",  COND_WAIT),
+                                           STORE_AND_LEN("pthread_cond_signal",  COND_SIGNAL),
+                                           STORE_AND_LEN("pthread_cond_broadcast",  COND_SIGNAL),
+                                           STORE_AND_LEN("GOMP_parallel_start",  OMP_CALL),
+                                           STORE_AND_LEN("GOMP_parallel_end",  OMP_END),
+                                           STORE_AND_LEN("GOMP_atomic_start",  GLOBAL_SYNC_ACQUIRE),
+                                           STORE_AND_LEN("__kmpc_single",  GLOBAL_SYNC_ACQUIRE),
+                                           STORE_AND_LEN("GOMP_atomic_end",  GLOBAL_SYNC_RELEASE),
+                                           STORE_AND_LEN("__kmpc_end_single",  GLOBAL_SYNC_RELEASE),
+                                           STORE_AND_LEN("__kmpc_fork_call",  OMP_FORK),
+                                           STORE_AND_LEN("__kmpc_dispatch_next",  OMP_FOR_ITER),
+                                           STORE_AND_LEN("__kmpc_barrier",  OMP_BARRIER),
+                                           STORE_AND_LEN("__kmpc_cancel_barrier",  OMP_BARRIER),
+                                           STORE_AND_LEN("GOMP_barrier",  OMP_BARRIER),
+                                           STORE_AND_LEN("__kmpc_omp_task_with_deps",  OMP_TASK_CALL),
+                                           STORE_AND_LEN("MPI_Send",  MPI_SEND_BLOCKING),
+                                           STORE_AND_LEN("mpi_send_",  MPI_SEND_BLOCKING),
+                                           STORE_AND_LEN("MPI_Recv",  MPI_RECV_BLOCKING),
+                                           STORE_AND_LEN("mpi_recv_",  MPI_RECV_BLOCKING),
+                                           STORE_AND_LEN("MPI_Isend",  MPI_SEND_NONBLOCKING),
+                                           STORE_AND_LEN("mpi_isend_",  MPI_SEND_NONBLOCKING),
+                                           STORE_AND_LEN("MPI_Irecv",  MPI_RECV_NONBLOCKING),
+                                           STORE_AND_LEN("mpi_irecv_",  MPI_RECV_NONBLOCKING),
+                                           STORE_AND_LEN("MPI_Bcast",  MPI_BROADCAST),
+                                           STORE_AND_LEN("MPI_Barrier",  BARRIER_WAIT),
+                                           STORE_AND_LEN("mpi_barrier_",  BARRIER_WAIT),
+                                           STORE_AND_LEN("MPI_Wait",  MPI_TRANSFER_WAIT),
+                                           STORE_AND_LEN("mpi_wait_",  MPI_TRANSFER_WAIT),
+                                           STORE_AND_LEN("__cilkrts_leave_frame",  CILK_FRAME_DESTROY),
+                                           STORE_AND_LEN("llvm.eh.sjlj.setjmp",  CILK_FRAME_CREATE),
+                                           STORE_AND_LEN("__cilkrts_sync",  CILK_SYNC)};
 
 
     ModulePass* createContechPass() { return new Contech(); }
@@ -151,7 +150,7 @@ Type* Contech::getTypeFromStr(const char ty)
     }
 }
 
-Constant* Contech::getFunction(Module &M, const char* fname, const char* fmt, bool isVarg)
+FunctionCallee Contech::getFunction(Module &M, const char* fname, const char* fmt, bool isVarg)
 {
     size_t argLen = strlen(fmt);
     assert(argLen > 0);
@@ -161,7 +160,7 @@ Constant* Contech::getFunction(Module &M, const char* fname, const char* fmt, bo
     {
         Type* argTy[argLen - 1];
         
-        for (int i = 1; i < argLen; i++)
+        for (unsigned int i = 1; i < argLen; i++)
         {
             argTy[i - 1] = getTypeFromStr(fmt[i]);
         }
@@ -268,7 +267,7 @@ bool Contech::doInitialization(Module &M)
     cct.cilkParentFunction = getFunction(M, "__ctCilkPromoteParent", "vp");
     
     cct.writeElideGVEventsFunction =  getFunction(M, "__ctWriteElideGVEvents", "vp");
-    Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
+    Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction.getCallee());
     if (f != NULL) 
     {
         Instruction* iPt;
@@ -398,7 +397,10 @@ bool Contech::runOnModule(Module &M)
         else if (classifyFunctionName(fmn) != NONE ||
                  __ctStrCmp(fmn, "__ct") == 0)
         {
-            errs() << "SKIP: " << fmn << "\n";
+            if (__ctStrCmp(fmn, "__ct") != 0)
+            {
+                errs() << "SKIP: " << fmn << "\n";
+            }
             if (fmn == fn)
             {
                 free(fn);
@@ -427,14 +429,19 @@ bool Contech::runOnModule(Module &M)
         }
         errs() << fmn << "\n";
         
-
-
+        bool setDebugLocForF = true;
         // "Normalize" every basic block to have only one function call in it
         for (Function::iterator B = F->begin(), BE = F->end(); B != BE; ) 
         {
             BasicBlock &pB = *B;
             CallInst *ci;
             int status = 0;
+            
+            if (setDebugLocForF) 
+            {    
+                defLoc = pB.getFirstNonPHIOrDbgOrLifetime()->getDebugLoc();
+                setDebugLocForF = false;
+            }
             
             //
             // It would be possible to detect empty blocks and remove some;
@@ -470,11 +477,11 @@ bool Contech::runOnModule(Module &M)
         } while (changed);
         
 #ifndef DISABLE_MEM
-        LoopIV* liv = new LoopIV(this);
+        /*LoopIV* liv = new LoopIV(this);
         liv->runOnFunction(*F);
         vector<llvm_loopiv_block*> temp = liv->getLoopMemoryOps();
         loopMemOps.clear();
-        for (int cnt = 0; cnt < temp.size(); cnt++) 
+        for (unsigned int cnt = 0; cnt < temp.size(); cnt++) 
         {
             if (temp[cnt]->canElide)
             {
@@ -485,7 +492,7 @@ bool Contech::runOnModule(Module &M)
         LoopMemoryOps.clear();
         LoopMemoryOps.insert(LoopMemoryOps.end(), 
                              temp.begin(), temp.end());
-        delete liv;
+        delete liv;*/
 #endif
         
         
@@ -894,11 +901,11 @@ unsigned int Contech::getSizeofType(Type* t)
     if (r > 0) return (r + 7) / 8;  //Round up to the nearest byte
     else if (t->isPointerTy()) { return cct.pthreadSize;}
     else if (t->isPtrOrPtrVectorTy()) 
-    { 
+    { // TODO: Is there a vector subtype ?
         errs() << *t << " is pointer vector\n";
-        return t->getVectorNumElements() * cct.pthreadSize;
+        return t->getStructNumElements() * cct.pthreadSize;
     }
-    else if (t->isVectorTy()) { return t->getVectorNumElements() * t->getScalarSizeInBits();}
+    else if (t->isVectorTy()) { return t->getStructNumElements() * t->getScalarSizeInBits();}
     else if (t->isArrayTy()) { /*errs() << *t << " is array\n";*/}
     else if (t->isStructTy()) { /*errs() << *t << " is struct\n";*/}
 
@@ -939,6 +946,7 @@ unsigned int Contech::getSimpleLog(unsigned int i)
 bool Contech::internalSplitOnCall(BasicBlock &B, CallInst** tci, int* st)
 {
     *tci = NULL;
+    
     for (BasicBlock::iterator I = B.begin(), E = B.end(); I != E; ++I)
     {
         // As InvokeInst are already terminator instructions, we do not have to find them here
@@ -1011,7 +1019,6 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
     bool getNextI = false;
     bool containQueueBuf = false;
     bool hasUninstCall = true; // Any call is uninst
-    bool containKeyCall = false;
     bool elideBasicBlockId = false;
     Value* posValue = NULL;
     Value* basePosValue = NULL;
@@ -1031,6 +1038,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 
 
     //errs() << "BB: " << bbid << "\n";
+    //errs() << *&B << "\n";
     debugLog("Enter BBID: " << bbid);
 
     if (lineNum == 0)
@@ -1241,7 +1249,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
 #endif
 
         // In LLVM 3.3+, switch to Monotonic and not Acquire
-        Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, SingleThread, bufV);
+        Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Acquire, llvm::SyncScope::SingleThread, bufV);
         MarkInstAsContechInst(fenI);
     }
 
@@ -1269,7 +1277,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 6), "", aPhi);
                 MarkInstAsContechInst(sbbc);
 
-                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, aPhi);
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, llvm::SyncScope::SingleThread, aPhi);
                 MarkInstAsContechInst(fenI);
                 iPt = aPhi;
             }
@@ -1279,7 +1287,7 @@ bool Contech::internalRunOnBasicBlock(BasicBlock &B,  Module &M, int bbid, const
                 sbbc = CallInst::Create(cct.storeBasicBlockCompFunction, ArrayRef<Value*>(argsBBc, 6), "", convertIterToInst(I));
                 MarkInstAsContechInst(sbbc);
 
-                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, SingleThread, convertIterToInst(I));
+                Instruction* fenI = new FenceInst(M.getContext(), AtomicOrdering::Release, llvm::SyncScope::SingleThread, convertIterToInst(I));
                 MarkInstAsContechInst(fenI);
                 iPt = convertIterToInst(I);
             }

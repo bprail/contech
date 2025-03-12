@@ -1,10 +1,6 @@
 #define DEBUG_TYPE "Contech"
 
 #include "llvm/Config/llvm-config.h"
-#if LLVM_VERSION_MAJOR==2
-#error LLVM Version 3.8 or greater required
-#else
-#if LLVM_VERSION_MINOR>=8
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -20,10 +16,7 @@
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
-#else
-#error LLVM Version 3.8 or greater required
-#endif
-#endif
+
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -166,6 +159,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
     //   nor a non-basic block instrumentation call (incl checking size), then 
     //   its buffer / position are valid in its successors.
     //   
+    bool setDefLocF = true;
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
         BasicBlock* bb = &*it;
@@ -180,6 +174,12 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         Instruction* bbPos = dyn_cast<Instruction>(costInfo->second.posValue);
         if (bbPos == NULL) {errs() << "CBC - bbPos NULL\n"; continue;}
         if (cfgInfoMap[bb]->containCall) {/*errs() << "CBC - contain call\n";*/ continue;}
+        
+        if (setDefLocF)
+        {
+            setDefLocF = false;
+            defLoc = bb->getFirstNonPHIOrDbgOrLifetime()->getDebugLoc();
+        }
         
         // Verify that the position value is still valid to use in subsequent blocks
         //   Move past the Contech generated instruction.
@@ -344,7 +344,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         map<BasicBlock*, int> numPaths;
         map<pair<BasicBlock*, BasicBlock*>, int> edgeValue;
 
-        for (int i = 0; i < topologicalOrdering.size(); i++)
+        for (unsigned int i = 0; i < topologicalOrdering.size(); i++)
         {
             auto v = topologicalOrdering[i];
 
@@ -431,7 +431,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
             
             if (visit.find(visitBlock) != visit.end()) continue;
             
-            TerminatorInst* ti = visitBlock->getTerminator();
+            Instruction* ti = visitBlock->getTerminator();
             visit[visitBlock] = true;
             
             // Given a single start block, every block then should be reachable.
@@ -498,10 +498,10 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                     if (pathTerminatorBlocks[v]) 
                     {
                         // Predecessor to non-start block was a termilal block.
-                        errs() << "Path rejected due to terminal block that " <<
+                        /*errs() << "Path rejected due to terminal block that " <<
                             "led to non start block.\n" <<
                              cfgInfoMap[v]->id << " (terminal) -> " <<
-                             cfgInfoMap[w]->id << "\n";
+                             cfgInfoMap[w]->id << "\n";*/
                         mergePath = true;
                         break;
                     } 
@@ -736,22 +736,17 @@ bool Contech::checkAndApplyElideId(BasicBlock* B, uint32_t bbid, map<int, llvm_i
     BasicBlock* pred;
     int predCount = 0;
     //return false; // elide toggle
-#if LLVM_VERSION_MINOR>=9
-    for (BasicBlock *pred : predecessors(B))
+	
+	for (BasicBlock *pred : predecessors(B))
     {
-#else
-    for (pred_iterator pit = pred_begin(B), pet = pred_end(B); pit != pet; ++pit)
-    {
-        pred = *pit;
-#endif
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         // No self loops
         if (pred == B) {return false;}
         
         if (dyn_cast<BranchInst>(ti) == NULL) return false;
         if (ti->getNumSuccessors() != 1) {return false;}
-        if (ti->isExceptional()) return false;
+        //if (ti->isSpecialTerminator()) return false;
         
         // Furthermore, Contech splits basic blocks for function calls
         //   Any tail duplication must not undo that split.
@@ -842,25 +837,18 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     //
     // Go through each predecessor and verify that a tail duplicate can be merged
     //
-    
-// If the basic for loop is used with 3.9, the module fails with undefined symbol, unless NDEBUG matches
-//    compiled value.
-#if LLVM_VERSION_MINOR>=9
     for (BasicBlock *pred : predecessors(bbTail))
     {
-#else
-    for (pred_iterator pit = pred_begin(bbTail), pet = pred_end(bbTail); pit != pet; ++pit)
-    {
-        pred = *pit;
-#endif
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         // No self loops
         if (pred == bbTail) return false;
         
         if (dyn_cast<BranchInst>(ti) == NULL) return false;
         if (ti->getNumSuccessors() != 1) return false;
-        if (ti->isExceptional()) return false;
+		// TODO: was is exception, but that is gone and doc mentions special
+		//   but fails to build on shark
+        //if (ti->isSpecialTerminator()) return false; 
         
         // Furthermore, Contech splits basic blocks for function calls
         //   Any tail duplication must not undo that split.
@@ -919,7 +907,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
     {
         pred = *pit;
         ++pit;
-        TerminatorInst* ti = pred->getTerminator();
+        Instruction* ti = pred->getTerminator();
         
         //
         // One predecessor must be left untouched.
@@ -945,7 +933,7 @@ bool Contech::attemptTailDuplicate(BasicBlock* bbTail)
         
         // Get all successors into a vector
         //vector<BasicBlock*> Succs(bbAlt->succ_begin(), bbAlt->succ_end());
-        BasicBlock* bbSucc = bbAlt->getTerminator()->getSuccessor(0);
+        //BasicBlock* bbSucc = bbAlt->getTerminator()->getSuccessor(0);
         
         // Fix PHINode
         //  In duplicating the block, the PHINodes were destroyed.  However, there may still be

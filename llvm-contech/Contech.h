@@ -22,6 +22,7 @@ namespace llvm {
     {
         unsigned ctmd = ii->getParent()->getContext().getMDKindID("ContechInst");
         ii->setMetadata(ctmd, MDNode::get(ii->getParent()->getContext(), MDString::get(ii->getParent()->getContext(),"Contech")));
+        ii->setDebugLoc(defLoc);
     }
 
     template<typename T>
@@ -46,13 +47,13 @@ namespace llvm {
         Value* tagArg = NULL;
         if (ci->getArgOperand(1)->getType()->isPointerTy())
         {
-            countArg = new LoadInst(ci->getArgOperand(1), "", ci);
+            countArg = new LoadInst(ci->getArgOperand(1)->getType(), ci->getArgOperand(1), "", ci);
             //MarkInstAsContechInst(countArg);
 
-            destArg = new LoadInst(ci->getArgOperand(3), "", ci);
+            destArg = new LoadInst(ci->getArgOperand(3)->getType(), ci->getArgOperand(3), "", ci);
             //MarkInstAsContechInst(destArg);
 
-            tagArg = new LoadInst(ci->getArgOperand(4), "", ci);
+            tagArg = new LoadInst(ci->getArgOperand(4)->getType(), ci->getArgOperand(4), "", ci);
             //MarkInstAsContechInst(tagArg);
         }
         else
@@ -112,7 +113,11 @@ namespace llvm {
         if (isAcquire)
             ordNum = ConstantInt::get(cct->int64Ty, 0);
         else
-            ordNum = CallInst::Create(cct->allocateTicketFunction, "ticket", ci);
+        {
+            auto ordInst = CallInst::Create(cct->allocateTicketFunction, "ticket", ci);
+            MarkInstAsContechInst(ordInst);
+            ordNum = ordInst;
+        }
         
         Value* cArg[] = {synAddr, con1, retV, nGetTick, ordNum};
 
@@ -179,9 +184,10 @@ namespace llvm {
         // TODO: add dynamic check on function called
         if (f == NULL)
         {
-            // See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
-            Value* v = ci->getCalledValue();
-            f = dyn_cast<Function>(v->stripPointerCasts());
+            // TODO: this approach has been removed
+			// See http://stackoverflow.com/questions/14811587/how-to-get-functiontype-from-callinst-when-call-is-indirect-in-llvm
+            //Value* v = ci->getCalledValue();
+            //f = dyn_cast<Function>(v->stripPointerCasts());
             if (f == NULL)
             {
                 return -1;
@@ -438,7 +444,7 @@ namespace llvm {
                     }
                     else if (InvokeInst* ii = dyn_cast<InvokeInst>(ci))
                     {
-                        BasicBlock* bb = InsertNormalDest(ii, cct, M);
+                        //BasicBlock* bb = InsertNormalDest(ii, cct, M);
                         nStoreME = CallInst::Create(cct->storeMemoryEventFunction, ArrayRef<Value*>(cArg, 3),
                                                     "", ii->getNormalDest()->getFirstNonPHIOrDbgOrLifetime());
                     }
@@ -867,7 +873,7 @@ namespace llvm {
                 // Alloca Type and store pid and arg into alloc'd space
                 Type* strTy[] = {cct->int32Ty, cct->voidPtrTy};
                 Type* t = StructType::create(strTy);
-                Instruction* nArg = new AllocaInst(t, "Wrapper Struct", ci);
+                Instruction* nArg = new AllocaInst(t, 0, "Wrapper Struct", ci);
                 MarkInstAsContechInst(nArg);
 
                 // Add Store insts here
@@ -958,8 +964,8 @@ namespace llvm {
 
                 // One cannot simply add an argument to an instruction
                 // Instead we have to copy the arguments over and create a new instruction
-                Value** cArg = new Value*[ci->getNumArgOperands() + 1];
-                for (unsigned int i = 0; i < ci->getNumArgOperands(); i++)
+                Value** cArg = new Value*[ci->getNumOperands() + 1];
+                for (unsigned int i = 0; i < ci->getNumOperands(); i++)
                 {
                     cArg[i] = ci->getArgOperand(i);
                 }
@@ -967,7 +973,7 @@ namespace llvm {
                 // Now add a new argument
                 debugLog("getThreadNumFunction @" << __LINE__);
                 Instruction* callTNF = CallInst::Create(cct->getThreadNumFunction, "", ci);
-                cArg[ci->getNumArgOperands()] = callTNF;
+                cArg[ci->getNumOperands()] = callTNF;
                 MarkInstAsContechInst(callTNF);
 
                 // Can this queue buffer be removed?
@@ -981,7 +987,7 @@ namespace llvm {
                 if (isa<CallInst>(ci))
                 {
                     CallInst* nForkCall = CallInst::Create(ci->getCalledFunction(),
-                                                           ArrayRef<Value*>(cArg, 1 + ci->getNumArgOperands()),
+                                                           ArrayRef<Value*>(cArg, 1 + ci->getNumOperands()),
                                                            ci->getName(), ci);
                     MarkInstAsContechInst(nForkCall);
 
@@ -996,7 +1002,7 @@ namespace llvm {
                 {
                     InvokeInst* nForkCall = InvokeInst::Create(ii->getCalledFunction(),
                                                                ii->getNormalDest(), ii->getUnwindDest(),
-                                                               ArrayRef<Value*>(cArg, 1 + ii->getNumArgOperands()),
+                                                               ArrayRef<Value*>(cArg, 1 + ii->getNumOperands()),
                                                                ii->getName(), ii);
                     MarkInstAsContechInst(nForkCall);
 
@@ -1120,7 +1126,8 @@ namespace llvm {
                 Value* taskPtr = ci->getArgOperand(2);
                 Value* nDeps = ci->getArgOperand(3);
                 Value* depList = ci->getArgOperand(4);
-                if (cct->ompPrepareTaskFunction == NULL)
+                // TODO: Some other way to dynamicall do this
+				//if (cct->ompPrepareTaskFunction == NULL)
                 {
                     Type* argsPrepDep[] = {cct->voidPtrTy, cct->pthreadTy, depList->getType(), cct->int32Ty};
                     FunctionType* funPrepDepsTy = FunctionType::get(cct->voidTy, ArrayRef<Type*>(argsPrepDep, 4), false);
@@ -1270,7 +1277,7 @@ namespace llvm {
 
                 // If Contech has formed the basic blocks, then there should be 1 successor
                 assert(sucB != NULL);
-                TerminatorInst* ti = sucB->getTerminator();
+                Instruction* ti = sucB->getTerminator();
                 bool isSyncFrame = false;
                 for (unsigned i = 0; i < ti->getNumSuccessors(); i++)
                 {

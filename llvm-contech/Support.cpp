@@ -1,10 +1,7 @@
 #define DEBUG_TYPE "Contech"
 
 #include "llvm/Config/llvm-config.h"
-#if LLVM_VERSION_MAJOR==2
-#error LLVM Version 3.8 or greater required
-#else
-#if LLVM_VERSION_MINOR>=8
+
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -20,10 +17,7 @@
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/DebugLoc.h"
 #define ALWAYS_INLINE (Attribute::AttrKind::AlwaysInline)
-#else
-#error LLVM Version 3.8 or greater required
-#endif
-#endif
+
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -51,10 +45,8 @@ bool Contech::verifyFunctionInvariant(Function* F)
     for(auto bb = F->begin(); bb != F->end(); ++bb) 
     {
         BasicBlock* b = (&*bb);
-        Instruction* prev = NULL;
         for(BasicBlock::iterator I = b->begin(); I != b->end(); ++I) 
         {
-            Function* f = NULL;
             const char* fn = NULL;
             char* fdn = NULL;
             int status = 0;
@@ -293,7 +285,7 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
         //   the fs: (or other approach) generates the unique address
         if (gv->isThreadLocal()) return -1;
         
-        Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction);
+        Function* f = dyn_cast<Function>(cct.writeElideGVEventsFunction.getCallee());
         if (f == NULL) return -1;
         Instruction* iPt;
         if (f->empty())
@@ -307,7 +299,8 @@ int Contech::assignIdToGlobalElide(Constant* consGV, Module &M)
         }
          
         Constant* constID = ConstantInt::get(cct.int32Ty, nextId);
-        Function::ArgumentListType& argList = f->getArgumentList();
+        //Function::ArgumentListType& argList = f->getArgumentList();
+		auto argList = f->args();
         auto it = argList.begin();
         Instruction* addrI = new BitCastInst(consGV, cct.voidPtrTy, Twine("Cast as void"), iPt);
         Value* gvEventArgs[] = {dyn_cast<Value>(it), addrI, constID};
@@ -576,9 +569,11 @@ Value* Contech::convertValueToConstantEx(Value* v, int64_t* offset, int64_t* mul
 int64_t Contech::updateOffsetEx(gep_type_iterator gepit, int64_t val, int64_t* multFactor)
 {
     int64_t offset = 0;
-    if (StructType *STy = dyn_cast<StructType>(*gepit))
+    StructType *STy = gepit.getStructTypeOrNull();
+    if (STy != NULL)
     {
         unsigned ElementIdx = val;
+        
         const StructLayout *SL = currentDataLayout->getStructLayout(STy);
         offset = SL->getElementOffset(ElementIdx);
     }
@@ -638,7 +633,8 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
+    //Function::ArgumentListType& argList = extFun->getArgumentList();
+	auto argList = extFun->args();
 
     Instruction* addrI = new BitCastInst(dyn_cast<Value>(argList.begin()), argTy->getPointerTo(), Twine("Cast to Type"), soloBlock);
     MarkInstAsContechInst(addrI);
@@ -649,7 +645,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     Instruction* ppid = GetElementPtrInst::Create(NULL, addrI, ArrayRef<Value*>(args, 2), "ParentIdPtr", soloBlock);
     MarkInstAsContechInst(ppid);
 
-    Instruction* pid = new LoadInst(ppid, "ParentId", soloBlock);
+    Instruction* pid = new LoadInst(ppid->getType(), ppid, "ParentId", soloBlock);
     MarkInstAsContechInst(pid);
 
     // getElemPtr 0, 1 -> arg 1 of type*
@@ -657,7 +653,7 @@ Function* Contech::createMicroTaskWrapStruct(Function* ompMicroTask, Type* argTy
     Instruction* parg = GetElementPtrInst::Create(NULL, addrI, ArrayRef<Value*>(args, 2), "ArgPtr", soloBlock);
     MarkInstAsContechInst(parg);
 
-    Instruction* argP = new LoadInst(parg, "Arg", soloBlock);
+    Instruction* argP = new LoadInst(parg->getType(), parg, "Arg", soloBlock);
     MarkInstAsContechInst(argP);
 
     Instruction* argV = new BitCastInst(argP, baseFunType->getParamType(0), "Cast to ArgTy", soloBlock);
@@ -707,18 +703,21 @@ Function* Contech::createMicroTaskWrap(Function* ompMicroTask, Module &M)
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
-    unsigned argListSize = argList.size();
+    //Function::ArgumentListType& argList = extFun->getArgumentList();
+	auto argList = extFun->args();
+    unsigned argListSize = extFun->arg_size();
 
     Value** cArgExt = new Value*[argListSize - 1];
     auto it = argList.begin();
+	auto peit = it;
     for (unsigned i = 0; i < argListSize - 1; i ++)
     {
         cArgExt[i] = dyn_cast<Value>(it);
+		peit = it;
         ++it;
     }
 
-    Value* cArg[] = {dyn_cast<Value>(--(argList.end()))};
+    Value* cArg[] = {dyn_cast<Value>(peit)};
     Instruction* callOTCF = CallInst::Create(cct.ompThreadCreateFunction, ArrayRef<Value*>(cArg, 1), "", soloBlock);
     MarkInstAsContechInst(callOTCF);
 
@@ -763,8 +762,9 @@ Function* Contech::createMicroDependTaskWrap(Function* ompMicroTask, Module &M, 
 
     BasicBlock* soloBlock = BasicBlock::Create(M.getContext(), "entry", extFun);
 
-    Function::ArgumentListType& argList = extFun->getArgumentList();
-    unsigned argListSize = argList.size();
+    //Function::ArgumentListType& argList = extFun->getArgumentList();
+	auto argList = extFun->args();
+    unsigned argListSize = extFun->arg_size();
 
     Value** cArgExt = new Value*[argListSize];
     auto it = argList.begin();
@@ -860,7 +860,12 @@ Value* Contech::findCilkStructInBlock(BasicBlock& B, bool insert)
 int Contech::getLineNum(Instruction* I)
 {
     DILocation* dil = I->getDebugLoc();
-    if (dil == NULL) return 1;
+    if (dil == NULL) 
+    {
+        auto SP = I->getParent()->getParent()->getSubprogram();
+        if (SP != NULL) return SP->getLine();
+        return 1;
+    }
     return dil->getLine();
 }
 
@@ -874,7 +879,7 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
             f = ci->getCalledFunction();
             if (f == NULL)
             {
-                Value* v = ci->getCalledValue();
+                Value* v = ci->getCalledOperand();
                 f = dyn_cast<Function>(v->stripPointerCasts());
                 if (f == NULL)
                 {
@@ -887,7 +892,7 @@ bool Contech::blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cf
             f = ci->getCalledFunction();
             if (f == NULL)
             {
-                Value* v = ci->getCalledValue();
+                Value* v = ci->getCalledOperand();
                 f = dyn_cast<Function>(v->stripPointerCasts());
                 if (f == NULL)
                 {
@@ -1149,7 +1154,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             PHINode* pn = dyn_cast<PHINode>(nextIV);
             if (pn != NULL)
             {
-                for (int i = 0; i < pn->getNumIncomingValues(); i++)
+                for (unsigned int i = 0; i < pn->getNumIncomingValues(); i++)
                 {
                     Value* inCV = pn->getIncomingValue(i);
                     Instruction* inCVInst = dyn_cast<Instruction>(inCV);
@@ -1261,7 +1266,7 @@ void Contech::addToLoopTrack(pllvm_loopiv_block llb, BasicBlock* bbid, Instructi
             PHINode* pn = dyn_cast<PHINode>(llb->memIV);
             if (pn != NULL)
             {
-                for (int i = 0; i < pn->getNumIncomingValues(); i++)
+                for (unsigned int i = 0; i < pn->getNumIncomingValues(); i++)
                 {
                     Value* inCV = pn->getIncomingValue(i);
                     Instruction* inCVInst = dyn_cast<Instruction>(inCV);

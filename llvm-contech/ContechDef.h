@@ -34,6 +34,7 @@
 namespace llvm {
     class Contech;
     ModulePass* createContechPass();
+    extern DebugLoc defLoc;
 
     typedef struct _llvm_mem_op {
         bool isWrite;
@@ -169,61 +170,61 @@ namespace llvm {
     extern llvm_function_map functionsInstrument[];
 
     typedef struct _ConstantsCT {
-        Constant* storeBasicBlockFunction;
-        Constant* storeBasicBlockCompFunction;
-        Constant* extendPathInfoFunction;
-        Constant* storePathInfoFunction;
-        Constant* storeMemOpFunction;
-        Constant* allocateBufferFunction;
-        Constant* checkBufferFunction;
-        Constant* storeThreadCreateFunction;
-        Constant* storeSyncFunction;
-        Constant* storeMemoryEventFunction;
-        Constant* queueBufferFunction;
-        Constant* storeBarrierFunction;
-        Constant* allocateCTidFunction;
-        Constant* allocateTicketFunction;
-        Constant* getThreadNumFunction;
-        Constant* storeThreadJoinFunction;
-        Constant* storeThreadInfoFunction;
-        Constant* storeBulkMemoryOpFunction;
-        Constant* getCurrentTickFunction;
-        Constant* createThreadActualFunction;
-        Constant* checkBufferLargeFunction;
-        Constant* getBufPosFunction;
-        Constant* getBufFunction;
-        Constant* getBufPtrFunction;
-        Constant* writeElideGVEventsFunction;
-        Constant* storeGVEventFunction;
-        Constant* storeLoopEntryFunction;
-        Constant* storeLoopExitFunction;
-        Constant* storeLoopShortFunction;
+        FunctionCallee storeBasicBlockFunction;
+        FunctionCallee storeBasicBlockCompFunction;
+        FunctionCallee extendPathInfoFunction;
+        FunctionCallee storePathInfoFunction;
+        FunctionCallee storeMemOpFunction;
+        FunctionCallee allocateBufferFunction;
+        FunctionCallee checkBufferFunction;
+        FunctionCallee storeThreadCreateFunction;
+        FunctionCallee storeSyncFunction;
+        FunctionCallee storeMemoryEventFunction;
+        FunctionCallee queueBufferFunction;
+        FunctionCallee storeBarrierFunction;
+        FunctionCallee allocateCTidFunction;
+        FunctionCallee allocateTicketFunction;
+        FunctionCallee getThreadNumFunction;
+        FunctionCallee storeThreadJoinFunction;
+        FunctionCallee storeThreadInfoFunction;
+        FunctionCallee storeBulkMemoryOpFunction;
+        FunctionCallee getCurrentTickFunction;
+        FunctionCallee createThreadActualFunction;
+        FunctionCallee checkBufferLargeFunction;
+        FunctionCallee getBufPosFunction;
+        FunctionCallee getBufFunction;
+        FunctionCallee getBufPtrFunction;
+        FunctionCallee writeElideGVEventsFunction;
+        FunctionCallee storeGVEventFunction;
+        FunctionCallee storeLoopEntryFunction;
+        FunctionCallee storeLoopExitFunction;
+        FunctionCallee storeLoopShortFunction;
         
-        Constant* storeMPITransferFunction;
-        Constant* storeMPIAllOneFunction;
-        Constant* storeMPIWaitFunction;
+        FunctionCallee storeMPITransferFunction;
+        FunctionCallee storeMPIAllOneFunction;
+        FunctionCallee storeMPIWaitFunction;
 
-        Constant* ompThreadCreateFunction;
-        Constant* ompThreadJoinFunction;
-        Constant* ompTaskCreateFunction;
-        Constant* ompTaskJoinFunction;
-        Constant* ompPushParentFunction;
-        Constant* ompPopParentFunction;
-        Constant* ctPeekParentIdFunction;
-        Constant* ompProcessJoinFunction;
-        Constant* ompGetNestLevelFunction;
+        FunctionCallee ompThreadCreateFunction;
+        FunctionCallee ompThreadJoinFunction;
+        FunctionCallee ompTaskCreateFunction;
+        FunctionCallee ompTaskJoinFunction;
+        FunctionCallee ompPushParentFunction;
+        FunctionCallee ompPopParentFunction;
+        FunctionCallee ctPeekParentIdFunction;
+        FunctionCallee ompProcessJoinFunction;
+        FunctionCallee ompGetNestLevelFunction;
 
-        Constant* ompGetParentFunction;
-        Constant* ompPrepareTaskFunction;
-        Constant* ompStoreInOutDepsFunction;
+        FunctionCallee ompGetParentFunction;
+        FunctionCallee ompPrepareTaskFunction;
+        FunctionCallee ompStoreInOutDepsFunction;
 
-        Constant* cilkInitFunction;
-        Constant* cilkCreateFunction;
-        Constant* cilkSyncFunction;
-        Constant* cilkRestoreFunction;
-        Constant* cilkParentFunction;
+        FunctionCallee cilkInitFunction;
+        FunctionCallee cilkCreateFunction;
+        FunctionCallee cilkSyncFunction;
+        FunctionCallee cilkRestoreFunction;
+        FunctionCallee cilkParentFunction;
 
-        Constant* pthreadExitFunction;
+        FunctionCallee pthreadExitFunction;
 
         Type* int1Ty;
         Type* int8Ty;
@@ -271,7 +272,7 @@ namespace llvm {
         virtual bool doInitialization(Module &M);
         virtual bool runOnModule(Module &M);
         
-        Constant* getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
+        FunctionCallee getFunction(Module &M, const char* fname, const char* fmt, bool isVarg = false);
         Type* getTypeFromStr(const char ty);
         void setElideInBlock(BasicBlock*, Instruction*, bool);
         int chainBufferCalls(Function*, std::map<int, llvm_inst_block>&, int);
