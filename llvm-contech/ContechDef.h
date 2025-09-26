@@ -301,6 +301,7 @@ namespace llvm {
         bool blockContainsFunctionName(BasicBlock* B, _CONTECH_FUNCTION_TYPE cft);
         bool verifyFunctionInvariant(Function*);
 
+        void fixMemopsInBB(pllvm_mem_op mem_op, BasicBlock* bb);
         void crossBlockCalculation(Function* F, std::map<int, llvm_inst_block>& costPerBlock);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*);
         Value* findSimilarMemoryInstExt(Instruction*, Value*, int64_t*, std::vector<Value*> *);

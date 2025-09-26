@@ -99,6 +99,48 @@ bool Contech::verifyFunctionInvariant(Function* F)
 }
 
 //
+// mem_op's instrumentation has been deleted from bb, need to renumber
+//
+void Contech::fixMemopsInBB(pllvm_mem_op mem_op, BasicBlock* bb)
+{
+    auto blockInfo = cfgInfoMap[bb];
+    
+    pllvm_mem_op t_op = blockInfo->first_op;
+    while (t_op != NULL)
+    {
+        if (t_op == mem_op) break;
+        t_op = t_op->next;
+    }
+    
+    if (t_op == NULL)
+    {
+        errs() << "Trying to fix mem ops in BB, not present in list.\n";
+        return;
+    }
+    
+    t_op = t_op->next;
+    while (t_op != NULL)
+    {
+        Value* cNOne = ConstantInt::get(cct.int32Ty, -1);
+        
+        if (t_op->isDep != true)
+        {
+            Instruction* smo = t_op->inst;
+            auto opCount = smo->getOperand(1);
+                             
+            Instruction* posPathAdd = BinaryOperator::Create(Instruction::Add, 
+                                                             opCount, cNOne, "", smo);
+                                
+            MarkInstAsContechInst(posPathAdd);
+            smo->setOperand(1, posPathAdd);
+        }
+        t_op = t_op->next;
+    }
+    
+    // bbc is repaired in crossBlockCalculation
+}
+
+//
 // This is the hack version that just tries to find possible matches and eliding them
 //
 void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& costPerBlock)
@@ -110,6 +152,8 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
     int crossElideCount = 0;
     bool skipF = verifyFunctionInvariant(F);
     
+    // HACK fix
+    //return;
     
     for (auto it = F->begin(), et = F->end(); it != et; ++it)
     {
@@ -196,7 +240,10 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
                             mem_op->isDep = true;
                             mem_op->isCrossPresv = true;
                             mem_op->depMemOpDelta = offset;
+                            errs() << *mem_op->inst;
                             mem_op->inst->eraseFromParent();
+                            mem_op->inst = NULL;
+                            fixMemopsInBB(mem_op, bb);
                             
                             int bb_val = blockHash(bb);
                             auto costInfo = costPerBlock.find(bb_val);
@@ -323,6 +370,7 @@ pllvm_mem_op Contech::insertMemOp(Instruction* li, Value* addr, bool isWrite, un
     pllvm_mem_op tMemOp = new llvm_mem_op;
 
     tMemOp->next = NULL;
+    tMemOp->inst = NULL;
     tMemOp->isWrite = isWrite;
     tMemOp->isDep = false;
     tMemOp->isGlobal = false;
