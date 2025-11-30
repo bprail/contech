@@ -240,7 +240,6 @@ void Contech::crossBlockCalculation(Function* F, map<int, llvm_inst_block>& cost
                             mem_op->isDep = true;
                             mem_op->isCrossPresv = true;
                             mem_op->depMemOpDelta = offset;
-                            errs() << *mem_op->inst;
                             mem_op->inst->eraseFromParent();
                             mem_op->inst = NULL;
                             fixMemopsInBB(mem_op, bb);
