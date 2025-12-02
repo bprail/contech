@@ -104,17 +104,16 @@ void Contech::setElideInBlock(BasicBlock* bb, Instruction* stop, bool skipStoreB
     }
 }
 
-void Contech::visitVertex(
+bool Contech::visitVertex(
     BasicBlock* v, 
     vector<BasicBlock*>& topologicalOrdering,
     map<BasicBlock*, unsigned char>& visited,
     map<BasicBlock*, bool> isPathTerminator)
 {
-    if (visited[v] == 2) return;
+    if (visited[v] == 2) return true;
     if (visited[v] == 1) 
     {
-        errs() << "NOT A DAG - THERE WAS A CYCLE.";
-        return;
+        return false;
     }
     // Enter vertex v.
     visited[v] = 1;
@@ -124,12 +123,15 @@ void Contech::visitVertex(
         for (auto succ = succ_begin(v), end = succ_end(v); succ != end; ++succ) 
         {
             BasicBlock* w = *succ;
-            visitVertex(w, topologicalOrdering, visited, isPathTerminator);
+            bool r = visitVertex(w, topologicalOrdering, visited, isPathTerminator);
+            if (r == false) return false;
         }
     }
     // Exit vertex v.
     visited[v] = 2;
     topologicalOrdering.push_back(v);
+    
+    return true;
 }
 
 //
@@ -321,6 +323,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
     //   each chain.
     map<BasicBlock*, vector<BasicBlock*>> chainMembers;
 
+    bool validTopologicalOrder = false;
     for (auto it = isStartChain.begin(), et = isStartChain.end(); 
         it != et; 
         ++it)
@@ -334,7 +337,8 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         map<BasicBlock*, unsigned char> visited;
         auto start = it->first;
 
-        visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
+        validTopologicalOrder = visitVertex(start, topologicalOrdering, visited, pathTerminatorBlocks);
+        if (validTopologicalOrder == false) break;
 
         //errs() << "# blocks in chain: " << topologicalOrdering.size() << "\n";
 
@@ -385,6 +389,7 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
         // errs() << "Found path starting at " << cfgInfoMap[start]->id << " with " <<
             // numPaths[start] << " possible paths\n";
     }
+    if (validTopologicalOrder == false) return bbid;
 
     // From the starts and terminators, we can construct the paths
     //   Then apply them here.
@@ -535,6 +540,11 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
 
         bbid += numPossiblePaths[startPath];
 
+        for (int i = blocks.size() - 1; i >= 0; i--) 
+        {
+            auto w = blocks[i];
+        }
+
         // We keep track of the start buffer and position to be written to at
         //   the end of the path. These will be initialized in the first
         //   iteration of the following loop, which always visits the start
@@ -644,21 +654,28 @@ int Contech::chainBufferCalls(Function* F, map<int, llvm_inst_block>& costPerBlo
                 auto v = *predit;
                 
                 auto predecessorPathId = pathId[v];
+                
+                if (edgeValues[startPath][make_pair(v, w)] != 0)
+                {
+                    // Create an instruction that adds the edge value to the pathId.
+                    Instruction* addToPath = BinaryOperator::Create(
+                        Instruction::Add, 
+                        predecessorPathId,
+                        ConstantInt::get(
+                            cct.int32Ty, 
+                            edgeValues[startPath][make_pair(v, w)]),
+                        "add_to_path_" + to_string(cfgInfoMap[v]->id) + 
+                            "_" + to_string(cfgInfoMap[w]->id), 
+                        v->getFirstNonPHI());
 
-                // Create an instruction that adds the edge value to the pathId.
-                Instruction* addToPath = BinaryOperator::Create(
-                    Instruction::Add, 
-                    predecessorPathId,
-                    ConstantInt::get(
-                        cct.int32Ty, 
-                        edgeValues[startPath][make_pair(v, w)]),
-                    "add_to_path_" + to_string(cfgInfoMap[v]->id) + 
-                        "_" + to_string(cfgInfoMap[w]->id), 
-                    v->getFirstNonPHI());
+                    MarkInstAsContechInst(addToPath);
 
-                MarkInstAsContechInst(addToPath);
-
-                phiPathId->addIncoming(addToPath, v);
+                    phiPathId->addIncoming(addToPath, v);
+                }
+                else
+                {
+                    phiPathId->addIncoming(predecessorPathId, v);
+                }
             }
             
             // Set the path ID for this block.

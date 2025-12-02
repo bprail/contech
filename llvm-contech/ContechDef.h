@@ -244,7 +244,7 @@ namespace llvm {
     //
     class Contech : public ModulePass {
     private:
-        void visitVertex(
+        bool visitVertex(
             BasicBlock*, 
             std::vector<BasicBlock*>&, 
             std::map<BasicBlock*, unsigned char>&, 
